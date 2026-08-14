@@ -1,0 +1,46 @@
+name: BBBC039 data validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_archives:
+        description: Keep downloaded ZIP archives for provenance inspection
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  validate-bbbc039:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Download official BBBC039v1 archives
+        env:
+          KEEP_ARCHIVES: ${{ inputs.keep_archives }}
+        run: |
+          if [ "$KEEP_ARCHIVES" = "true" ]; then
+            python scripts/download_bbbc039.py --keep-archives
+          else
+            python scripts/download_bbbc039.py
+          fi
+      - name: Verify images, masks, metadata, and official split
+        run: |
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py --data-root data/raw/BBBC039 --output data/manifests/bbbc039_split.csv
+      - name: Upload verification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbbc039-verification
+          path: |
+            data/raw/BBBC039/download_manifest.json
+            data/raw/BBBC039/verification_report.json
+            data/manifests/bbbc039_split.csv
+          if-no-files-found: error
