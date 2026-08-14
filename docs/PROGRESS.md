@@ -22,9 +22,10 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Add a GitHub Actions workflow that can download, inspect, verify, split, and archive BBBC039 provenance artifacts in an internet-enabled runner.
 - [x] Run the first real-data acquisition attempt on a GitHub-hosted runner.
 - [x] Confirm the official archives are reachable and downloadable from the hosted runner.
-- [x] Detect a concrete packaging/layout discrepancy: the first verification attempt found 400 TIFF files under the extracted `images/` tree although the authoritative BBBC039 specification describes 200 fields of view.
-- [x] Add a non-destructive layout diagnostic that records suffix counts, duplicate basenames, dimensions, and dtypes before strict verification.
-- [ ] Resolve the 400-versus-200 image-tree discrepancy from the diagnostic evidence.
+- [x] Detect a concrete packaging/layout discrepancy: the first verification attempt found 400 TIFF paths, with 200 readable 520 x 696 uint16 images and 200 TIFF read errors; the same acquisition also exposed `__MACOSX/` and `._*` AppleDouble sidecars in the ZIP package.
+- [x] Diagnose the 400-versus-200 discrepancy as archive-sidecar noise rather than silently treating the extra files as scientific images.
+- [x] Update extraction, diagnostics, and strict verification to exclude `__MACOSX/` and `._*` AppleDouble metadata.
+- [ ] Re-run strict verification on the cleaned extraction.
 - [ ] Verify 200 unique BBBC039 images and 200 masks from the actual files.
 - [ ] Verify actual image dimensions and dtype from all accepted images.
 - [ ] Verify the official 100/50/50 split from the actual metadata package.
@@ -75,4 +76,4 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current blocker
 
-The hosted runner successfully downloaded the official BBBC039 archives, but strict verification stopped because the extracted `images/` tree contained 400 TIFF files. The authoritative Broad page states that BBBC039v1 contains 200 fields of view. The next run must inspect the archive layout and identify whether the extra 200 TIFFs are duplicates, alternate representations, nested copies, or an unexpected package component before any training is allowed. No training result is considered valid until this is resolved.
+The hosted runner successfully downloaded the official BBBC039 archives. The first strict run counted 400 TIFF paths, but its diagnostic showed exactly 200 readable 520 x 696 uint16 images and 200 TIFF read errors; the same package contained explicit `__MACOSX/` and `._*` AppleDouble metadata entries. This is consistent with ZIP sidecar files, not 400 scientific fields. The repository now excludes those sidecars during extraction and verification. The next run must pass the cleaned-data checks before training is allowed.
