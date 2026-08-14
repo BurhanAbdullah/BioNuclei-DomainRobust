@@ -25,11 +25,11 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Detect a concrete packaging/layout discrepancy: the first verification attempt found 400 TIFF paths, with 200 readable 520 x 696 uint16 images and 200 TIFF read errors; the same acquisition also exposed `__MACOSX/` and `._*` AppleDouble sidecars in the ZIP package.
 - [x] Diagnose the 400-versus-200 discrepancy as archive-sidecar noise rather than silently treating the extra files as scientific images.
 - [x] Update extraction, diagnostics, and strict verification to exclude `__MACOSX/` and `._*` AppleDouble metadata.
-- [ ] Re-run strict verification on the cleaned extraction.
-- [ ] Verify 200 unique BBBC039 images and 200 masks from the actual files.
-- [ ] Verify actual image dimensions and dtype from all accepted images.
+- [x] Re-run strict verification on the cleaned extraction through GitHub Actions.
+- [x] Verify 200 unique BBBC039 images and 200 masks from the actual files.
+- [x] Verify actual image dimensions and dtype from all 200 accepted images: 520 x 696, uint16.
+- [x] Verify image/mask filename correspondence for all 200 pairs.
 - [ ] Verify the official 100/50/50 split from the actual metadata package.
-- [ ] Verify image/mask filename correspondence.
 - [ ] Produce the immutable local dataset manifest.
 
 ## Phase 2 — source-domain baseline
@@ -76,4 +76,4 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current blocker
 
-The hosted runner successfully downloaded the official BBBC039 archives. The first strict run counted 400 TIFF paths, but its diagnostic showed exactly 200 readable 520 x 696 uint16 images and 200 TIFF read errors; the same package contained explicit `__MACOSX/` and `._*` AppleDouble metadata entries. This is consistent with ZIP sidecar files, not 400 scientific fields. The repository now excludes those sidecars during extraction and verification. The next run must pass the cleaned-data checks before training is allowed.
+The cleaned real-data acquisition is now verified at the image/mask level: 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The remaining Phase-1 blocker is the official partition metadata: the first parser returned zero filenames from `training.txt`, `validation.txt`, and `test.txt`. A shared parser is now used by both verification and manifest generation; GitHub Actions is re-running that exact parser against the official metadata package. No training is allowed until the 100/50/50 split is verified and frozen.
