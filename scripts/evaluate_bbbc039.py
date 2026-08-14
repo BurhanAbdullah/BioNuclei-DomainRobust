@@ -10,7 +10,9 @@ import numpy as np
 import torch
 from scipy import ndimage
 import tifffile
+from skimage.io import imread
 
+from bionuclei.data import decode_instance_mask
 from bionuclei.metrics import boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
 
@@ -68,6 +70,15 @@ def boundary_band(mask: np.ndarray) -> np.ndarray:
     return foreground & ~eroded
 
 
+def mask_path(root: Path, image_name: str) -> Path:
+    stem = Path(image_name).stem
+    for suffix in (".png", ".tif", ".tiff"):
+        candidate = root / "masks" / f"{stem}{suffix}"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"No mask found for {image_name}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -92,7 +103,7 @@ def main() -> None:
     results = []
     for name in names:
         image = np.asarray(tifffile.imread(args.data_root / "images" / name))
-        target = np.asarray(tifffile.imread(args.data_root / "masks" / name)).astype(np.int32)
+        target = decode_instance_mask(np.asarray(imread(mask_path(args.data_root, name))))
         if image.shape != target.shape:
             raise ValueError(f"Shape mismatch for {name}: {image.shape} vs {target.shape}")
         x = image.astype(np.float32)
