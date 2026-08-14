@@ -30,14 +30,14 @@ jobs:
           KEEP_ARCHIVES: ${{ inputs.keep_archives || 'false' }}
         run: |
           if [ "$KEEP_ARCHIVES" = "true" ]; then
-            python scripts/download_bbbc039.py --keep-archive
+            python scripts/download_bbbc039.py --keep-archives
           else
             python scripts/download_bbbc039.py
           fi
       - name: Verify images, masks, metadata, and official split
         run: |
           python scripts/verify_bbbc039.py --data-root data/raw/BBBC039 --output data/raw/BBBC039/verification_report.json
-          python scripts/build_bbbc039_split.py --data-root data/raw/BBBC039 --output data/manifests/bbbc039_split.csv
+          python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata --output data/manifests/bbbc039_official_split.json
       - name: Upload verification artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -45,5 +45,5 @@ jobs:
           path: |
             data/raw/BBBC039/download_manifest.json
             data/raw/BBBC039/verification_report.json
-            data/manifests/bbbc039_split.csv
+            data/manifests/bbbc039_official_split.json
           if-no-files-found: error
