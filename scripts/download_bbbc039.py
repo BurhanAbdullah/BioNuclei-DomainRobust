@@ -39,7 +39,29 @@ def download(url: str, destination: Path) -> None:
 
 
 def inventory(root: Path) -> list[str]:
-    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+    return sorted(
+        str(p.relative_to(root))
+        for p in root.rglob("*")
+        if p.is_file() and not is_macos_metadata(p)
+    )
+
+
+def is_macos_metadata(path: Path) -> bool:
+    """Return True for AppleDouble/resource-fork files shipped in some ZIPs."""
+    return "__MACOSX" in path.parts or path.name.startswith("._")
+
+
+def extract_archive(zf: zipfile.ZipFile, destination: Path) -> int:
+    """Extract only real dataset members, excluding macOS sidecar metadata."""
+    extracted = 0
+    for member in zf.infolist():
+        member_path = Path(member.filename)
+        if is_macos_metadata(member_path):
+            continue
+        zf.extract(member, destination)
+        if not member.is_dir():
+            extracted += 1
+    return extracted
 
 
 def download_archive(name: str, url: str, root: Path, keep: bool) -> dict:
@@ -59,9 +81,9 @@ def download_archive(name: str, url: str, root: Path, keep: bool) -> dict:
         bad = zf.testzip()
         if bad is not None:
             raise SystemExit(f"Corrupt ZIP member in {name}: {bad}")
-        zf.extractall(extracted)
+        extracted_count = extract_archive(zf, extracted)
 
-    record["file_count"] = len(inventory(extracted))
+    record["file_count"] = extracted_count
     if not keep:
         archive.unlink()
     return record
@@ -81,6 +103,7 @@ def main() -> None:
         "authoritative_reference": OFFICIAL_PAGE,
         "base_url": BASE_URL,
         "archives": {},
+        "extraction_policy": "exclude __MACOSX and AppleDouble (._*) sidecar files",
     }
     for name, url in ARCHIVES.items():
         manifest["archives"][name] = download_archive(
