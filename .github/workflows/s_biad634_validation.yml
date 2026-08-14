@@ -1,0 +1,26 @@
+name: S-BIAD634 target-domain validation
+
+on:
+  push:
+    paths:
+      - 'scripts/download_s_biad634.py'
+      - '.github/workflows/s_biad634_validation.yml'
+  workflow_dispatch:
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download and inventory S-BIAD634
+        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Upload provenance inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: s-biad634-inventory-${{ github.run_id }}
+          path: data/raw/S-BIAD634/download_manifest.json
+          retention-days: 30
