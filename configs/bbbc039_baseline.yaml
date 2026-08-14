@@ -1,0 +1,54 @@
+experiment: bbbc039_baseline
+seed: 42
+
+# Dataset paths are intentionally local and never committed.
+dataset:
+  name: BBBC039
+  root: data/raw/bbbc039
+  images: images
+  masks: masks
+  split_manifest: configs/manifests/bbbc039_official.csv
+  expected_channels: 1
+  image_dtype: uint16
+
+# Instance masks are converted to a three-class target:
+# background / nuclear interior / nuclear boundary.
+target:
+  classes: 3
+  boundary_width: 1
+
+model:
+  name: boundary_unet
+  in_channels: 1
+  out_channels: 3
+  base_channels: 32
+
+training:
+  device: auto
+  epochs: 100
+  batch_size: 8
+  num_workers: 4
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+  amp: true
+  early_stopping_patience: 20
+
+loss:
+  segmentation: cross_entropy
+  boundary_weight: 2.0
+  dice_weight: 1.0
+
+augmentation:
+  horizontal_flip: true
+  vertical_flip: true
+  rotation_90: true
+  intensity_jitter: false
+
+metrics:
+  - dice
+  - iou
+  - aji
+  - boundary_f1
+
+outputs:
+  root: outputs/bbbc039_baseline
