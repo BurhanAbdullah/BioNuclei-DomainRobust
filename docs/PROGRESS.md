@@ -8,7 +8,7 @@ This checklist is updated only when a step is actually verified.
 - [x] Create reproducible repository structure.
 - [x] Add boundary-aware U-Net baseline implementation.
 - [x] Add target-generation, loss, and metric tests.
-- [x] Add CI and confirm the current test workflow passes.
+- [x] Add CI and confirm the current test workflow passes (3 passed in 1.99 s; GitHub Actions run 31799852171).
 - [x] Establish no-fabrication/no-leakage/reproducibility rules.
 
 ## Phase 1 — BBBC039 source-domain verification
