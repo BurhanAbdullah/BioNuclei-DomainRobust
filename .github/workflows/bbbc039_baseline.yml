@@ -1,0 +1,66 @@
+name: BBBC039 baseline experiment
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'scripts/train_bbbc039.py'
+      - 'scripts/evaluate_bbbc039.py'
+      - 'configs/bbbc039_baseline.yaml'
+      - 'pyproject.toml'
+      - '.github/workflows/bbbc039_baseline.yml'
+  workflow_dispatch:
+
+jobs:
+  train-evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Download official BBBC039v1 archives
+        run: python scripts/download_bbbc039.py --data-root data/raw/BBBC039
+      - name: Verify dataset and build official manifest
+        run: |
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py --data-root data/raw/BBBC039 --output data/manifests/bbbc039_official_split.json
+      - name: Train boundary-aware U-Net baseline
+        run: |
+          python scripts/train_bbbc039.py \
+            --config configs/bbbc039_baseline.yaml \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --output outputs/bbbc039_baseline
+      - name: Evaluate held-out test set
+        run: |
+          python scripts/evaluate_bbbc039.py \
+            --checkpoint outputs/bbbc039_baseline/last.pt \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --split test \
+            --output outputs/bbbc039_eval
+      - name: Evaluate validation set
+        run: |
+          python scripts/evaluate_bbbc039.py \
+            --checkpoint outputs/bbbc039_baseline/last.pt \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --split validation \
+            --output outputs/bbbc039_eval
+      - name: Upload baseline artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbbc039-baseline-${{ github.run_id }}
+          path: |
+            outputs/bbbc039_baseline/
+            outputs/bbbc039_eval/
+            data/manifests/bbbc039_official_split.json
+            data/raw/BBBC039/download_manifest.json
+            data/raw/BBBC039/verification_report.json
+          retention-days: 30
