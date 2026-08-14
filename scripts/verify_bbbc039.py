@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
-from skimage.io import imread
 
 EXPECTED_IMAGES = 200
 EXPECTED_SHAPE = (520, 696)
@@ -22,19 +21,22 @@ EXPECTED_DTYPE = np.dtype("uint16")
 EXPECTED_SPLITS = {"train": 100, "validation": 50, "test": 50}
 
 
+def is_macos_metadata(path: Path) -> bool:
+    return "__MACOSX" in path.parts or path.name.startswith("._")
+
+
 def files_with_suffix(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
     return sorted(
-        p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in suffixes
+        p
+        for p in root.rglob("*")
+        if p.is_file()
+        and p.suffix.lower() in suffixes
+        and not is_macos_metadata(p)
     )
 
 
 def inspect_metadata(root: Path) -> dict[str, int]:
-    """Count split-labelled metadata files conservatively.
-
-    The Broad package may encode the official partitions in text/CSV files.
-    We count unique filenames mentioned next to explicit split tokens rather
-    than assuming a particular metadata filename.
-    """
+    """Count unique image filenames listed by the official partition files."""
     counts = {k: 0 for k in EXPECTED_SPLITS}
     seen: dict[str, set[str]] = {k: set() for k in EXPECTED_SPLITS}
     for p in files_with_suffix(root, (".txt", ".csv", ".tsv", ".json")):
@@ -46,8 +48,8 @@ def inspect_metadata(root: Path) -> dict[str, int]:
                     continue
                 for token in line.replace(",", " ").replace("\t", " ").split():
                     token = token.strip('"\'[]{}()')
-                    if token.lower().endswith((".tif", ".tiff")):
-                        seen[split].add(token)
+                    if token.lower().endswith((".tif", ".tiff")) and not token.startswith("._"):
+                        seen[split].add(Path(token).name)
     for split in counts:
         counts[split] = len(seen[split])
     return counts
@@ -74,6 +76,17 @@ def main() -> None:
     if len(masks) != EXPECTED_IMAGES:
         raise SystemExit(f"Expected {EXPECTED_IMAGES} masks; found {len(masks)}")
 
+    image_names = {p.name for p in images}
+    mask_names = {p.stem for p in masks}
+    image_stems = {p.stem for p in images}
+    if image_stems != mask_names:
+        missing_masks = sorted(image_stems - mask_names)
+        missing_images = sorted(mask_names - image_stems)
+        raise SystemExit(
+            "Image/mask correspondence failed: "
+            f"missing_masks={missing_masks[:10]}, missing_images={missing_images[:10]}"
+        )
+
     shape_counts: dict[str, int] = {}
     dtype_counts: dict[str, int] = {}
     for path in images:
@@ -93,6 +106,7 @@ def main() -> None:
         "masks": len(masks),
         "image_shape": list(EXPECTED_SHAPE),
         "image_dtype": str(EXPECTED_DTYPE),
+        "image_mask_correspondence_verified": True,
         "split_counts_detected": split_counts,
         "expected_split_counts": EXPECTED_SPLITS,
         "split_counts_verified": split_counts == EXPECTED_SPLITS,
