@@ -1,6 +1,9 @@
 name: BBBC039 data validation
 
 on:
+  push:
+    paths:
+      - '.github/workflows/bbbc039_data_validation.yml'
   workflow_dispatch:
     inputs:
       keep_archives:
@@ -24,10 +27,10 @@ jobs:
           python -m pip install -e .
       - name: Download official BBBC039v1 archives
         env:
-          KEEP_ARCHIVES: ${{ inputs.keep_archives }}
+          KEEP_ARCHIVES: ${{ inputs.keep_archives || 'false' }}
         run: |
           if [ "$KEEP_ARCHIVES" = "true" ]; then
-            python scripts/download_bbbc039.py --keep-archives
+            python scripts/download_bbbc039.py --keep-archive
           else
             python scripts/download_bbbc039.py
           fi
