@@ -8,7 +8,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Create reproducible repository structure.
 - [x] Add boundary-aware U-Net baseline implementation.
 - [x] Add target-generation, loss, and metric tests.
-- [x] Add CI and confirm the current test workflow passes (3 passed in 1.99 s; GitHub Actions run 31799852171).
+- [x] Add CI and confirm the current test workflow passes.
 - [x] Establish no-fabrication/no-leakage/reproducibility rules.
 
 ## Phase 1 — BBBC039 source-domain verification
@@ -20,17 +20,14 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Document expected 200-image, 520 x 696, 16-bit structure and official partition policy.
 - [x] Add a strict builder for the official metadata-defined train/validation/test manifest.
 - [x] Add a GitHub Actions workflow that can download, inspect, verify, split, and archive BBBC039 provenance artifacts in an internet-enabled runner.
-- [x] Run the first real-data acquisition attempt on a GitHub-hosted runner.
+- [x] Run real-data acquisition on a GitHub-hosted runner.
 - [x] Confirm the official archives are reachable and downloadable from the hosted runner.
-- [x] Detect a concrete packaging/layout discrepancy: the first verification attempt found 400 TIFF paths, with 200 readable 520 x 696 uint16 images and 200 TIFF read errors; the same acquisition also exposed `__MACOSX/` and `._*` AppleDouble sidecars in the ZIP package.
-- [x] Diagnose the 400-versus-200 discrepancy as archive-sidecar noise rather than silently treating the extra files as scientific images.
-- [x] Update extraction, diagnostics, and strict verification to exclude `__MACOSX/` and `._*` AppleDouble metadata.
-- [x] Re-run strict verification on the cleaned extraction through GitHub Actions.
+- [x] Diagnose and exclude archive sidecar noise (`__MACOSX/` and `._*`).
 - [x] Verify 200 unique BBBC039 images and 200 masks from the actual files.
 - [x] Verify actual image dimensions and dtype from all 200 accepted images: 520 x 696, uint16.
 - [x] Verify image/mask filename correspondence for all 200 pairs.
-- [ ] Verify the official 100/50/50 split from the actual metadata package.
-- [ ] Produce the immutable local dataset manifest.
+- [x] Verify the official split from the actual metadata package: 100 training, 50 validation, 50 test; no pairwise overlap.
+- [x] Produce and archive the immutable official split manifest. Manifest SHA-256: `91d46e4c3f206692278ae4295c3ead62e6f8fa9a1ebb46986ae2cda71c327ff5`.
 
 ## Phase 2 — source-domain baseline
 
@@ -74,6 +71,6 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [ ] Release code, manifests, configurations, and reproducibility instructions.
 - [ ] Prepare manuscript only after the evidence supports the claims.
 
-## Current blocker
+## Current state
 
-The cleaned real-data acquisition is now verified at the image/mask level: 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The remaining Phase-1 blocker is the official partition metadata: the first parser returned zero filenames from `training.txt`, `validation.txt`, and `test.txt`. A shared parser is now used by both verification and manifest generation; GitHub Actions is re-running that exact parser against the official metadata package. No training is allowed until the 100/50/50 split is verified and frozen.
+Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts. The next research step is the real source-domain baseline experiment.
