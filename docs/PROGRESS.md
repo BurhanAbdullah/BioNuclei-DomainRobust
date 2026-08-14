@@ -1,6 +1,6 @@
 # Research Progress
 
-This checklist is updated only when a step is actually verified.
+This checklist is updated only when a step is actually verified. Tooling is not marked as scientific verification until it has been executed on the real dataset.
 
 ## Phase 0 — foundations
 
@@ -19,10 +19,14 @@ This checklist is updated only when a step is actually verified.
 - [x] Add strict local-data verification script.
 - [x] Document expected 200-image, 520 x 696, 16-bit structure and official partition policy.
 - [x] Add a strict builder for the official metadata-defined train/validation/test manifest.
-- [x] Add a manual GitHub Actions workflow that can download, verify, split, and archive BBBC039 provenance artifacts in an internet-enabled runner.
-- [ ] Download the real BBBC039 archives in an environment with external data access.
-- [ ] Verify 200 images and 200 masks from the actual files.
-- [ ] Verify actual image dimensions and dtype from all images.
+- [x] Add a GitHub Actions workflow that can download, inspect, verify, split, and archive BBBC039 provenance artifacts in an internet-enabled runner.
+- [x] Run the first real-data acquisition attempt on a GitHub-hosted runner.
+- [x] Confirm the official archives are reachable and downloadable from the hosted runner.
+- [x] Detect a concrete packaging/layout discrepancy: the first verification attempt found 400 TIFF files under the extracted `images/` tree although the authoritative BBBC039 specification describes 200 fields of view.
+- [x] Add a non-destructive layout diagnostic that records suffix counts, duplicate basenames, dimensions, and dtypes before strict verification.
+- [ ] Resolve the 400-versus-200 image-tree discrepancy from the diagnostic evidence.
+- [ ] Verify 200 unique BBBC039 images and 200 masks from the actual files.
+- [ ] Verify actual image dimensions and dtype from all accepted images.
 - [ ] Verify the official 100/50/50 split from the actual metadata package.
 - [ ] Verify image/mask filename correspondence.
 - [ ] Produce the immutable local dataset manifest.
@@ -68,3 +72,7 @@ This checklist is updated only when a step is actually verified.
 - [ ] Audit every reported number against raw experiment artifacts.
 - [ ] Release code, manifests, configurations, and reproducibility instructions.
 - [ ] Prepare manuscript only after the evidence supports the claims.
+
+## Current blocker
+
+The hosted runner successfully downloaded the official BBBC039 archives, but strict verification stopped because the extracted `images/` tree contained 400 TIFF files. The authoritative Broad page states that BBBC039v1 contains 200 fields of view. The next run must inspect the archive layout and identify whether the extra 200 TIFFs are duplicates, alternate representations, nested copies, or an unexpected package component before any training is allowed. No training result is considered valid until this is resolved.
