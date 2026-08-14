@@ -19,6 +19,7 @@ This checklist is updated only when a step is actually verified.
 - [x] Add strict local-data verification script.
 - [x] Document expected 200-image, 520 x 696, 16-bit structure and official partition policy.
 - [x] Add a strict builder for the official metadata-defined train/validation/test manifest.
+- [x] Add a manual GitHub Actions workflow that can download, verify, split, and archive BBBC039 provenance artifacts in an internet-enabled runner.
 - [ ] Download the real BBBC039 archives in an environment with external data access.
 - [ ] Verify 200 images and 200 masks from the actual files.
 - [ ] Verify actual image dimensions and dtype from all images.
