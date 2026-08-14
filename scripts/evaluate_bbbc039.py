@@ -58,10 +58,14 @@ def aji_score(pred: np.ndarray, target: np.ndarray) -> float:
 def split_instances(logits: torch.Tensor) -> np.ndarray:
     classes = logits.argmax(dim=1).cpu().numpy()[0]
     foreground = classes != 0
-    # The explicit boundary class separates touching nuclei; connected components
-    # over foreground therefore produce the baseline instance prediction.
     instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
     return instances.astype(np.int32)
+
+
+def boundary_band(mask: np.ndarray) -> np.ndarray:
+    foreground = mask > 0
+    eroded = ndimage.binary_erosion(foreground, structure=np.ones((3, 3), dtype=np.uint8))
+    return foreground & ~eroded
 
 
 def main() -> None:
@@ -102,7 +106,7 @@ def main() -> None:
             "dice": dice_coefficient(pred > 0, target > 0),
             "iou": iou_score(pred > 0, target > 0),
             "aji": aji_score(pred, target),
-            "boundary_f1": boundary_f1(pred != ndimage.binary_erosion(pred > 0), target != ndimage.binary_erosion(target > 0)),
+            "boundary_f1": boundary_f1(boundary_band(pred), boundary_band(target)),
         })
 
     summary = {
