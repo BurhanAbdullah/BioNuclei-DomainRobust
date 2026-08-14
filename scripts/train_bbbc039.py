@@ -31,11 +31,13 @@ def pair_paths(root: Path, names: list[str]) -> tuple[list[Path], list[Path]]:
     images, masks = [], []
     for name in names:
         image = root / "images" / name
-        mask = root / "masks" / name
         if not image.exists():
             raise FileNotFoundError(image)
-        if not mask.exists():
-            raise FileNotFoundError(mask)
+        stem = Path(name).stem
+        candidates = [root / "masks" / f"{stem}.png", root / "masks" / f"{stem}.tif"]
+        mask = next((p for p in candidates if p.exists()), None)
+        if mask is None:
+            raise FileNotFoundError(f"No mask found for {name}: tried {candidates}")
         images.append(image)
         masks.append(mask)
     return images, masks
