@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from scripts.build_bbbc039_split import discover_partition_files, parse_partition_file
+from build_bbbc039_split import discover_partition_files, parse_partition_file
 
 EXPECTED_IMAGES = 200
 EXPECTED_SHAPE = (520, 696)
