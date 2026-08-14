@@ -4,6 +4,10 @@ on:
   push:
     paths:
       - '.github/workflows/bbbc039_data_validation.yml'
+      - 'scripts/download_bbbc039.py'
+      - 'scripts/verify_bbbc039.py'
+      - 'scripts/build_bbbc039_split.py'
+      - 'scripts/inspect_bbbc039_layout.py'
   workflow_dispatch:
     inputs:
       keep_archives:
@@ -34,16 +38,27 @@ jobs:
           else
             python scripts/download_bbbc039.py
           fi
+      - name: Inspect downloaded layout
+        run: |
+          python scripts/inspect_bbbc039_layout.py \
+            --data-root data/raw/BBBC039 \
+            --output data/raw/BBBC039/layout_report.json
       - name: Verify images, masks, metadata, and official split
         run: |
-          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039 --output data/raw/BBBC039/verification_report.json
-          python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata --output data/manifests/bbbc039_official_split.json
-      - name: Upload verification artifacts
+          python scripts/verify_bbbc039.py \
+            --data-root data/raw/BBBC039 \
+            --output data/raw/BBBC039/verification_report.json
+          python scripts/build_bbbc039_split.py \
+            --metadata-root data/raw/BBBC039/metadata \
+            --output data/manifests/bbbc039_official_split.json
+      - name: Upload verification and diagnostic artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bbbc039-verification
+          name: bbbc039-verification-${{ github.run_id }}
           path: |
             data/raw/BBBC039/download_manifest.json
+            data/raw/BBBC039/layout_report.json
             data/raw/BBBC039/verification_report.json
             data/manifests/bbbc039_official_split.json
-          if-no-files-found: error
+          if-no-files-found: warn
