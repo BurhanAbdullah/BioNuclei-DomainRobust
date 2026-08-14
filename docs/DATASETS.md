@@ -1,19 +1,33 @@
 # Dataset Registry
 
-## BBBC039
+## BBBC039v1
 
-**Role:** supervised source-domain benchmark.
+**Role:** supervised source-domain benchmark for nuclear instance segmentation.
 
-**Authoritative source:** Broad Bioimage Benchmark Collection.
+**Authoritative source:** Broad Bioimage Benchmark Collection (BBBC).
 
 Official page: https://bbbc.broadinstitute.org/BBBC039
 
+The current BBBC page identifies BBBC039 as version 1, with 200 fluorescence fields of view from the Hoechst DNA channel of U2OS cells. The published page specifies 520 x 696 pixels, 16-bit TIFF images, manually annotated nuclei, and separate image, mask, and metadata archives. It also provides the recommended train/validation/test partitions and asks users to preserve those partitions for comparability.
+
 Repository policy:
 
-- Record the exact downloaded release/version in `data/registry.json` when acquired.
+- Record the exact download date and archive SHA-256/MD5 values in the local acquisition manifest.
+- Download the official `images.zip`, `masks.zip`, and `metadata.zip` archives from the Broad data host.
 - Store raw data outside Git.
-- Preserve the original filenames and annotations.
+- Preserve original filenames and annotations.
+- Decode color-coded PNG instance masks into integer-labelled matrices without changing object identities.
 - Do not alter the official train/validation/test assignment.
+- Run `scripts/verify_bbbc039.py` before any training run.
+- Do not report the dataset as acquired until the verifier passes on the actual files.
+
+Expected dataset-level checks (to be verified from local files, not assumed):
+
+- 200 image fields
+- 520 x 696 pixels
+- 16-bit image data
+- 200 corresponding ground-truth masks
+- official split counts of 100/50/50 images
 
 ## S-BIAD634
 
