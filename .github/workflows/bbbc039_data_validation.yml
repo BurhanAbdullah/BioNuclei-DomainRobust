@@ -33,7 +33,7 @@ jobs:
           fi
       - name: Verify images, masks, metadata, and official split
         run: |
-          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039 --output data/raw/BBBC039/verification_report.json
           python scripts/build_bbbc039_split.py --data-root data/raw/BBBC039 --output data/manifests/bbbc039_split.csv
       - name: Upload verification artifacts
         uses: actions/upload-artifact@v4
