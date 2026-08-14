@@ -3,7 +3,8 @@
 
 This is intentionally diagnostic: it reports paths, suffix counts, duplicate
 basenames, and image dimensions without deciding that an unexpected layout is
-valid. It is used to resolve packaging/layout differences before training.
+valid. It excludes ZIP-generated macOS resource-fork metadata so the inventory
+reflects the scientific dataset rather than archive noise.
 """
 from __future__ import annotations
 
@@ -15,6 +16,10 @@ from pathlib import Path
 import tifffile
 
 
+def is_macos_metadata(path: Path) -> bool:
+    return "__MACOSX" in path.parts or path.name.startswith("._")
+
+
 def inventory(root: Path) -> dict:
     result: dict = {"root": str(root), "directories": {}, "tiff": {}}
     for name in ("images", "masks", "metadata"):
@@ -22,11 +27,13 @@ def inventory(root: Path) -> dict:
         if not directory.exists():
             result["directories"][name] = {"exists": False}
             continue
-        files = [p for p in directory.rglob("*") if p.is_file()]
+        all_files = [p for p in directory.rglob("*") if p.is_file()]
+        files = [p for p in all_files if not is_macos_metadata(p)]
         suffixes = Counter(p.suffix.lower() for p in files)
         result["directories"][name] = {
             "exists": True,
             "file_count": len(files),
+            "excluded_macos_metadata_files": len(all_files) - len(files),
             "suffix_counts": dict(sorted(suffixes.items())),
             "sample_paths": [str(p.relative_to(directory)) for p in files[:20]],
         }
@@ -41,7 +48,7 @@ def inventory(root: Path) -> dict:
                     arr = tifffile.imread(p)
                     shapes[str(tuple(arr.shape))] += 1
                     dtypes[str(arr.dtype)] += 1
-                except Exception as exc:  # diagnostic only; verifier remains strict
+                except Exception as exc:
                     shapes[f"READ_ERROR:{type(exc).__name__}"] += 1
             result["tiff"] = {
                 "file_count": len(tiffs),
