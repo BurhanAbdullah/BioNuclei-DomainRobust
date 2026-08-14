@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Download and extract BBBC039 from an authoritative or explicitly selected mirror.
+"""Download and extract BBBC039 from a user-selected source.
 
-The script never places raw data under version control. It records the source URL,
-archive hash, and extracted file inventory in a local manifest.
+The Broad Bioimage Benchmark Collection page is the authoritative dataset
+reference. A Zenodo copy is supported explicitly as a provenance-preserving
+mirror. Raw data are never committed to this repository.
 """
 from __future__ import annotations
 
@@ -14,12 +15,13 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-PRIMARY_URL = "https://data.broadinstitute.org/bbbc/BBBC039/BBBC039_v1.zip"
-MIRROR_URL = "https://zenodo.org/records/15370205/files/bbbc039.zip"
+OFFICIAL_PAGE = "https://bbbc.broadinstitute.org/BBBC039"
+ZENODO_URL = "https://zenodo.org/records/15370205/files/bbbc039.zip"
+ZENODO_MD5 = "5af00c79c54b7ece852f030e26bed536"
 
 
-def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    h = hashlib.sha256()
+def digest(path: Path, algorithm: str = "sha256", chunk_size: int = 1024 * 1024) -> str:
+    h = hashlib.new(algorithm)
     with path.open("rb") as f:
         while chunk := f.read(chunk_size):
             h.update(chunk)
@@ -39,8 +41,8 @@ def inventory(root: Path) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=Path("data/raw/BBBC039"))
-    parser.add_argument("--url", default=PRIMARY_URL)
-    parser.add_argument("--allow-mirror", action="store_true")
+    parser.add_argument("--url", required=True, help="Exact archive URL to download")
+    parser.add_argument("--expected-md5", default=None)
     parser.add_argument("--keep-archive", action="store_true")
     args = parser.parse_args()
 
@@ -48,40 +50,41 @@ def main() -> None:
     root.mkdir(parents=True, exist_ok=True)
     archive = root / "BBBC039.zip"
 
-    try:
-        print(f"Downloading: {args.url}")
-        download(args.url, archive)
-        source_url = args.url
-    except Exception as primary_error:
-        if not args.allow_mirror:
-            raise SystemExit(
-                "Primary BBBC039 download failed. Re-run with --allow-mirror only "
-                "after reviewing the mirror's provenance and license."
-            ) from primary_error
-        print(f"Primary source failed: {primary_error}")
-        print(f"Trying explicitly requested mirror: {MIRROR_URL}")
-        download(MIRROR_URL, archive)
-        source_url = MIRROR_URL
+    print(f"Authoritative dataset reference: {OFFICIAL_PAGE}")
+    print(f"Downloading: {args.url}")
+    download(args.url, archive)
 
-    archive_hash = sha256(archive)
+    sha256 = digest(archive, "sha256")
+    md5 = digest(archive, "md5")
+    if args.expected_md5 and md5.lower() != args.expected_md5.lower():
+        archive.unlink(missing_ok=True)
+        raise SystemExit(f"MD5 mismatch: expected {args.expected_md5}, got {md5}")
+
+    extracted = root / "extracted"
+    extracted.mkdir(exist_ok=True)
     with zipfile.ZipFile(archive) as zf:
         bad = zf.testzip()
         if bad is not None:
             raise SystemExit(f"Corrupt ZIP member: {bad}")
-        zf.extractall(root / "extracted")
+        zf.extractall(extracted)
 
+    files = inventory(extracted)
     manifest = {
         "dataset": "BBBC039",
-        "source_url": source_url,
-        "archive_sha256": archive_hash,
-        "files": inventory(root / "extracted"),
+        "authoritative_reference": OFFICIAL_PAGE,
+        "source_url": args.url,
+        "archive_sha256": sha256,
+        "archive_md5": md5,
+        "expected_md5": args.expected_md5,
+        "file_count": len(files),
+        "files": files,
     }
     (root / "download_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     if not args.keep_archive:
         archive.unlink()
 
-    print(f"Extracted {len(manifest['files'])} files.")
+    print(f"Extracted {len(files)} files.")
     print(f"Manifest: {root / 'download_manifest.json'}")
 
 
