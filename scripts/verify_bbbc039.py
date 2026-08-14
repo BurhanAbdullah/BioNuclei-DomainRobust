@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 
 import numpy as np
 import tifffile
+
+from scripts.build_bbbc039_split import discover_partition_files, parse_partition_file
 
 EXPECTED_IMAGES = 200
 EXPECTED_SHAPE = (520, 696)
@@ -30,50 +31,13 @@ def files_with_suffix(root: Path, suffixes: tuple[str, ...]) -> list[Path]:
     )
 
 
-def normalize_image_name(value: str) -> str | None:
-    value = value.strip().strip('"').strip("'")
-    if not value:
-        return None
-    token = Path(value).name
-    if token.lower().endswith((".tif", ".tiff")) and not token.startswith("._"):
-        return token
-    return None
-
-
-def partition_key(path: Path) -> str | None:
-    stem = re.sub(r"[^a-z0-9]+", "_", path.stem.lower()).strip("_")
-    if "validation" in stem:
-        return "validation"
-    if "training" in stem or stem == "train" or "_train_" in f"_{stem}_":
-        return "train"
-    if "test" in stem:
-        return "test"
-    return None
-
-
 def inspect_metadata(root: Path) -> dict[str, int]:
-    """Read the official partition files and count unique image names."""
-    seen: dict[str, set[str]] = {k: set() for k in EXPECTED_SPLITS}
-    partition_files: dict[str, Path] = {}
-    for path in files_with_suffix(root, (".txt", ".csv", ".tsv", ".json")):
-        key = partition_key(path)
-        if key and key not in partition_files:
-            partition_files[key] = path
-
-    missing = [k for k in EXPECTED_SPLITS if k not in partition_files]
-    if missing:
-        raise SystemExit(
-            "Official BBBC039 partition metadata not found for: " + ", ".join(missing)
-        )
-
-    for split, path in partition_files.items():
-        for line in path.read_text(errors="replace").splitlines():
-            name = normalize_image_name(line)
-            if name:
-                seen[split].add(name)
-
-    counts = {split: len(names) for split, names in seen.items()}
-    return counts
+    """Use the same parser as manifest generation to avoid split drift."""
+    files = discover_partition_files(root)
+    return {
+        partition: len(parse_partition_file(path, partition))
+        for partition, path in files.items()
+    }
 
 
 def main() -> None:
