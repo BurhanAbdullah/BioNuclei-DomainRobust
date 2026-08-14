@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'scripts/train_bbbc039.py'
       - 'scripts/evaluate_bbbc039.py'
+      - 'scripts/build_bbbc039_split.py'
       - 'configs/bbbc039_baseline.yaml'
       - 'pyproject.toml'
       - '.github/workflows/bbbc039_baseline.yml'
@@ -29,7 +30,9 @@ jobs:
       - name: Verify dataset and build official manifest
         run: |
           python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
-          python scripts/build_bbbc039_split.py --data-root data/raw/BBBC039 --output data/manifests/bbbc039_official_split.json
+          python scripts/build_bbbc039_split.py \
+            --metadata-root data/raw/BBBC039/metadata \
+            --output data/manifests/bbbc039_official_split.json
       - name: Train boundary-aware U-Net baseline
         run: |
           python scripts/train_bbbc039.py \
@@ -55,6 +58,7 @@ jobs:
             --output outputs/bbbc039_eval
       - name: Upload baseline artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: bbbc039-baseline-${{ github.run_id }}
           path: |
