@@ -1,0 +1,38 @@
+domains:
+  source:
+    name: BBBC039
+    accession: BBBC039
+    role: supervised_source_domain
+    split_level: source_image
+  target:
+    name: S-BIAD634
+    accession: S-BIAD634
+    role: zero_shot_and_few_shot_target_domain
+    split_level: biological_group
+
+protocol:
+  zero_shot:
+    train_on_source: true
+    adaptation_on_target: false
+  few_shot:
+    target_label_fractions: [0.01, 0.05, 0.10, 0.25]
+    selection_unit: biological_group
+  leakage_controls:
+    forbid_same_source_image_across_splits: true
+    forbid_same_biological_group_across_splits: true
+    record_split_manifest: true
+
+primary_question: >-
+  How much nuclear instance-segmentation performance is lost under domain shift,
+  and how effectively can domain-robust training recover performance with limited
+  target-domain annotation?
+
+reporting:
+  metrics:
+    - dice
+    - iou
+    - aji
+    - boundary_f1
+  include_confidence_intervals: true
+  paired_bootstrap: true
+  report_per_domain_group: true
