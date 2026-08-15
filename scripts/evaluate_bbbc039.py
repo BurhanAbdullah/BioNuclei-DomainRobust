@@ -73,12 +73,13 @@ def boundary_band(mask: np.ndarray) -> np.ndarray:
 
 
 def resolve_image_path(root: Path, image_name: str) -> Path:
+    """Resolve a metadata filename anywhere under the downloaded image archive."""
     exact = root / "images" / image_name
     if exact.exists():
         return exact
     stem = Path(image_name).stem
     candidates = sorted(
-        p for p in (root / "images").iterdir()
+        p for p in (root / "images").rglob("*")
         if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p.stem == stem
     )
     if len(candidates) == 1:
@@ -89,12 +90,17 @@ def resolve_image_path(root: Path, image_name: str) -> Path:
 
 
 def mask_path(root: Path, image_name: str) -> Path:
+    """Resolve a mask anywhere under the downloaded mask archive."""
     stem = Path(image_name).stem
-    for suffix in (".png", ".tif", ".tiff"):
-        candidate = root / "masks" / f"{stem}{suffix}"
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"No mask found for {image_name}")
+    candidates = sorted(
+        p for p in (root / "masks").rglob("*")
+        if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff") and p.stem == stem
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise FileNotFoundError(f"No mask found for {image_name}")
+    raise RuntimeError(f"Ambiguous masks found for {image_name}: {candidates}")
 
 
 def main() -> None:
