@@ -17,6 +17,8 @@ from bionuclei.losses import BoundaryAwareLoss
 from bionuclei.models import BoundaryUNet
 from bionuclei.targets import instance_to_boundary_target
 
+IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
+
 
 def seed_everything(seed: int) -> None:
     random.seed(seed)
@@ -27,12 +29,27 @@ def seed_everything(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def resolve_image_path(root: Path, name: str) -> Path:
+    """Resolve a metadata filename against the downloaded image archive."""
+    exact = root / "images" / name
+    if exact.exists():
+        return exact
+    stem = Path(name).stem
+    candidates = sorted(
+        p for p in (root / "images").iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p.stem == stem
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise FileNotFoundError(f"No downloaded image matches manifest entry {name}")
+    raise RuntimeError(f"Ambiguous downloaded image matches for {name}: {candidates}")
+
+
 def pair_paths(root: Path, names: list[str]) -> tuple[list[Path], list[Path]]:
     images, masks = [], []
     for name in names:
-        image = root / "images" / name
-        if not image.exists():
-            raise FileNotFoundError(image)
+        image = resolve_image_path(root, name)
         stem = Path(name).stem
         candidates = [root / "masks" / f"{stem}.png", root / "masks" / f"{stem}.tif"]
         mask = next((p for p in candidates if p.exists()), None)
@@ -69,6 +86,7 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("outputs/bbbc039_baseline"))
+    parser.add_argument("--epochs", type=int, default=None, help="Optional override for controlled pilot runs")
     args = parser.parse_args()
 
     cfg = yaml.safe_load(args.config.read_text())
@@ -110,11 +128,12 @@ def main() -> None:
 
     args.output.mkdir(parents=True, exist_ok=True)
     history = []
-    for epoch in range(1, int(cfg["training"]["epochs"]) + 1):
+    epochs = int(args.epochs if args.epochs is not None else cfg["training"]["epochs"])
+    for epoch in range(1, epochs + 1):
         loss = train_epoch(model, loader, loss_fn, optimizer, device)
         history.append({"epoch": epoch, "train_loss": loss})
         print(f"epoch={epoch:03d} train_loss={loss:.6f}")
-        torch.save({"model": model.state_dict(), "config": cfg, "seed": seed}, args.output / "last.pt")
+        torch.save({"model": model.state_dict(), "config": cfg, "seed": seed, "epochs_run": epoch}, args.output / "last.pt")
 
     (args.output / "train_history.json").write_text(json.dumps(history, indent=2) + "\n")
 
