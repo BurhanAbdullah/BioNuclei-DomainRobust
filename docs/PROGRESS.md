@@ -42,13 +42,16 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 - [x] Acquire and verify S-BIAD634 / S-BSST265 on a GitHub-hosted runner.
 - [x] Verify the target archive inventory contains 79 raw fluorescence TIFFs and 79 corresponding ground-truth TIFFs; provenance SHA-256: `8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1`.
+- [x] Add deterministic target-domain profiling tooling for image intensity, shape, dtype, annotation count and annotation-area distributions.
+- [ ] Execute and archive the target-domain profile.
 - [ ] Define biological-group-aware target-domain evaluation.
 - [ ] Run zero-shot BBBC039 → S-BIAD634 transfer.
 - [ ] Quantify domain-shift failure modes.
 
 ## Phase 4 — domain-robust method
 
-- [ ] Conduct focused 2023–2026 novelty audit after baseline failure modes are known.
+- [x] Conduct a provisional focused 2023–2026 novelty audit; see `docs/NOVELTY_AUDIT_2026-08-15.md`.
+- [ ] Finalize the novelty audit after baseline failure modes are known.
 - [ ] Define the proposed domain-robust method from observed failure modes.
 - [ ] Run controlled ablations.
 - [ ] Compare against strong published and conventional baselines.
@@ -74,8 +77,10 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current state
 
-Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts. The baseline workflow previously exposed and fixed metadata-to-archive filename-extension/path-resolution issues, and the hosted workflow now installs CPU-only PyTorch without allowing the editable package to reinstall CUDA builds.
+Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts.
 
 As of the latest verified inspection, baseline workflow run #9 has completed environment setup, official BBBC039 download, dataset verification, and manifest construction. The boundary-aware U-Net training step is actively running on the hosted runner. No baseline metric or scientific performance claim has been recorded yet.
 
-S-BIAD634 / S-BSST265 acquisition is also verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. This establishes the target-domain data inventory, but it is not yet a zero-shot segmentation result.
+S-BIAD634 / S-BSST265 acquisition is also verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. A new target-domain profiling workflow is queued to quantify image intensity, geometry, dtype, annotation counts and annotation-size distributions before any model transfer result is interpreted.
+
+The provisional 2026 literature audit concludes that generic domain adaptation/generalization, SAM-based nuclei generalization, and fluorescence-to-histopathology adaptation are already active research areas. The final method is therefore intentionally deferred until the actual BBBC039 → S-BIAD634 failure mode is measured.
