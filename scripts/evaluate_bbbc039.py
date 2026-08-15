@@ -16,6 +16,8 @@ from bionuclei.data import decode_instance_mask
 from bionuclei.metrics import boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
 
+IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
+
 
 def aji_score(pred: np.ndarray, target: np.ndarray) -> float:
     """Aggregated Jaccard Index for integer instance masks."""
@@ -70,6 +72,22 @@ def boundary_band(mask: np.ndarray) -> np.ndarray:
     return foreground & ~eroded
 
 
+def resolve_image_path(root: Path, image_name: str) -> Path:
+    exact = root / "images" / image_name
+    if exact.exists():
+        return exact
+    stem = Path(image_name).stem
+    candidates = sorted(
+        p for p in (root / "images").iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p.stem == stem
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise FileNotFoundError(f"No downloaded image matches manifest entry {image_name}")
+    raise RuntimeError(f"Ambiguous downloaded image matches for {image_name}: {candidates}")
+
+
 def mask_path(root: Path, image_name: str) -> Path:
     stem = Path(image_name).stem
     for suffix in (".png", ".tif", ".tiff"):
@@ -102,7 +120,7 @@ def main() -> None:
     names = manifest["partitions"][args.split]
     results = []
     for name in names:
-        image = np.asarray(tifffile.imread(args.data_root / "images" / name))
+        image = np.asarray(tifffile.imread(resolve_image_path(args.data_root, name)))
         target = decode_instance_mask(np.asarray(imread(mask_path(args.data_root, name))))
         if image.shape != target.shape:
             raise ValueError(f"Shape mismatch for {name}: {image.shape} vs {target.shape}")
