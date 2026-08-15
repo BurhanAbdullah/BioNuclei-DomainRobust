@@ -40,7 +40,8 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Phase 3 — cross-domain generalization
 
-- [ ] Acquire and verify S-BIAD634.
+- [x] Acquire and verify S-BIAD634 / S-BSST265 on a GitHub-hosted runner.
+- [x] Verify the target archive inventory contains 79 raw fluorescence TIFFs and 79 corresponding ground-truth TIFFs; provenance SHA-256: `8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1`.
 - [ ] Define biological-group-aware target-domain evaluation.
 - [ ] Run zero-shot BBBC039 → S-BIAD634 transfer.
 - [ ] Quantify domain-shift failure modes.
@@ -73,4 +74,6 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current state
 
-Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts. The first baseline attempt exposed a real metadata-to-archive filename-extension mismatch before training; this was fixed by resolving official manifest names by exact filename or unique stem. The evaluator was given the same resolution logic, and the hosted workflow was switched to CPU PyTorch wheels to avoid unnecessary CUDA dependency downloads. A new baseline run is now executing; no baseline metric is considered verified until it completes.
+Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts. The first baseline attempt exposed a real metadata-to-archive filename-extension mismatch before training; this was fixed by resolving official manifest names by exact filename or unique stem. The evaluator was given the same resolution logic, and the hosted workflow was changed to install CPU-only PyTorch without letting the editable package reinstall CUDA builds. The latest baseline workflow is queued for execution.
+
+S-BIAD634 / S-BSST265 acquisition is also verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. This establishes the target-domain data inventory, but it is not yet a zero-shot segmentation result.
