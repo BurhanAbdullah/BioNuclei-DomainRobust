@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Profile S-BIAD634 image/annotation properties for domain-shift analysis.
-
-This is descriptive only: it does not compare model predictions or tune on the
-BBBC039 test set. It records per-image acquisition statistics and annotation
-complexity so later zero-shot results can be interpreted against the target
--domain shift.
-"""
+"""Profile S-BIAD634 image/annotation properties for domain-shift analysis."""
 from __future__ import annotations
 
 import argparse
@@ -18,10 +12,17 @@ from skimage.measure import label, regionprops
 
 
 def index_files(root: Path, folder: str) -> dict[str, Path]:
-    base = root / "extracted" / "dataset" / folder
-    files = {}
-    for path in base.rglob("*.tif"):
-        files[path.stem] = path
+    """Find TIFFs recursively under any directory named ``folder``."""
+    files: dict[str, Path] = {}
+    for base in root.rglob(folder):
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}:
+                stem = path.stem
+                if stem in files and files[stem] != path:
+                    raise RuntimeError(f"Duplicate {folder} stem {stem}: {files[stem]} and {path}")
+                files[stem] = path
     return files
 
 
@@ -34,6 +35,8 @@ def stats(image: np.ndarray, mask: np.ndarray) -> dict[str, object]:
         mask = np.squeeze(mask)
     if image.ndim != 2 or mask.ndim != 2:
         raise ValueError(f"Expected 2D arrays, got image={image.shape}, mask={mask.shape}")
+    if image.shape != mask.shape:
+        raise ValueError(f"Image/mask shape mismatch: image={image.shape}, mask={mask.shape}")
     labels = label(mask > 0, connectivity=1)
     props = regionprops(labels)
     areas = np.asarray([p.area for p in props], dtype=np.float64)
@@ -66,12 +69,11 @@ def main() -> None:
     gt = index_files(args.data_root, "groundtruth")
     common = sorted(set(raw) & set(gt))
     if not common:
-        raise SystemExit("No raw/groundtruth TIFF pairs found")
+        raise SystemExit(f"No raw/groundtruth TIFF pairs found under {args.data_root}")
 
     records = []
     for stem in common:
-        record = {"stem": stem, **stats(tifffile.imread(raw[stem]), tifffile.imread(gt[stem]))}
-        records.append(record)
+        records.append({"stem": stem, **stats(tifffile.imread(raw[stem]), tifffile.imread(gt[stem]))})
 
     def summary(key: str) -> dict[str, float]:
         values = np.asarray([r[key] for r in records], dtype=np.float64)
@@ -89,18 +91,10 @@ def main() -> None:
         "dataset": "S-BIAD634 / S-BSST265",
         "raw_groundtruth_pairs": len(records),
         "per_image": records,
-        "summary": {
-            key: summary(key)
-            for key in [
-                "annotation_objects",
-                "annotation_foreground_fraction",
-                "annotation_area_median",
-                "mean",
-                "std",
-                "p01",
-                "p99",
-            ]
-        },
+        "summary": {key: summary(key) for key in [
+            "annotation_objects", "annotation_foreground_fraction", "annotation_area_median",
+            "mean", "std", "p01", "p99"
+        ]},
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
