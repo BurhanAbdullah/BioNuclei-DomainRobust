@@ -31,7 +31,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Phase 2 — source-domain baseline
 
-- [ ] Train boundary-aware U-Net on the official training split.
+- [ ] Train boundary-aware U-Net on the official training split. **Currently executing on GitHub Actions run #9; dataset verification has passed and the training step is active.**
 - [ ] Tune only on the official validation split.
 - [ ] Evaluate once on the held-out official test split.
 - [ ] Report Dice, IoU, AJI, and boundary F1 with confidence intervals.
@@ -74,6 +74,8 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current state
 
-Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts. The first baseline attempt exposed a real metadata-to-archive filename-extension mismatch before training; this was fixed by resolving official manifest names by exact filename or unique stem. The evaluator was given the same resolution logic, and the hosted workflow was changed to install CPU-only PyTorch without letting the editable package reinstall CUDA builds. The latest baseline workflow is queued for execution.
+Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts. The baseline workflow previously exposed and fixed metadata-to-archive filename-extension/path-resolution issues, and the hosted workflow now installs CPU-only PyTorch without allowing the editable package to reinstall CUDA builds.
+
+As of the latest verified inspection, baseline workflow run #9 has completed environment setup, official BBBC039 download, dataset verification, and manifest construction. The boundary-aware U-Net training step is actively running on the hosted runner. No baseline metric or scientific performance claim has been recorded yet.
 
 S-BIAD634 / S-BSST265 acquisition is also verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. This establishes the target-domain data inventory, but it is not yet a zero-shot segmentation result.
