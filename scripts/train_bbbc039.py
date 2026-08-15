@@ -30,13 +30,13 @@ def seed_everything(seed: int) -> None:
 
 
 def resolve_image_path(root: Path, name: str) -> Path:
-    """Resolve a metadata filename against the downloaded image archive."""
+    """Resolve a metadata filename anywhere under the downloaded image archive."""
     exact = root / "images" / name
     if exact.exists():
         return exact
     stem = Path(name).stem
     candidates = sorted(
-        p for p in (root / "images").iterdir()
+        p for p in (root / "images").rglob("*")
         if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p.stem == stem
     )
     if len(candidates) == 1:
@@ -46,17 +46,24 @@ def resolve_image_path(root: Path, name: str) -> Path:
     raise RuntimeError(f"Ambiguous downloaded image matches for {name}: {candidates}")
 
 
+def resolve_mask_path(root: Path, name: str) -> Path:
+    stem = Path(name).stem
+    candidates = sorted(
+        p for p in (root / "masks").rglob("*")
+        if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff") and p.stem == stem
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise FileNotFoundError(f"No downloaded mask matches manifest entry {name}")
+    raise RuntimeError(f"Ambiguous downloaded mask matches for {name}: {candidates}")
+
+
 def pair_paths(root: Path, names: list[str]) -> tuple[list[Path], list[Path]]:
     images, masks = [], []
     for name in names:
-        image = resolve_image_path(root, name)
-        stem = Path(name).stem
-        candidates = [root / "masks" / f"{stem}.png", root / "masks" / f"{stem}.tif"]
-        mask = next((p for p in candidates if p.exists()), None)
-        if mask is None:
-            raise FileNotFoundError(f"No mask found for {name}: tried {candidates}")
-        images.append(image)
-        masks.append(mask)
+        images.append(resolve_image_path(root, name))
+        masks.append(resolve_mask_path(root, name))
     return images, masks
 
 
