@@ -31,7 +31,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Phase 2 — source-domain baseline
 
-- [ ] Train boundary-aware U-Net on the official training split. **Currently executing on GitHub Actions run #9; dataset verification has passed and the training step is active.**
+- [ ] Train boundary-aware U-Net on the official training split. **Current GitHub Actions run #10 is active after CPU-decoding/reproducibility fixes; dataset verification and manifest construction must pass before training.**
 - [ ] Tune only on the official validation split.
 - [ ] Evaluate once on the held-out official test split.
 - [ ] Report Dice, IoU, AJI, and boundary F1 with confidence intervals.
@@ -43,7 +43,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Acquire and verify S-BIAD634 / S-BSST265 on a GitHub-hosted runner.
 - [x] Verify the target archive inventory contains 79 raw fluorescence TIFFs and 79 corresponding ground-truth TIFFs; provenance SHA-256: `8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1`.
 - [x] Add deterministic target-domain profiling tooling for image intensity, shape, dtype, annotation count and annotation-area distributions.
-- [ ] Execute and archive the target-domain profile.
+- [ ] Execute and archive the target-domain profile. **Previous run reached real data but failed on LZW-compressed TIFF decoding; the workflow now installs `imagecodecs` and uploads artifacts with `if: always()`.**
 - [ ] Define biological-group-aware target-domain evaluation.
 - [ ] Run zero-shot BBBC039 → S-BIAD634 transfer.
 - [ ] Quantify domain-shift failure modes.
@@ -79,8 +79,8 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts.
 
-As of the latest verified inspection, baseline workflow run #9 has completed environment setup, official BBBC039 download, dataset verification, and manifest construction. The boundary-aware U-Net training step is actively running on the hosted runner. No baseline metric or scientific performance claim has been recorded yet.
+The latest baseline workflow is run #10 from commit `babcdee683eab994eeeaf168f6d20bb34101a6e8`. It is currently in progress after adding `imagecodecs` for compressed-TIFF decoding and enforcing CPU-only PyTorch on the hosted runner. No baseline metric or scientific performance claim has been recorded yet.
 
-S-BIAD634 / S-BSST265 acquisition is also verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. A new target-domain profiling workflow is queued to quantify image intensity, geometry, dtype, annotation counts and annotation-size distributions before any model transfer result is interpreted.
+S-BIAD634 / S-BSST265 acquisition is verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. The previous profiling attempt reached all 79 pairs but failed because the TIFFs use LZW compression and `imagecodecs` was not installed. The workflow has now been corrected; the next run will verify the full target-domain profile before any model transfer result is interpreted.
 
 The provisional 2026 literature audit concludes that generic domain adaptation/generalization, SAM-based nuclei generalization, and fluorescence-to-histopathology adaptation are already active research areas. The final method is therefore intentionally deferred until the actual BBBC039 → S-BIAD634 failure mode is measured.
