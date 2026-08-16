@@ -20,7 +20,7 @@ jobs:
       - name: Install profiling dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy tifffile scikit-image
+          python -m pip install numpy tifffile scikit-image imagecodecs
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Profile target-domain image and annotation properties
@@ -29,6 +29,7 @@ jobs:
             --data-root data/raw/S-BIAD634 \
             --output outputs/s_biad634_domain_profile.json
       - name: Upload provenance and domain profile
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: s-biad634-profile-${{ github.run_id }}
