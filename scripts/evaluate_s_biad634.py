@@ -69,18 +69,41 @@ def discover(root: Path, keywords: tuple[str, ...], suffixes: tuple[str, ...]) -
 
 
 def pair_files(root: Path) -> list[tuple[Path, Path]]:
+    """Pair raw images with the corresponding GT masks.
+
+    The public S-BIAD634 archive contains additional files under the
+    groundtruth directory. Only files whose stem occurs in rawimages are
+    evaluation candidates; exactly one candidate must exist per image.
+    """
     images = discover(root, ("rawimages",), (".tif", ".tiff", ".png"))
     masks = discover(root, ("groundtruth",), (".tif", ".tiff", ".png"))
-    by_stem = {p.stem: p for p in masks}
-    pairs = []
+    if not images:
+        raise RuntimeError(f"No S-BIAD634 raw images found under {root}")
+
+    image_stems = {p.stem for p in images}
+    candidates: dict[str, list[Path]] = {}
+    for mask in masks:
+        if mask.stem in image_stems:
+            candidates.setdefault(mask.stem, []).append(mask)
+
+    pairs: list[tuple[Path, Path]] = []
+    missing: list[str] = []
+    ambiguous: list[str] = []
     for image in images:
-        mask = by_stem.get(image.stem)
-        if mask is not None:
-            pairs.append((image, mask))
-    if len(pairs) != len(images) or len(pairs) != len(masks):
-        raise RuntimeError(f"Could not pair all target files: images={len(images)}, masks={len(masks)}, pairs={len(pairs)}")
-    if not pairs:
-        raise RuntimeError(f"No S-BIAD634 image/mask pairs found under {root}")
+        matches = candidates.get(image.stem, [])
+        if len(matches) == 1:
+            pairs.append((image, matches[0]))
+        elif not matches:
+            missing.append(image.stem)
+        else:
+            ambiguous.append(image.stem)
+
+    if missing or ambiguous or len(pairs) != len(images):
+        raise RuntimeError(
+            "Could not deterministically pair S-BIAD634 files: "
+            f"images={len(images)}, all_groundtruth_files={len(masks)}, pairs={len(pairs)}, "
+            f"missing={missing[:10]}, ambiguous={ambiguous[:10]}"
+        )
     return pairs
 
 
@@ -110,7 +133,7 @@ def main() -> None:
         image = np.asarray(tifffile.imread(image_path))
         target = load_mask(mask_path)
         if image.shape != target.shape:
-            raise ValueError(f"Shape mismatch: {image_path.name}: {image.shape} vs {target.shape}")
+            raise ValueError(f"Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}")
         x = image.astype(np.float32)
         scale = np.percentile(x, 99.5)
         x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
