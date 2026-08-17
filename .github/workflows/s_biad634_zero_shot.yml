@@ -1,0 +1,71 @@
+name: S-BIAD634 zero-shot transfer
+
+on:
+  workflow_run:
+    workflows: ["BBBC039 baseline experiment"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      baseline_run_id:
+        description: 'Completed BBBC039 baseline workflow run ID'
+        required: true
+
+jobs:
+  zero-shot:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch and evaluation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy scikit-image tifffile imagecodecs pyyaml
+          python -m pip install -e . --no-deps
+      - name: Select baseline run
+        id: run
+        env:
+          MANUAL_RUN_ID: ${{ inputs.baseline_run_id }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          if [ -n "$MANUAL_RUN_ID" ]; then
+            echo "run_id=$MANUAL_RUN_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=$EVENT_RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download baseline artifact
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.run.outputs.run_id }}
+          pattern: bbbc039-baseline-*
+          merge-multiple: true
+          path: baseline_artifact
+      - name: Locate checkpoint
+        run: |
+          test -f baseline_artifact/outputs/bbbc039_baseline/last.pt
+          cp baseline_artifact/outputs/bbbc039_baseline/last.pt baseline_artifact/last.pt
+      - name: Download and inventory S-BIAD634
+        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Run zero-shot transfer evaluation
+        run: |
+          python scripts/evaluate_s_biad634.py \
+            --checkpoint baseline_artifact/last.pt \
+            --data-root data/raw/S-BIAD634 \
+            --output outputs/s_biad634_zero_shot
+      - name: Upload zero-shot results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s-biad634-zero-shot-${{ github.run_id }}
+          path: |
+            outputs/s_biad634_zero_shot/
+            data/raw/S-BIAD634/download_manifest.json
+          retention-days: 30
