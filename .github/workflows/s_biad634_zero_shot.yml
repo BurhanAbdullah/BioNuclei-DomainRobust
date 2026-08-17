@@ -1,6 +1,7 @@
 name: S-BIAD634 zero-shot transfer
 
 # Release-gate rerun: execute after evaluator/data-pairing fixes.
+# Latest evaluator supports nested extraction, exact pairing, RGB conversion, and tiled inference.
 
 on:
   push:
