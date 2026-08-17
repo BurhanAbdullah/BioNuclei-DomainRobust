@@ -98,21 +98,43 @@ def pair_files(root: Path) -> list[tuple[Path, Path]]:
     return pairs
 
 
-def load_mask(path: Path) -> np.ndarray:
-    return decode_instance_mask(np.asarray(imread(path)))
+def predict_semantic(model: torch.nn.Module, x: np.ndarray, tile_size: int = 512, overlap: int = 32) -> np.ndarray:
+    """Predict arbitrary-size images with bounded-memory tiled inference.
 
-
-def predict_semantic(model: torch.nn.Module, x: np.ndarray) -> np.ndarray:
-    """Predict arbitrary image sizes by padding to the U-Net stride and cropping back."""
+    Tiles are padded to the U-Net stride and overlapping logits are averaged,
+    avoiding a full-resolution activation tensor for large target images.
+    """
+    if tile_size <= 0 or overlap < 0 or overlap >= tile_size:
+        raise ValueError("tile_size must be positive and overlap must satisfy 0 <= overlap < tile_size")
     height, width = x.shape
-    pad_h = (-height) % 8
-    pad_w = (-width) % 8
-    if pad_h or pad_w:
-        x = np.pad(x, ((0, pad_h), (0, pad_w)), mode="reflect")
-    with torch.no_grad():
-        logits = model(torch.from_numpy(x[None, None]).float())
-    classes = logits.argmax(dim=1).cpu().numpy()[0]
-    return classes[:height, :width]
+    stride = tile_size - overlap
+    n_classes = 3
+    logits_sum = np.zeros((n_classes, height, width), dtype=np.float32)
+    weights = np.zeros((height, width), dtype=np.float32)
+
+    y_starts = list(range(0, max(height - tile_size, 0) + 1, stride))
+    x_starts = list(range(0, max(width - tile_size, 0) + 1, stride))
+    if not y_starts or y_starts[-1] + tile_size < height:
+        y_starts.append(max(height - tile_size, 0))
+    if not x_starts or x_starts[-1] + tile_size < width:
+        x_starts.append(max(width - tile_size, 0))
+
+    for y0 in y_starts:
+        for x0 in x_starts:
+            y1 = min(y0 + tile_size, height)
+            x1 = min(x0 + tile_size, width)
+            tile = x[y0:y1, x0:x1]
+            ph = (-tile.shape[0]) % 8
+            pw = (-tile.shape[1]) % 8
+            if ph or pw:
+                tile = np.pad(tile, ((0, ph), (0, pw)), mode="reflect")
+            with torch.inference_mode():
+                tile_logits = model(torch.from_numpy(tile[None, None]).float()).cpu().numpy()[0]
+            tile_logits = tile_logits[:, : y1 - y0, : x1 - x0]
+            logits_sum[:, y0:y1, x0:x1] += tile_logits
+            weights[y0:y1, x0:x1] += 1.0
+
+    return np.argmax(logits_sum / np.maximum(weights[None], 1.0), axis=0)
 
 
 def main() -> None:
@@ -120,6 +142,8 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("outputs/s_biad634_zero_shot"))
+    parser.add_argument("--tile-size", type=int, default=512)
+    parser.add_argument("--overlap", type=int, default=32)
     args = parser.parse_args()
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
@@ -137,11 +161,11 @@ def main() -> None:
         image = np.asarray(tifffile.imread(image_path))
         target = load_mask(mask_path)
         if image.shape != target.shape:
-            raise ValueError(f"Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}")
+            raise ValueError(f"Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {mask_path.name}")
         x = image.astype(np.float32)
         scale = np.percentile(x, 99.5)
         x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
-        classes = predict_semantic(model, x)
+        classes = predict_semantic(model, x, args.tile_size, args.overlap)
         pred, _ = ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))
         pred = pred.astype(np.int32)
         results.append({
@@ -164,10 +188,16 @@ def main() -> None:
         "median": {m: float(np.median([r[m] for r in results])) for m in metric_names},
         "per_image": results,
         "checkpoint_seed": checkpoint.get("seed"),
+        "tile_size": args.tile_size,
+        "overlap": args.overlap,
     }
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary["mean"], indent=2))
+
+
+def load_mask(path: Path) -> np.ndarray:
+    return decode_instance_mask(np.asarray(imread(path)))
 
 
 if __name__ == "__main__":
