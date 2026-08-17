@@ -13,11 +13,20 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/bbbc039_baseline.yml'
   workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Training epochs for the reproducible run'
+        required: false
+        default: '20'
+      seed:
+        description: 'Random seed'
+        required: false
+        default: '42'
 
 jobs:
   train-evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,12 +52,15 @@ jobs:
             --metadata-root data/raw/BBBC039/metadata \
             --output data/manifests/bbbc039_official_split.json
       - name: Train boundary-aware U-Net baseline
+        env:
+          EPOCHS: ${{ inputs.epochs || '20' }}
         run: |
           python scripts/train_bbbc039.py \
             --config configs/bbbc039_baseline.yaml \
             --manifest data/manifests/bbbc039_official_split.json \
             --data-root data/raw/BBBC039 \
-            --output outputs/bbbc039_baseline
+            --output outputs/bbbc039_baseline \
+            --epochs "$EPOCHS"
       - name: Evaluate held-out test set
         run: |
           python scripts/evaluate_bbbc039.py \
