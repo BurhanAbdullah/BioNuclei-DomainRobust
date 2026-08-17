@@ -69,23 +69,15 @@ def discover(root: Path, keywords: tuple[str, ...], suffixes: tuple[str, ...]) -
 
 
 def pair_files(root: Path) -> list[tuple[Path, Path]]:
-    """Pair raw images with the corresponding GT masks.
-
-    The public S-BIAD634 archive contains additional files under the
-    groundtruth directory. Only files whose stem occurs in rawimages are
-    evaluation candidates; exactly one candidate must exist per image.
-    """
     images = discover(root, ("rawimages",), (".tif", ".tiff", ".png"))
     masks = discover(root, ("groundtruth",), (".tif", ".tiff", ".png"))
     if not images:
         raise RuntimeError(f"No S-BIAD634 raw images found under {root}")
-
     image_stems = {p.stem for p in images}
     candidates: dict[str, list[Path]] = {}
     for mask in masks:
         if mask.stem in image_stems:
             candidates.setdefault(mask.stem, []).append(mask)
-
     pairs: list[tuple[Path, Path]] = []
     missing: list[str] = []
     ambiguous: list[str] = []
@@ -97,7 +89,6 @@ def pair_files(root: Path) -> list[tuple[Path, Path]]:
             missing.append(image.stem)
         else:
             ambiguous.append(image.stem)
-
     if missing or ambiguous or len(pairs) != len(images):
         raise RuntimeError(
             "Could not deterministically pair S-BIAD634 files: "
@@ -109,6 +100,19 @@ def pair_files(root: Path) -> list[tuple[Path, Path]]:
 
 def load_mask(path: Path) -> np.ndarray:
     return decode_instance_mask(np.asarray(imread(path)))
+
+
+def predict_semantic(model: torch.nn.Module, x: np.ndarray) -> np.ndarray:
+    """Predict arbitrary image sizes by padding to the U-Net stride and cropping back."""
+    height, width = x.shape
+    pad_h = (-height) % 8
+    pad_w = (-width) % 8
+    if pad_h or pad_w:
+        x = np.pad(x, ((0, pad_h), (0, pad_w)), mode="reflect")
+    with torch.no_grad():
+        logits = model(torch.from_numpy(x[None, None]).float())
+    classes = logits.argmax(dim=1).cpu().numpy()[0]
+    return classes[:height, :width]
 
 
 def main() -> None:
@@ -137,9 +141,7 @@ def main() -> None:
         x = image.astype(np.float32)
         scale = np.percentile(x, 99.5)
         x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
-        with torch.no_grad():
-            logits = model(torch.from_numpy(x[None, None]).float())
-        classes = logits.argmax(dim=1).cpu().numpy()[0]
+        classes = predict_semantic(model, x)
         pred, _ = ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))
         pred = pred.astype(np.int32)
         results.append({
