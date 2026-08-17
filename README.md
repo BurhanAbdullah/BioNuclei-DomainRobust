@@ -8,7 +8,7 @@ This repository develops and evaluates deep-learning methods for **nuclear insta
 
 The first study asks whether a nuclear segmentation model trained on a controlled fluorescence benchmark can generalize to heterogeneous human bioimaging data with changes in tissue preparation, magnification, signal-to-noise ratio, and biological context.
 
-The initial experimental sequence is:
+The experimental sequence is:
 
 ```text
 BBBC039
@@ -21,7 +21,9 @@ Zero-shot transfer to S-BIAD634
   ↓
 Quantify domain shift
   ↓
-Domain-robust training / adaptation
+Evidence-driven domain-robust method
+  ↓
+Ablations + strong baselines
   ↓
 Few-shot adaptation
   ↓
@@ -35,7 +37,7 @@ The repository does **not** redistribute third-party datasets. It stores dataset
 Initial datasets:
 
 - **BBBC039** — Broad Bioimage Benchmark Collection nuclear fluorescence benchmark.
-- **S-BIAD634** — BioImage Archive human fluorescence nuclear dataset used for cross-domain evaluation.
+- **S-BIAD634 / S-BSST265** — BioImage Archive human fluorescence nuclear dataset used for cross-domain evaluation.
 
 Later-stage validation may include **ORION-CRC / HTAN** after the core domain-generalization experiments are established.
 
@@ -48,12 +50,22 @@ Later-stage validation may include **ORION-CRC / HTAN** after the core domain-ge
 - Dataset versions/accessions and preprocessing choices are recorded.
 - Baselines are retained and compared before claiming improvement.
 - Novelty claims are treated as hypotheses until supported by literature review.
+- Confidence intervals resample at the image level rather than treating pixels as independent biological observations.
 
-### Project status
+### Current verified status
 
-**Phase 0 — repository and reproducibility scaffold.**
+- **BBBC039 source-domain verification: complete.** 200 images and 200 masks were verified from the official archives; images are 520 × 696 uint16; the official metadata split is 100/50/50 with no overlap.
+- **S-BIAD634 acquisition/inventory: complete.** 79 raw fluorescence images and 79 ground-truth images are verified from the public release.
+- **Baseline scientific result: not yet complete.** Historical CPU run #10 was cancelled before producing a verified result. The current baseline workflow is configurable (20-epoch default) and automatically archives checkpoint, metrics, manifest, provenance, and image-level bootstrap intervals when successful.
+- **Zero-shot workflow: implemented but awaits a completed baseline checkpoint.**
+- **Novel method: intentionally not frozen yet.** It will be designed from measured domain-shift failure modes rather than an arbitrary architecture change.
 
-The next phase is real-data validation of the existing boundary-aware segmentation baseline, followed by rigorous cross-domain experiments.
+### Research documents
+
+- [`docs/PROGRESS.md`](docs/PROGRESS.md) — evidence-backed project ledger.
+- [`docs/EXPERIMENT_MATRIX.md`](docs/EXPERIMENT_MATRIX.md) — pre-specified experiment sequence and statistical rules.
+- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — final paper/release gate.
+- [`docs/NOVELTY_AUDIT_2026-08-15.md`](docs/NOVELTY_AUDIT_2026-08-15.md) — provisional literature/novelty audit.
 
 ### Research structure
 
