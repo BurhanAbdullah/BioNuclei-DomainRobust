@@ -1,5 +1,7 @@
 name: S-BIAD634 zero-shot transfer
 
+# Release-gate rerun: execute after evaluator/data-pairing fixes.
+
 on:
   push:
     paths:
