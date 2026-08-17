@@ -99,11 +99,7 @@ def pair_files(root: Path) -> list[tuple[Path, Path]]:
 
 
 def predict_semantic(model: torch.nn.Module, x: np.ndarray, tile_size: int = 512, overlap: int = 32) -> np.ndarray:
-    """Predict arbitrary-size images with bounded-memory tiled inference.
-
-    Tiles are padded to the U-Net stride and overlapping logits are averaged,
-    avoiding a full-resolution activation tensor for large target images.
-    """
+    """Predict arbitrary-size images with bounded-memory tiled inference."""
     if tile_size <= 0 or overlap < 0 or overlap >= tile_size:
         raise ValueError("tile_size must be positive and overlap must satisfy 0 <= overlap < tile_size")
     height, width = x.shape
@@ -137,6 +133,10 @@ def predict_semantic(model: torch.nn.Module, x: np.ndarray, tile_size: int = 512
     return np.argmax(logits_sum / np.maximum(weights[None], 1.0), axis=0)
 
 
+def load_mask(path: Path) -> np.ndarray:
+    return decode_instance_mask(np.asarray(imread(path)))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -161,7 +161,7 @@ def main() -> None:
         image = np.asarray(tifffile.imread(image_path))
         target = load_mask(mask_path)
         if image.shape != target.shape:
-            raise ValueError(f"Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {mask_path.name}")
+            raise ValueError(f"Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}")
         x = image.astype(np.float32)
         scale = np.percentile(x, 99.5)
         x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
@@ -194,10 +194,6 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary["mean"], indent=2))
-
-
-def load_mask(path: Path) -> np.ndarray:
-    return decode_instance_mask(np.asarray(imread(path)))
 
 
 if __name__ == "__main__":
