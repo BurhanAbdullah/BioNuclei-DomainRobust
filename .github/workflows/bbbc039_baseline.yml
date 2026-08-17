@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'scripts/train_bbbc039.py'
       - 'scripts/evaluate_bbbc039.py'
+      - 'scripts/bootstrap_metrics.py'
       - 'scripts/build_bbbc039_split.py'
       - 'scripts/download_bbbc039.py'
       - 'scripts/verify_bbbc039.py'
@@ -77,6 +78,13 @@ jobs:
             --data-root data/raw/BBBC039 \
             --split validation \
             --output outputs/bbbc039_eval
+      - name: Compute image-level test confidence intervals
+        run: |
+          python scripts/bootstrap_metrics.py \
+            --metrics outputs/bbbc039_eval/test_metrics.json \
+            --output outputs/bbbc039_eval/test_bootstrap_ci.json \
+            --iterations 2000 \
+            --seed 42
       - name: Upload baseline artifacts
         uses: actions/upload-artifact@v4
         if: always()
