@@ -62,8 +62,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ steps.run.outputs.run_id }}
-          pattern: bbbc039-baseline-*
-          merge-multiple: true
+          name: bbbc039-baseline-${{ steps.run.outputs.run_id }}
           path: baseline_artifact
       - name: Locate checkpoint
         run: |
