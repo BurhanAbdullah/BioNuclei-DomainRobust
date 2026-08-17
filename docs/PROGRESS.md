@@ -53,7 +53,11 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Add LZW TIFF decoding dependency and unconditional diagnostic artifact upload.
 - [ ] Execute and archive the target-domain profile.
 - [ ] Define biological-group-aware target-domain evaluation.
-- [ ] Run zero-shot BBBC039 → S-BIAD634 transfer. Automated workflow run `32000250848` is currently in progress.
+- [ ] Run zero-shot BBBC039 → S-BIAD634 transfer. Previous automated run `32000250848` reached evaluation but failed because the evaluator required all 230 ground-truth TIFFs in the archive to pair, while only 79 are image-corresponding target masks.
+- [x] Diagnose the zero-shot pairing failure.
+- [x] Fix target pairing to require exactly one matching ground truth per raw image and ignore unrelated GT files.
+- [x] Add regression tests for unrelated extra GT files and duplicate matching GT files.
+- [ ] Rerun zero-shot transfer after the pairing fix.
 - [ ] Quantify domain-shift failure modes.
 
 ## Phase 4 — domain-robust method
@@ -87,8 +91,8 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts.
 
-Phase 2 now has a verified completed real-data baseline execution. GitHub Actions run `31995038694` completed all steps successfully: dependency setup, official BBBC039 acquisition/verification, boundary-aware U-Net training, held-out test evaluation, validation evaluation, and artifact upload. The baseline artifact is retained. Numerical metrics have deliberately not been copied into this ledger until they are independently extracted and audited from the artifact.
+Phase 2 has a verified completed real-data baseline execution. GitHub Actions run `31995038694` completed all steps successfully: dependency setup, official BBBC039 acquisition/verification, boundary-aware U-Net training, held-out test evaluation, validation evaluation, and artifact upload. The baseline artifact is retained. Numerical metrics remain deliberately unreported until they are independently extracted and audited from the artifact.
 
-S-BIAD634 / S-BSST265 acquisition is verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 ground-truth TIFFs from the CC0 release. The automated zero-shot transfer workflow is currently running from the successful BBBC039 baseline artifact. The next steps are target-domain profiling, zero-shot evaluation, and evidence-based domain-shift analysis.
+S-BIAD634 / S-BSST265 acquisition is verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 image-corresponding ground-truth TIFFs from the CC0 release. The first zero-shot run (`32000250848`) completed download, checkpoint retrieval, and target acquisition but failed in the evaluation pairing guard because the archive contains 230 GT TIFFs overall and the evaluator incorrectly required every GT file to have a corresponding raw image. This was an evaluation-code defect, not a dataset or model result. The evaluator has now been corrected to pair only the 79 raw images with exactly one matching GT and to reject true duplicate ambiguities; regression tests were added and CI run `32006740109` passed. The zero-shot workflow has also been made automatically rerunnable on evaluation-code changes and can select the latest successful baseline when no run ID is supplied.
 
-The provisional 2026 literature audit concludes that generic domain adaptation/generalization, SAM-based nuclei generalization, and fluorescence-to-histopathology adaptation are already active research areas. The final method is therefore intentionally deferred until the actual BBBC039 → S-BIAD634 failure mode is measured.
+Target-domain profiling remains pending execution on the current code. Domain-shift conclusions and the proposed method are intentionally deferred until the baseline metrics and valid zero-shot results are available.
