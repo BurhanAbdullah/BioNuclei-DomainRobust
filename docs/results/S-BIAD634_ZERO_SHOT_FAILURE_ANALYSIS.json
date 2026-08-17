@@ -1,0 +1,30 @@
+{
+  "experiment": "zero_shot_bbbc039_to_s_biad634",
+  "source_artifact": "s-biad634-zero-shot-32053493133",
+  "n_images": 79,
+  "mean_dice": 0.3185895048560361,
+  "median_dice": 0.18226675661134126,
+  "dice_quantiles": {
+    "p10": 0.037583970032689505,
+    "p25": 0.06870279388138231,
+    "p50": 0.18226675661134126,
+    "p75": 0.38602833232268363,
+    "p90": 0.8649935598439955
+  },
+  "pred_to_target_instance_ratio": {
+    "mean": 4.712443843378997,
+    "median": 3.2982456140350878,
+    "p90": 6.350793650793651
+  },
+  "correlation_with_dice": {
+    "pred_to_target_instance_ratio": 0.09183257034343281,
+    "height": -0.34746749273354305,
+    "width": -0.556734058383065
+  },
+  "interpretation": [
+    "The verified zero-shot model has strong heterogeneity across target-domain images: median Dice is 0.1823 while the 90th percentile is 0.8650.",
+    "Predicted-to-target instance count is substantially above 1 on average, indicating frequent instance fragmentation/over-segmentation, but its simple correlation with Dice is weak in this sample.",
+    "Image width and height show negative descriptive correlations with Dice, suggesting image-size/content interaction is worth testing in controlled analysis.",
+    "These are descriptive observations from the fixed zero-shot run; they do not establish causality and were not used to tune the checkpoint."
+  ]
+}
