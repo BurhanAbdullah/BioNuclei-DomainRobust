@@ -1,14 +1,12 @@
 # BioNuclei-DomainRobust
 
-## Research project
+## Domain-Robust Nuclear Instance Segmentation for Fluorescence Bioimaging
 
-**Domain-Robust Nuclear Instance Segmentation for Fluorescence Bioimaging**
+**BioNuclei-DomainRobust** is a reproducible biomedical-AI research project studying whether nuclear instance segmentation learned from one fluorescence-imaging domain can transfer reliably to heterogeneous human fluorescence bioimaging.
 
-BioNuclei-DomainRobust is a reproducible research project studying how deep-learning nuclear instance segmentation models behave when fluorescence microscopy data change across acquisition and biological domains.
+### Research question
 
-### Core question
-
-> Can a model trained on a controlled fluorescence benchmark generalize to heterogeneous human fluorescence bioimaging without relying on uncontrolled annotation leakage or an arbitrary architecture change?
+> Can a nuclear segmentation model trained on a controlled fluorescence benchmark generalize to heterogeneous human fluorescence bioimaging without uncontrolled annotation leakage or an arbitrary architecture change?
 
 ### Study design
 
@@ -25,7 +23,7 @@ Held-out source-domain evaluation
 Zero-shot transfer to S-BIAD634 / S-BSST265
    |
    v
-Domain-shift and failure-mode analysis
+Domain-shift + failure-mode analysis
    |
    v
 Evidence-driven robustness method
@@ -36,39 +34,42 @@ Evidence-driven robustness method
    +--> Independent external validation
 ```
 
-### Why this matters
+### Datasets
 
-Fluorescence microscopy varies across instruments, staining and preparation protocols, magnification, signal-to-noise ratio, tissue context, and biological state. A segmentation model that performs well on one benchmark can therefore fail when moved to a different imaging domain. This project treats that transfer problem as the central scientific evaluation rather than assuming that higher in-domain accuracy implies generalization.
-
-### Data
-
-The repository does **not** redistribute third-party datasets. Dataset download instructions, manifests, integrity checks, preprocessing code, and experiment configuration are provided so that data can be obtained from authoritative sources under their applicable terms.
+The repository does **not** redistribute third-party datasets. It provides acquisition instructions, integrity checks, manifests, preprocessing code, configurations, tests, and GitHub Actions workflows so that datasets can be obtained from authoritative providers under their applicable terms.
 
 - **BBBC039** — controlled fluorescence nuclear benchmark from the Broad Bioimage Benchmark Collection.
-- **S-BIAD634 / S-BSST265** — heterogeneous human fluorescence nuclear imaging dataset used for cross-domain evaluation.
-- **ORION-CRC / HTAN** — reserved as a later multimodal cancer-tissue validation direction rather than being used to manufacture an early novelty claim.
+- **S-BIAD634 / S-BSST265** — heterogeneous human fluorescence nuclear-imaging dataset used for cross-domain evaluation.
+- **ORION-CRC / HTAN** — reserved for later multimodal cancer-tissue validation after the core domain-generalization study is established.
 
 ### Reproducibility commitments
 
-- Dataset provenance and accessions are recorded.
 - Official source-domain partitions are preserved.
 - Image/sample/patient-level leakage is explicitly controlled.
+- Dataset provenance and accessions are recorded.
 - Raw third-party data remain outside Git history.
 - Every reported metric must come from a versioned experiment artifact.
-- Image-level statistical resampling is preferred over treating individual pixels as independent biological observations.
-- Baselines are retained and compared before claiming improvement.
-- Novelty is treated as a hypothesis until supported by a focused literature audit.
+- Statistical resampling is performed at the image/biological-unit level where appropriate.
+- Baselines are retained before claiming improvement.
+- Failed experiments and engineering blockers are recorded instead of silently removed.
+- Novelty claims remain hypotheses until supported by a focused literature audit.
 
-### Repository
-
-The complete code, experiments, documentation, workflows, and research ledger are publicly available here:
+### Public repository
 
 **https://github.com/BurhanAbdullah/BioNuclei-DomainRobust**
 
-### Project status
+### Research documentation
 
-The repository is under active experimental development. Verified infrastructure and dataset acquisition are separated from scientific claims. Experimental results are only promoted to the project record after the corresponding workflow artifacts have been independently checked.
+- [`README.md`](../README.md) — project overview and quick orientation.
+- [`docs/PROGRESS.md`](PROGRESS.md) — evidence-backed project ledger.
+- [`docs/EXPERIMENT_MATRIX.md`](EXPERIMENT_MATRIX.md) — pre-specified experiments and statistical rules.
+- [`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — final paper/release gate.
+- [`docs/NOVELTY_AUDIT_2026-08-15.md`](NOVELTY_AUDIT_2026-08-15.md) — provisional literature/novelty audit.
 
-### Contact / citation
+### Status policy
 
-For reuse, cite the repository version/commit used for an experiment and cite the original dataset publications and repositories separately. Dataset ownership and licensing remain with the original data providers.
+Verified software/data infrastructure is separated from scientific claims. A metric, experiment, or scientific conclusion is promoted to the project record only after the corresponding workflow artifact has been checked and its provenance is recorded.
+
+### License
+
+Code in this repository is released under the MIT License. Third-party datasets retain their original licenses and access conditions.
