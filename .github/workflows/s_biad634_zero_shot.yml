@@ -2,6 +2,7 @@ name: S-BIAD634 zero-shot transfer
 
 # Release-gate rerun: execute after evaluator/data-pairing fixes.
 # Records exact repository/checkpoint provenance and requires a complete 79-image artifact.
+# Manual release-gate trigger requested 2026-08-18 after P/R/F1 integration.
 
 on:
   push:
