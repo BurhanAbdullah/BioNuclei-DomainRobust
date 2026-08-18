@@ -28,6 +28,18 @@ jobs:
           python scripts/profile_s_biad634.py \
             --data-root data/raw/S-BIAD634 \
             --output outputs/s_biad634_domain_profile.json
+      - name: Require complete target-domain profile
+        run: |
+          test -s outputs/s_biad634_domain_profile.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path('outputs/s_biad634_domain_profile.json').read_text())
+          n = d.get('n_images', d.get('n_pairs', d.get('n_samples')))
+          assert n == 79, f'Expected 79 target images/pairs, got {n!r}'
+          assert d.get('images'), 'Profile is missing per-image image properties'
+          print(f'Verified complete 79-image target-domain profile: {len(d["images"])} records.')
+          PY
       - name: Upload provenance and domain profile
         if: always()
         uses: actions/upload-artifact@v4
