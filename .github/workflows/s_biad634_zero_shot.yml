@@ -91,7 +91,7 @@ jobs:
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Run zero-shot transfer evaluation
         run: |
-          python scripts/evaluate_s_biad634.py \
+          PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
             --checkpoint baseline_artifact/last.pt \
             --data-root data/raw/S-BIAD634 \
             --output outputs/s_biad634_zero_shot
