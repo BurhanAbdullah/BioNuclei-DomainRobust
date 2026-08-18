@@ -53,17 +53,20 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Add LZW TIFF decoding dependency and unconditional diagnostic artifact upload.
 - [ ] Execute and archive the target-domain profile.
 - [ ] Define biological-group-aware target-domain evaluation.
-- [ ] Run zero-shot BBBC039 → S-BIAD634 transfer. Previous automated run `32000250848` reached evaluation but failed because the evaluator required all 230 ground-truth TIFFs in the archive to pair, while only 79 are image-corresponding target masks.
-- [x] Diagnose the zero-shot pairing failure.
+- [ ] Run zero-shot BBBC039 → S-BIAD634 transfer on the current evaluator commit.
+- [x] Diagnose the historical zero-shot pairing failure.
 - [x] Fix target pairing to require exactly one matching ground truth per raw image and ignore unrelated GT files.
 - [x] Add regression tests for unrelated extra GT files and duplicate matching GT files.
-- [ ] Rerun zero-shot transfer after the pairing fix.
+- [x] Add stride-compatible padding and bounded-memory tiled inference for target-domain images.
+- [x] Add deterministic RGB/RGBA-to-grayscale conversion for target-domain inputs.
+- [x] Change the workflow to select the exact verified baseline artifact rather than a wildcard artifact pattern.
+- [ ] Archive and independently verify the current-code zero-shot metrics.
 - [ ] Quantify domain-shift failure modes.
 
 ## Phase 4 — domain-robust method
 
 - [x] Conduct a provisional focused 2023–2026 novelty audit; see `docs/NOVELTY_AUDIT_2026-08-15.md`.
-- [ ] Finalize the novelty audit after baseline failure modes are known.
+- [ ] Finalize the novelty audit after current baseline/zero-shot failure modes are known.
 - [ ] Define the proposed domain-robust method from observed failure modes.
 - [ ] Run controlled ablations.
 - [ ] Compare against strong published and conventional baselines.
@@ -87,12 +90,12 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [ ] Release code, manifests, configurations, and reproducibility instructions.
 - [ ] Prepare manuscript only after the evidence supports the claims.
 
-## Current state — 2026-08-17
+## Current state — 2026-08-18
 
 Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts.
 
 Phase 2 has a verified completed real-data baseline execution. GitHub Actions run `31995038694` completed all steps successfully: dependency setup, official BBBC039 acquisition/verification, boundary-aware U-Net training, held-out test evaluation, validation evaluation, and artifact upload. The baseline artifact is retained. Numerical metrics remain deliberately unreported until they are independently extracted and audited from the artifact.
 
-S-BIAD634 / S-BSST265 acquisition is verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 image-corresponding ground-truth TIFFs from the CC0 release. The first zero-shot run (`32000250848`) completed download, checkpoint retrieval, and target acquisition but failed in the evaluation pairing guard because the archive contains 230 GT TIFFs overall and the evaluator incorrectly required every GT file to have a corresponding raw image. This was an evaluation-code defect, not a dataset or model result. The evaluator has now been corrected to pair only the 79 raw images with exactly one matching GT and to reject true duplicate ambiguities; regression tests were added and CI run `32006740109` passed. The zero-shot workflow has also been made automatically rerunnable on evaluation-code changes and can select the latest successful baseline when no run ID is supplied.
+S-BIAD634 / S-BSST265 acquisition is verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 image-corresponding ground-truth TIFFs from the CC0 release. The zero-shot evaluator has received multiple engineering fixes: exact raw/GT directory discovery, deterministic pairing, RGB/RGBA-to-grayscale conversion, stride-compatible padding, bounded-memory tiling, and exact baseline-artifact selection. The current-code zero-shot result is not promoted to the research record until a corresponding current-code workflow artifact containing `metrics.json` has been independently verified.
 
-Target-domain profiling remains pending execution on the current code. Domain-shift conclusions and the proposed method are intentionally deferred until the baseline metrics and valid zero-shot results are available.
+Target-domain profiling, current-code zero-shot verification, domain-shift analysis, robustness-method development, ablations, few-shot adaptation, external validation, and final release work remain open. The provisional novelty audit remains intentionally non-committal until the empirical failure modes are established.
