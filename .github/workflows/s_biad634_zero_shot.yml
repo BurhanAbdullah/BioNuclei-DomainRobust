@@ -1,13 +1,13 @@
 name: S-BIAD634 zero-shot transfer
 
 # Release-gate rerun: execute after evaluator/data-pairing fixes.
-# Current evaluator supports nested extraction, exact pairing, RGB conversion, and tiled inference.
-# The workflow also records the exact repository/checkpoint provenance used by the evaluation.
+# Records exact repository/checkpoint provenance and requires a complete 79-image artifact.
 
 on:
   push:
     paths:
       - 'scripts/evaluate_s_biad634.py'
+      - 'scripts/metrics_instance.py'
       - 'scripts/download_s_biad634.py'
       - '.github/workflows/s_biad634_zero_shot.yml'
   workflow_run:
@@ -104,9 +104,10 @@ jobs:
           d = json.loads(p.read_text())
           assert d.get('n_images') == 79, d.get('n_images')
           assert len(d.get('per_image', [])) == 79
-          for key in ('dice', 'iou', 'aji', 'boundary_f1'):
-              assert key in d.get('mean', {}) and key in d.get('median', {})
-          print('Verified 79-image zero-shot metrics artifact.')
+          for key in ('dice', 'iou', 'precision', 'recall', 'f1_score', 'aji', 'boundary_f1'):
+              assert key in d.get('mean', {}) and key in d.get('median', {}), key
+          assert d.get('instance_iou_threshold') == 0.5
+          print('Verified 79-image zero-shot metrics artifact including instance precision/recall/F1.')
           PY
       - name: Upload zero-shot results
         if: always()
