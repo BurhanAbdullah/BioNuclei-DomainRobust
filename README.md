@@ -28,9 +28,15 @@ Few-shot adaptation
 Independent external validation
 ```
 
-### Why this project matters
+## Why this project matters
 
 Fluorescence microscopy can vary substantially across instruments, staining and preparation protocols, magnification, signal-to-noise ratio, tissue context, and biological state. Strong performance on a single benchmark therefore does not establish generalization. This project makes **cross-domain transfer** the central evaluation problem and designs the eventual robustness method from measured failure modes rather than from an arbitrary architecture change.
+
+## Public project page
+
+**[BioNuclei-DomainRobust — public status page](docs/index.md)**
+
+**[Research About page](docs/ABOUT.md)**
 
 ## Datasets
 
@@ -40,7 +46,7 @@ The repository **does not redistribute third-party datasets**. It stores acquisi
 - **S-BIAD634 / S-BSST265** — heterogeneous human fluorescence nuclear imaging dataset used for cross-domain evaluation.
 - **ORION-CRC / HTAN** — reserved as a later multimodal cancer-tissue validation direction.
 
-## Reproducibility commitments
+## Reproducibility and validation
 
 - Official source-domain partitions are preserved.
 - Image/sample/patient-level leakage is explicitly controlled.
@@ -52,15 +58,18 @@ The repository **does not redistribute third-party datasets**. It stores acquisi
 - Novelty claims are treated as hypotheses until supported by a focused literature audit.
 - Failed experiments and engineering blockers are recorded rather than silently removed.
 
-## Public research page
+See **[Validation and Cross-Check Record](docs/VALIDATION.md)** for the current software/reproducibility checks and the remaining scientific validation gates.
 
-A concise public description of the project, scientific motivation, datasets, and reproducibility policy is available at:
+## Current status
 
-**[BioNuclei-DomainRobust — About](docs/ABOUT.md)**
+The project is under active experimental development. Verified software/data infrastructure is deliberately separated from scientific claims. Results are promoted to the research record only after the corresponding workflow artifacts have been checked.
 
 ## Research documentation
 
+- [`docs/index.md`](docs/index.md) — public project status page.
+- [`docs/ABOUT.md`](docs/ABOUT.md) — project motivation, datasets and validation policy.
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) — evidence-backed project ledger.
+- [`docs/VALIDATION.md`](docs/VALIDATION.md) — cross-check and validation record.
 - [`docs/EXPERIMENT_MATRIX.md`](docs/EXPERIMENT_MATRIX.md) — pre-specified experiment sequence and statistical rules.
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — final paper/release gate.
 - [`docs/NOVELTY_AUDIT_2026-08-15.md`](docs/NOVELTY_AUDIT_2026-08-15.md) — provisional literature/novelty audit.
@@ -71,18 +80,18 @@ A concise public description of the project, scientific motivation, datasets, an
 - `configs/` — experiment configurations
 - `scripts/` — command-line entry points
 - `tests/` — unit and integration tests
-- `docs/` — research protocols, dataset documentation, results and audit records
+- `docs/` — research protocols, validation, results and audit records
 - `data/` — local-only dataset mount points; raw data are gitignored
 - `outputs/` — local experiment outputs; curated results are committed intentionally
 
-## Current status
+## Status policy
 
-The project is under active experimental development. Verified software/data infrastructure is deliberately separated from scientific claims. Results are promoted to the research record only after the corresponding workflow artifacts have been checked.
+**No fabricated metrics. No hidden data leakage. No scientific completion marks without executable evidence.**
 
 ## License
 
 Code in this repository is released under the MIT License. Third-party datasets retain their original licenses and access conditions.
 
-## Repository link
+## Repository
 
-**https://github.com/BurhanAbdullah/BioNuclei-DomainRobust**
+https://github.com/BurhanAbdullah/BioNuclei-DomainRobust
