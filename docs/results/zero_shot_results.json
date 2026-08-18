@@ -1,0 +1,25 @@
+{
+  "status": "source-domain_baseline_verified",
+  "source_domain": {
+    "dataset": "BBBC039",
+    "split": "test",
+    "n_images": 50,
+    "metrics": {
+      "dice": {"mean": 0.9713096493797186, "ci95_lower": 0.9694581894445564, "ci95_upper": 0.9731306673593417},
+      "iou": {"mean": 0.9442981744867874, "ci95_lower": 0.940781773846527, "ci95_upper": 0.9478286929047524},
+      "boundary_f1": {"mean": 0.7097557866406649, "ci95_lower": 0.6915538041035857, "ci95_upper": 0.726238449609814}
+    },
+    "artifact": "bbbc039-baseline-31995120233",
+    "run_id": 31995120233,
+    "artifact_sha256": "sha256:036ff391f247c51cb1ae4f6aba0366eedc53de3e87aaaa9e72f1e0ef1253b636"
+  },
+  "cross_domain": {
+    "dataset": "S-BIAD634 / S-BSST265",
+    "status": "pending_current_code_verified_run",
+    "n_images_expected": 79,
+    "metrics": null
+  },
+  "precision": null,
+  "recall": null,
+  "f1_score_definition": "Dice is the segmentation F1-equivalent used by the current evaluator; classification-style precision/recall are not yet computed."
+}
