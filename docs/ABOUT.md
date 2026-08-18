@@ -54,21 +54,33 @@ The repository does **not** redistribute third-party datasets. It provides acqui
 - Failed experiments and engineering blockers are recorded instead of silently removed.
 - Novelty claims remain hypotheses until supported by a focused literature audit.
 
-### Public repository
+### Validation policy
 
-**https://github.com/BurhanAbdullah/BioNuclei-DomainRobust**
+The project uses separate gates for **software validation**, **dataset validation**, and **scientific validation**. A green CI run proves the tested software path works; it does not by itself prove model performance. Experimental numbers are promoted only after the corresponding artifact, dataset manifest, configuration, checkpoint provenance, and evaluation record have been checked.
+
+### Current public status
+
+- **BBBC039 source-domain infrastructure:** verified.
+- **BBBC039 baseline workflow:** completed on the verified official split.
+- **S-BIAD634 acquisition/evaluation infrastructure:** implemented and regression-tested.
+- **Current target-domain scientific result:** pending final release-gate verification.
+- **Domain-robust method:** intentionally deferred until measured target-domain failure modes are independently verified.
+
+### Public status page
+
+See the concise public project status page: [`docs/index.md`](index.md).
 
 ### Research documentation
 
 - [`README.md`](../README.md) — project overview and quick orientation.
-- [`docs/PROGRESS.md`](PROGRESS.md) — evidence-backed project ledger.
-- [`docs/EXPERIMENT_MATRIX.md`](EXPERIMENT_MATRIX.md) — pre-specified experiments and statistical rules.
-- [`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — final paper/release gate.
-- [`docs/NOVELTY_AUDIT_2026-08-15.md`](NOVELTY_AUDIT_2026-08-15.md) — provisional literature/novelty audit.
+- [`PROGRESS.md`](PROGRESS.md) — evidence-backed project ledger.
+- [`EXPERIMENT_MATRIX.md`](EXPERIMENT_MATRIX.md) — pre-specified experiments and statistical rules.
+- [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — final paper/release gate.
+- [`NOVELTY_AUDIT_2026-08-15.md`](NOVELTY_AUDIT_2026-08-15.md) — provisional literature/novelty audit.
 
-### Status policy
+### Repository
 
-Verified software/data infrastructure is separated from scientific claims. A metric, experiment, or scientific conclusion is promoted to the project record only after the corresponding workflow artifact has been checked and its provenance is recorded.
+https://github.com/BurhanAbdullah/BioNuclei-DomainRobust
 
 ### License
 
