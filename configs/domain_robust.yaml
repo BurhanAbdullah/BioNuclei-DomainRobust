@@ -1,0 +1,29 @@
+experiment: domain_robust_e4
+seed: 42
+model:
+  in_channels: 1
+  out_channels: 3
+  base_channels: 32
+training:
+  device: auto
+  epochs: 20
+  batch_size: 8
+  num_workers: 4
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+loss:
+  boundary_weight: 2.0
+  dice_weight: 1.0
+augmentation:
+  # Source-only photometric domain randomization, motivated by E3.
+  apply_probability: 0.90
+  gain_min: 0.70
+  gain_max: 1.30
+  gamma_min: 0.70
+  gamma_max: 1.40
+  bias_min: -0.05
+  bias_max: 0.05
+  noise_std: 0.02
+  contrast_probability: 0.80
+  contrast_min: 0.70
+  contrast_max: 1.30
