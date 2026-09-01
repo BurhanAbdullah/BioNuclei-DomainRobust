@@ -1,0 +1,92 @@
+name: E4 domain-robust method
+
+on:
+  push:
+    paths:
+      - 'scripts/train_domain_robust.py'
+      - 'scripts/evaluate_s_biad634.py'
+      - 'scripts/metrics_instance.py'
+      - 'scripts/download_s_biad634.py'
+      - 'configs/domain_robust.yaml'
+      - '.github/workflows/e4_domain_robust.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Source training epochs'
+        required: false
+        default: '20'
+      baseline_run_id:
+        description: 'Successful BBBC039 baseline run ID'
+        required: false
+        default: '31995120233'
+
+jobs:
+  train-evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm pytest imagecodecs
+          python -m pip install -e . --no-deps
+      - name: Download and verify BBBC039 source data
+        run: |
+          python scripts/download_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata --output data/manifests/bbbc039_official_split.json
+      - name: Train source-only domain-randomized model
+        env:
+          EPOCHS: ${{ inputs.epochs || '20' }}
+        run: |
+          PYTHONPATH="$PWD" python scripts/train_domain_robust.py \
+            --config configs/domain_robust.yaml \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --output outputs/e4_domain_robust \
+            --epochs "$EPOCHS"
+      - name: Download and inventory S-BIAD634
+        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Evaluate robust model on all target images
+        run: |
+          PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
+            --checkpoint outputs/e4_domain_robust/last.pt \
+            --data-root data/raw/S-BIAD634 \
+            --output outputs/e4_s_biad634
+      - name: Enforce complete target evaluation and provenance
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('outputs/e4_s_biad634/metrics.json')
+          d=json.loads(p.read_text())
+          assert d.get('n_images')==79
+          assert len(d.get('per_image',[]))==79
+          for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
+              assert k in d.get('mean',{}) and k in d.get('median',{})
+          out={'method':'source_only_intensity_domain_randomization','commit':os.environ['GITHUB_SHA'],'workflow_run_id':os.environ['GITHUB_RUN_ID'],'n_target_images':d['n_images'],'metrics_file':str(p)}
+          Path('outputs/e4_s_biad634/provenance.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(json.dumps(d['mean'],indent=2))
+          PY
+      - name: Upload E4 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-domain-robust-${{ github.run_id }}
+          path: |
+            outputs/e4_domain_robust/
+            outputs/e4_s_biad634/
+            configs/domain_robust.yaml
+            data/manifests/bbbc039_official_split.json
+            data/raw/BBBC039/download_manifest.json
+            data/raw/S-BIAD634/download_manifest.json
+          retention-days: 30
