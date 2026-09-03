@@ -1,0 +1,93 @@
+name: BBBC039 instance metric audit
+
+on:
+  push:
+    paths:
+      - 'src/bionuclei/data.py'
+      - 'src/bionuclei/metrics.py'
+      - 'scripts/audit_bbbc039_instances.py'
+      - 'scripts/train_bbbc039.py'
+      - 'scripts/evaluate_bbbc039.py'
+      - 'scripts/download_bbbc039.py'
+      - 'scripts/verify_bbbc039.py'
+      - 'scripts/build_bbbc039_split.py'
+      - 'configs/bbbc039_baseline.yaml'
+      - 'pyproject.toml'
+      - '.github/workflows/bbbc039_instance_audit.yml'
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Training epochs for the diagnostic run'
+        required: false
+        default: '20'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch and package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm pytest imagecodecs
+          python -m pip install -e . --no-deps
+      - name: Download and verify BBBC039
+        run: |
+          python scripts/download_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py \
+            --metadata-root data/raw/BBBC039/metadata \
+            --output data/manifests/bbbc039_official_split.json
+      - name: Train diagnostic baseline
+        env:
+          EPOCHS: ${{ inputs.epochs || '20' }}
+        run: |
+          python scripts/train_bbbc039.py \
+            --config configs/bbbc039_baseline.yaml \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --output outputs/bbbc039_instance_audit \
+            --epochs "$EPOCHS"
+      - name: Evaluate diagnostic baseline
+        run: |
+          python scripts/evaluate_bbbc039.py \
+            --checkpoint outputs/bbbc039_instance_audit/last.pt \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --split test \
+            --output outputs/bbbc039_instance_audit_eval
+      - name: Audit mask encoding and instance counts
+        run: |
+          python scripts/audit_bbbc039_instances.py \
+            --checkpoint outputs/bbbc039_instance_audit/last.pt \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --data-root data/raw/BBBC039 \
+            --split test \
+            --output outputs/bbbc039_instance_audit_eval/instance_audit.json
+      - name: Require complete diagnostic artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path('outputs/bbbc039_instance_audit_eval/instance_audit.json').read_text())
+          assert d.get('n_images') == 50
+          assert len(d.get('per_image', [])) == 50
+          print(json.dumps(d['summary'], indent=2))
+          PY
+      - name: Upload instance audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbbc039-instance-audit-${{ github.run_id }}
+          path: |
+            outputs/bbbc039_instance_audit/
+            outputs/bbbc039_instance_audit_eval/
+            data/manifests/bbbc039_official_split.json
+            data/raw/BBBC039/download_manifest.json
+            data/raw/BBBC039/verification_report.json
+          retention-days: 30
