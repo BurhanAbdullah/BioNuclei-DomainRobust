@@ -1,10 +1,10 @@
 document.addEventListener('DOMContentLoaded', function () {
-  /* Shared visual layer, loaded consistently on every research page. */
-  if (!document.querySelector('link[data-bionuclei-enhancements]')) {
+  /* Shared editorial layer, loaded consistently on every research page. */
+  if (!document.querySelector('link[data-bionuclei-editorial]')) {
     var styleLink = document.createElement('link');
     styleLink.rel = 'stylesheet';
-    styleLink.href = 'assets/enhancements.css';
-    styleLink.setAttribute('data-bionuclei-enhancements', 'true');
+    styleLink.href = 'assets/editorial.css';
+    styleLink.setAttribute('data-bionuclei-editorial', 'true');
     document.head.appendChild(styleLink);
   }
 
@@ -44,15 +44,20 @@ document.addEventListener('DOMContentLoaded', function () {
     node.nodeValue = node.nodeValue.replace(/\s*[→←]\s*/g, ' ').replace(/\s*[—–]\s*/g, ' ').replace(/\s{2,}/g, ' ');
   });
 
-  /* Homepage Explore section: dynamic filters without changing the underlying research content. */
+  /* Homepage Explore section: dynamic filters over the actual project cards. */
   var featureGrid = document.querySelector('.landing-feature .feature-grid');
   if (featureGrid && !featureGrid.dataset.enhanced) {
     featureGrid.dataset.enhanced = 'true';
     var categoryMap = {
+      'BioNuclei': 'science',
       'Vision': 'science architecture',
       'Architecture': 'architecture',
       'Research': 'science',
+      'Datasets': 'science',
       'BioMCP': 'architecture ecosystem',
+      'BioFM': 'ecosystem',
+      'BioWF': 'ecosystem',
+      'BioSkills': 'ecosystem',
       'People': 'community',
       'Community': 'community'
     };
@@ -65,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var toolbar = document.createElement('div');
     toolbar.className = 'explore-toolbar';
     toolbar.setAttribute('role', 'toolbar');
-    toolbar.setAttribute('aria-label', 'Filter project layers');
+    toolbar.setAttribute('aria-label', 'Filter project sections');
     ['All', 'Science', 'Architecture', 'Ecosystem', 'Community'].forEach(function (label, index) {
       var button = document.createElement('button');
       button.type = 'button';
