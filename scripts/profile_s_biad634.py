@@ -10,7 +10,7 @@ import numpy as np
 import tifffile
 from skimage.measure import regionprops
 
-from bionuclei.data import decode_instance_mask
+from bionuclei.masks import decode_instance_mask
 
 
 def index_files(root: Path, folder: str) -> dict[str, Path]:
@@ -54,7 +54,7 @@ def stats(image: np.ndarray, mask: np.ndarray) -> dict[str, object]:
         "dtype": str(image.dtype),
         "mask_dtype": str(raw_mask.dtype),
         "mask_shape": list(raw_mask.shape),
-        "mask_encoding": "instance_labels_or_rgb_colors_decoded_by_bionuclei.data.decode_instance_mask",
+        "mask_encoding": "instance_labels_or_rgb_colors_decoded_by_bionuclei.masks.decode_instance_mask",
         "min": float(values.min()),
         "max": float(values.max()),
         "mean": float(values.mean()),
