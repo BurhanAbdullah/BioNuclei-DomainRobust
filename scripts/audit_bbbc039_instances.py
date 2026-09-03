@@ -82,6 +82,11 @@ def main() -> None:
         target_ids = np.unique(target[target > 0])
         pred_ids = np.unique(pred[pred > 0])
         _, target_component_count = ndimage.label(target > 0, structure=np.ones((3, 3), dtype=np.uint8))
+        if len(target_ids) != target_component_count:
+            raise RuntimeError(
+                f"Decoded BBBC039 instance count disagrees with foreground components for {name}: "
+                f"instances={len(target_ids)}, components={target_component_count}"
+            )
         if raw_mask.ndim == 3 and raw_mask.shape[-1] in (3, 4):
             unique_colors = int(np.unique(raw_mask[..., :3].reshape(-1, 3), axis=0).shape[0])
         else:
@@ -116,6 +121,7 @@ def main() -> None:
         "interpretation_guard": {
             "instance_count_is_decoded_label_count": True,
             "connected_component_count_is_not_used_as_instance_count": True,
+            "decoded_instances_must_equal_foreground_components": True,
             "touching_instances_detected_when_decoded_count_exceeds_foreground_components": True,
         },
         "summary": {
