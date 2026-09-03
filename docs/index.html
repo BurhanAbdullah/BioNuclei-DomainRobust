@@ -3,183 +3,167 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BioNuclei-DomainRobust | Robust Nuclear Segmentation for Bioimaging</title>
-<meta name="description" content="BioNuclei-DomainRobust is a reproducible research framework for domain-robust nuclear instance segmentation in heterogeneous fluorescence bioimaging.">
+<title>BioNuclei-DomainRobust | Domain-Robust AI for Bioimaging</title>
+<meta name="description" content="BioNuclei-DomainRobust: reproducible domain-robust nuclear instance segmentation for heterogeneous fluorescence bioimaging, with an emerging agentic Bio-MCP research direction.">
 <style>
-:root{--ink:#172033;--muted:#5f6b7a;--paper:#f7f9fc;--card:#fff;--line:#e4e9f0;--accent:#635bff;--accent2:#0ea5a4;--dark:#101828;--soft:#eef2ff;--green:#0f766e;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper);line-height:1.65}a{color:#5147d9;text-decoration:none}a:hover{text-decoration:underline}.wrap{max-width:1180px;margin:auto;padding:0 6%}header{position:relative;overflow:hidden;background:radial-gradient(circle at 85% 20%,#3b356f 0,#191d3a 35%,#0d1424 72%);color:#fff;padding:78px 0 70px}header:after{content:"";position:absolute;inset:auto -10% -180px auto;width:620px;height:420px;border-radius:50%;background:radial-gradient(circle,#4f46e5aa 0,transparent 65%)}.eyebrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}.pill{border:1px solid #ffffff30;background:#ffffff12;padding:7px 12px;border-radius:999px;font-size:.84rem;color:#e7e9ff}.hero{position:relative;z-index:1;max-width:900px}.hero h1{font-size:clamp(2.7rem,7vw,5.8rem);line-height:.98;letter-spacing:-.055em;margin:0 0 22px}.hero h1 span{color:#9f9bff}.hero .lead{font-size:clamp(1.08rem,2vw,1.38rem);color:#dbe2f0;max-width:820px;margin:0 0 28px}.actions{display:flex;flex-wrap:wrap;gap:10px}.btn{display:inline-block;padding:12px 17px;border-radius:10px;background:#fff;color:#15192a;font-weight:700}.btn.primary{background:#756cff;color:#fff}.btn.ghost{background:#ffffff12;color:#fff;border:1px solid #ffffff2e}.hero-grid{display:grid;grid-template-columns:1.3fr .7fr;gap:42px;align-items:end}.microcard{border:1px solid #ffffff20;background:#ffffff0d;border-radius:20px;padding:18px;backdrop-filter:blur(8px)}.microcard svg{width:100%;height:auto;display:block}.section{padding:70px 0}.section.alt{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}h2{font-size:clamp(1.8rem,3vw,2.7rem);letter-spacing:-.03em;margin:0 0 14px}h3{margin:0 0 7px;font-size:1.12rem}.intro{max-width:790px;color:var(--muted);font-size:1.08rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:17px;margin-top:28px}.card{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:23px;box-shadow:0 7px 28px #17203308}.card p{margin:7px 0 0;color:var(--muted)}.num{font-size:2rem;font-weight:800;letter-spacing:-.04em}.metric{font-size:1.7rem;font-weight:800}.small{font-size:.88rem;color:var(--muted)}.callout{margin-top:30px;padding:23px 26px;border-radius:17px;background:linear-gradient(135deg,#eef2ff,#ecfeff);border:1px solid #dfe5ff}.flow{display:grid;grid-template-columns:repeat(7,1fr);gap:9px;margin-top:30px}.step{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 12px;position:relative}.step b{display:block;font-size:.78rem;color:var(--accent);margin-bottom:5px}.step:not(:last-child):after{content:"→";position:absolute;right:-12px;top:37%;color:#9aa4b2;font-weight:800;z-index:2}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-top:28px}.result{background:#101828;color:#fff;border-radius:15px;padding:18px}.result .label{color:#aeb9ca;font-size:.8rem}.result strong{display:block;font-size:1.55rem;margin-top:5px}.timeline{border-left:2px solid #dce2ec;margin:28px 0 0 8px;padding-left:25px}.phase{position:relative;margin-bottom:25px}.phase:before{content:"";position:absolute;width:10px;height:10px;border-radius:50%;background:var(--accent);left:-32px;top:8px;box-shadow:0 0 0 5px var(--paper)}.phase .state{font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0f172a;color:#d6fbe9;border-radius:14px;padding:20px;overflow:auto}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:24px}.link{display:block;background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px;font-weight:700}.link span{display:block;font-size:.82rem;color:var(--muted);font-weight:400;margin-top:3px}footer{background:#0f172a;color:#aeb8c8;padding:35px 0}footer a{color:#c7c4ff}.disclaimer{font-size:.88rem;color:#7b8796;margin-top:18px}@media(max-width:850px){.hero-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr}.step:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-17px}.section{padding:52px 0}}
+:root{--ink:#142033;--muted:#5d6979;--paper:#f5f8fb;--card:#fff;--line:#dfe6ee;--violet:#6757e8;--cyan:#0b9f9a;--navy:#0b1220;--green:#0d7c70;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--paper);line-height:1.68}a{color:#5145c8;text-decoration:none}a:hover{text-decoration:underline}.wrap{max-width:1200px;margin:auto;padding:0 6%}.hero{background:radial-gradient(circle at 84% 18%,#42397d 0,#1a203d 34%,#0a1220 72%);color:#fff;padding:72px 0 64px;overflow:hidden}.hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:42px;align-items:center}.eyebrow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}.pill{padding:7px 12px;border:1px solid #ffffff30;background:#ffffff12;border-radius:999px;font-size:.82rem;color:#e7e9ff}.hero h1{font-size:clamp(2.7rem,6.5vw,5.7rem);line-height:.98;letter-spacing:-.06em;margin:0 0 22px}.hero h1 span{color:#a9a3ff}.lead{font-size:clamp(1.08rem,2vw,1.38rem);color:#dce3ef;max-width:850px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}.btn{display:inline-block;padding:12px 17px;border-radius:10px;background:#fff;color:#121827;font-weight:750}.btn.primary{background:#776cff;color:#fff}.btn.ghost{background:#ffffff12;color:#fff;border:1px solid #ffffff30}.hero-visual{background:#ffffff0d;border:1px solid #ffffff22;border-radius:22px;padding:14px}.hero-visual svg{display:block;width:100%;height:auto}.section{padding:72px 0}.section.alt{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}h2{font-size:clamp(1.85rem,3vw,2.75rem);letter-spacing:-.035em;line-height:1.1;margin:0 0 14px}h3{margin:0 0 8px;font-size:1.1rem}.intro{max-width:850px;color:var(--muted);font-size:1.08rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:18px;margin-top:30px}.card{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:23px;box-shadow:0 8px 28px #1720330a}.card p{margin:6px 0 0;color:var(--muted)}.image-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;margin-top:30px}.image-card{background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden}.image-card img{width:100%;height:310px;object-fit:cover;display:block}.image-card .caption{padding:15px 18px;color:var(--muted);font-size:.9rem}.badge{display:inline-block;font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--violet);margin-bottom:7px}.flow{display:grid;grid-template-columns:repeat(7,1fr);gap:9px;margin-top:30px}.step{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 12px;position:relative;font-size:.9rem}.step b{display:block;font-size:.74rem;color:var(--violet);margin-bottom:5px}.step:not(:last-child):after{content:"→";position:absolute;right:-12px;top:36%;color:#9aa5b4;font-weight:900;z-index:2}.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px;margin-top:28px}.result{background:#0f172a;color:#fff;border-radius:15px;padding:17px}.result span{color:#aeb9c9;font-size:.78rem}.result strong{display:block;font-size:1.48rem;margin-top:4px}.callout{margin-top:28px;padding:23px 25px;border-radius:17px;background:linear-gradient(135deg,#eef2ff,#e9fcfa);border:1px solid #dce4ff}.arch{background:#0d1422;color:#dce7f5;border-radius:18px;padding:25px;overflow:auto;margin-top:28px}.arch pre{margin:0;font:14px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace}.split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:28px}.status{font-weight:800}.check{color:var(--green)}.roadmap{border-left:2px solid #d8dfeb;margin:30px 0 0 8px;padding-left:26px}.phase{position:relative;margin-bottom:27px}.phase:before{content:"";position:absolute;left:-33px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--violet);box-shadow:0 0 0 5px var(--paper)}.phase .state{font-size:.75rem;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:var(--violet)}.metric-note{font-size:.86rem;color:var(--muted);margin-top:16px}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:25px}.link{background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px;font-weight:750}.link span{display:block;font-size:.82rem;color:var(--muted);font-weight:400;margin-top:3px}footer{background:#0b1220;color:#aeb8c7;padding:38px 0}.small{font-size:.85rem;color:#7a8695}.llm{border:1px solid #d9d2ff;background:#f8f6ff}.mcp{border:1px solid #ccece8;background:#f2fbfa}@media(max-width:900px){.hero-grid,.image-grid,.split{grid-template-columns:1fr}.flow{grid-template-columns:1fr}.step:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-18px}.section{padding:55px 0}}
 </style>
 </head>
 <body>
-<header>
+<header class="hero">
 <div class="wrap hero-grid">
-<div class="hero">
-<div class="eyebrow"><span class="pill">Bioimaging</span><span class="pill">Nuclear Instance Segmentation</span><span class="pill">Domain Robustness</span><span class="pill">Reproducible AI</span></div>
-<h1>Making nuclear segmentation <span>travel across imaging domains.</span></h1>
-<p class="lead">BioNuclei-DomainRobust studies how computational nuclear segmentation behaves when microscopy data leave the controlled environment in which a model was trained. The goal is not simply a high benchmark score—it is reliable, auditable performance on heterogeneous fluorescence bioimaging.</p>
-<div class="actions"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">Explore the repository</a><a class="btn ghost" href="#research">See the research</a></div>
+<div>
+<div class="eyebrow"><span class="pill">Bioimaging</span><span class="pill">Fluorescence Microscopy</span><span class="pill">Nuclear Segmentation</span><span class="pill">Domain Robustness</span><span class="pill">Reproducible AI</span></div>
+<h1>When the microscope changes, <span>does the AI still work?</span></h1>
+<p class="lead">BioNuclei-DomainRobust is a research programme for reliable nuclear instance segmentation across heterogeneous fluorescence bioimaging. We study the gap between excellent performance on a controlled benchmark and dependable behavior when images come from a different biological or imaging domain.</p>
+<div class="actions"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">Explore GitHub</a><a class="btn ghost" href="#pipeline">See the pipeline</a></div>
 </div>
-<div class="microcard" aria-label="Illustration of nuclei in a fluorescence image">
-<svg viewBox="0 0 520 340" role="img" aria-label="Stylized fluorescence microscopy field with segmented nuclei">
-<rect width="520" height="340" rx="16" fill="#090f20"/>
-<g opacity=".25" fill="#7c3aed"><circle cx="80" cy="75" r="55"/><circle cx="310" cy="80" r="70"/><circle cx="450" cy="250" r="75"/><circle cx="180" cy="265" r="60"/></g>
-<g fill="#d8d7ff" opacity=".9"><ellipse cx="83" cy="76" rx="30" ry="24"/><ellipse cx="177" cy="122" rx="25" ry="32"/><ellipse cx="306" cy="82" rx="37" ry="28"/><ellipse cx="408" cy="123" rx="24" ry="25"/><ellipse cx="450" cy="249" rx="34" ry="30"/><ellipse cx="276" cy="238" rx="26" ry="35"/><ellipse cx="120" cy="265" rx="33" ry="25"/></g>
-<g fill="none" stroke="#70f0d2" stroke-width="3"><ellipse cx="83" cy="76" rx="39" ry="32"/><ellipse cx="177" cy="122" rx="34" ry="41"/><ellipse cx="306" cy="82" rx="47" ry="37"/><ellipse cx="408" cy="123" rx="33" ry="34"/><ellipse cx="450" cy="249" rx="43" ry="39"/><ellipse cx="276" cy="238" rx="35" ry="44"/><ellipse cx="120" cy="265" rx="42" ry="33"/></g>
-<text x="20" y="315" fill="#9da9bf" font-family="system-ui" font-size="13">fluorescence field  ·  nuclei + instance boundaries</text>
-</svg>
+<div class="hero-visual">
+<svg viewBox="0 0 620 390" role="img" aria-label="Stylized fluorescence microscopy field with individual nuclei and segmentation contours">
+<defs><filter id="glow"><feGaussianBlur stdDeviation="10"/></filter></defs><rect width="620" height="390" rx="15" fill="#07101e"/><g opacity=".28" filter="url(#glow)" fill="#6d4cff"><circle cx="100" cy="100" r="75"/><circle cx="330" cy="100" r="95"/><circle cx="500" cy="280" r="90"/><circle cx="200" cy="295" r="80"/></g><g fill="#e5e7ff"><ellipse cx="95" cy="93" rx="37" ry="30"/><ellipse cx="205" cy="168" rx="31" ry="39"/><ellipse cx="331" cy="101" rx="45" ry="34"/><ellipse cx="460" cy="115" rx="31" ry="29"/><ellipse cx="530" cy="276" rx="43" ry="37"/><ellipse cx="345" cy="286" rx="31" ry="42"/><ellipse cx="140" cy="303" rx="39" ry="30"/></g><g fill="none" stroke="#65efd3" stroke-width="3"><ellipse cx="95" cy="93" rx="48" ry="40"/><ellipse cx="205" cy="168" rx="40" ry="50"/><ellipse cx="331" cy="101" rx="57" ry="44"/><ellipse cx="460" cy="115" rx="40" ry="38"/><ellipse cx="530" cy="276" rx="54" ry="48"/><ellipse cx="345" cy="286" rx="41" ry="53"/><ellipse cx="140" cy="303" rx="50" ry="39"/></g><text x="24" y="360" fill="#aab6c8" font-family="system-ui" font-size="14">fluorescence field  ·  nuclei  ·  predicted instance boundaries</text></svg>
 </div>
 </div>
 </header>
 
-<main>
-<section class="section" id="research">
+<section class="section">
 <div class="wrap">
-<h2>The bioimaging problem</h2>
-<p class="intro">Microscopy is not one imaging environment. Fluorescence intensity, background, contrast, specimen characteristics, acquisition settings and laboratory workflows can change the appearance of nuclei while the underlying biological task remains the same. A model that succeeds on one domain can therefore degrade when it encounters another.</p>
-<div class="grid">
-<div class="card"><h3>Different microscopes</h3><p>Acquisition systems and optical characteristics can alter contrast, signal distribution and image texture.</p></div>
-<div class="card"><h3>Different specimens</h3><p>Cell morphology, density, overlap and biological context create substantially different segmentation conditions.</p></div>
-<div class="card"><h3>Different fluorescence</h3><p>Intensity, background and staining-related variation can shift the image distribution without changing the segmentation objective.</p></div>
-<div class="card"><h3>Different domains</h3><p>The central question is whether a model trained on one distribution remains useful on an unseen distribution.</p></div>
+<h2>Bioimaging is the starting point</h2>
+<p class="intro">Modern biological imaging turns invisible cellular structure into measurable data. Fluorescence microscopy can reveal nuclei, proteins, organelles and tissue organization, but the resulting images are shaped by optics, dyes, acquisition settings, sample preparation and biological context. Bioimage analysis therefore has to cope with variation that is scientific—not merely cosmetic.</p>
+<div class="image-grid">
+<div class="image-card"><img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/DAPI-stained_nuclei_of_HaCaT_keratinocytes.png" alt="DAPI-stained nuclei of human keratinocytes under fluorescence microscopy"><div class="caption"><strong>What the computer sees.</strong> Fluorescence microscopy can make nuclei highly visible, but intensity, morphology, density and background vary across experiments. Image: DAPI-stained HaCaT keratinocytes, Wikimedia Commons, CC BY-SA.</div></div>
+<div class="image-card"><img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Nikon-Inverted_fluorescence_microscope.jpg" alt="Inverted fluorescence microscope in a laboratory"><div class="caption"><strong>Where the data come from.</strong> Real bioimaging workflows combine samples, fluorescent labels, optics, detectors and acquisition software. Image: Nikon inverted fluorescence microscope, Wikimedia Commons, CC BY.</div></div>
 </div>
-<div class="callout"><strong>Research principle.</strong> Domain robustness is treated as an empirical property that must be measured on held-out target data—not assumed from the training pipeline.</div>
+<div class="callout"><strong>The problem we target:</strong> the same biological object can look different when the imaging domain changes. A robust segmentation system should learn the biological task without becoming overly dependent on one narrow image distribution.</div>
 </div>
 </section>
 
-<section class="section alt">
+<section class="section alt" id="pipeline">
 <div class="wrap">
-<h2>What BioNuclei-DomainRobust does</h2>
-<p class="intro">The project combines bioimage segmentation, controlled domain perturbation, cross-domain evaluation and reproducibility controls into one auditable experimental workflow.</p>
+<h2>What we actually do</h2>
+<p class="intro">We build an auditable experimental chain from source-domain training to unseen-domain evaluation. The target domain is kept out of source training, and scientific claims are promoted only when the corresponding evidence artifact passes predefined checks.</p>
 <div class="flow">
-<div class="step"><b>01 · SOURCE</b>BBBC039 source-domain data</div>
-<div class="step"><b>02 · TRAIN</b>Segmentation model</div>
-<div class="step"><b>03 · ROBUSTIFY</b>Intensity/domain randomization</div>
-<div class="step"><b>04 · TRANSFER</b>Unseen S-BIAD634 domain</div>
-<div class="step"><b>05 · MEASURE</b>Instance + boundary metrics</div>
-<div class="step"><b>06 · ANALYZE</b>Failure modes + ablations</div>
-<div class="step"><b>07 · AUDIT</b>Provenance + reproducibility</div>
+<div class="step"><b>01 · SOURCE</b>BBBC039 source-domain images</div>
+<div class="step"><b>02 · MODEL</b>Boundary-aware U-Net segmentation</div>
+<div class="step"><b>03 · ROBUSTIFY</b>Source-only intensity/domain randomization</div>
+<div class="step"><b>04 · TRANSFER</b>Unseen S-BIAD634 images</div>
+<div class="step"><b>05 · SCORE</b>Overlap, detection, instance and boundary metrics</div>
+<div class="step"><b>06 · EXPLAIN</b>Failure modes, ablations and comparisons</div>
+<div class="step"><b>07 · AUDIT</b>Provenance, tests and reproducible artifacts</div>
 </div>
 </div>
 </section>
 
 <section class="section">
 <div class="wrap">
-<h2>Our scientific question</h2>
-<p class="intro">Can controlled domain randomization during source-only training improve the reliability of nuclear instance segmentation when the model is transferred, without training on target-domain images?</p>
-<div class="grid">
-<div class="card"><div class="num">01</div><h3>Source-only learning</h3><p>Build the model without using target-domain images for training.</p></div>
-<div class="card"><div class="num">02</div><h3>Target-domain transfer</h3><p>Evaluate on heterogeneous human fluorescence imagery outside the source training distribution.</p></div>
-<div class="card"><div class="num">03</div><h3>Hard evidence gates</h3><p>Require complete target coverage and a defined metric set before results are promoted.</p></div>
-<div class="card"><div class="num">04</div><h3>Evidence before claims</h3><p>Freeze the robustness claim only after failure analysis, ablations and statistical comparisons.</p></div>
+<h2>The current AI stack</h2>
+<div class="split">
+<div class="card"><span class="badge">Core scientific model</span><h3>Boundary U-Net</h3><p>The current E4 implementation trains a <strong>Boundary U-Net</strong> for nuclear instance segmentation. The model operates on images and segmentation targets; it is not an LLM and does not require a language model to produce the segmentation masks.</p><p class="metric-note">Implementation evidence: <code>scripts/train_domain_robust.py</code> instantiates <code>BoundaryUNet</code> and applies source-domain training with the configured domain-robust pipeline.</p></div>
+<div class="card llm"><span class="badge">LLM layer — important distinction</span><h3>No LLM is part of E4 segmentation</h3><p>The current scientific segmentation result should <strong>not</strong> be described as being generated by GPT, Claude or another LLM. No LLM is required for the core E4 model. This separation keeps the biological measurement pipeline reproducible and avoids conflating language-model assistance with the trained vision model.</p><p>LLMs can, however, become useful at the <strong>orchestration and reasoning layer</strong> of the future Bio-MCP: selecting tools, inspecting provenance, planning experiments, comparing artifacts and explaining results.</p></div>
 </div>
+<div class="arch"><pre>                 ┌──────────────────────────────┐
+                 │        Researcher / LLM      │
+                 │  question · planning · audit │
+                 └──────────────┬───────────────┘
+                                │ Model Context Protocol
+                                ▼
+        ┌────────────────────────────────────────────────────┐
+        │                    BIO-MCP                          │
+        │  dataset  │  preprocessing  │  segmentation       │
+        │  metrics  │  experiments     │  provenance         │
+        └───────┬──────────┬──────────────┬───────────────┬───┘
+                ▼          ▼              ▼               ▼
+           image/data   model run     evaluation      artifact store
+                │          │              │               │
+                └──────────┴──────────────┴───────────────┘
+                                   │
+                                   ▼
+                         reproducible evidence</pre></div>
 </div>
 </section>
 
 <section class="section alt">
 <div class="wrap">
-<h2>E4 · Domain-robust transfer</h2>
-<p class="intro">E4 is the current verified cross-domain experiment. The source model uses intensity/domain randomization, while S-BIAD634 is held out as an unseen target domain.</p>
+<h2>What we mean by a Bio-MCP</h2>
+<p class="intro">The Bio-MCP is a proposed agent-accessible interface around the bioimage research workflow. The idea is analogous to a structured tool layer for engineering systems: an LLM should not directly invent scientific operations; it should call explicit, typed tools whose inputs, outputs and provenance can be audited.</p>
+<div class="grid">
+<div class="card mcp"><h3>1 · Dataset tools</h3><p>Resolve dataset manifests, verify checksums, inspect image dimensions, identify biological units and enforce source/target separation.</p></div>
+<div class="card mcp"><h3>2 · Bioimage tools</h3><p>Run controlled preprocessing, intensity normalization or perturbation, image-quality checks and segmentation workflows.</p></div>
+<div class="card mcp"><h3>3 · Experiment tools</h3><p>Launch pre-specified training, evaluation, ablation and transfer experiments with fixed configurations and seeds.</p></div>
+<div class="card mcp"><h3>4 · Scientific metric tools</h3><p>Compute Dice, IoU, precision, recall, F1, AJI and boundary-F1, with image-level records retained.</p></div>
+<div class="card mcp"><h3>5 · Failure-analysis tools</h3><p>Group failures by observable image characteristics and expose where domain shift is degrading performance.</p></div>
+<div class="card mcp"><h3>6 · Provenance tools</h3><p>Return the exact dataset version, configuration, code commit, seed, workflow run and artifact associated with a result.</p></div>
+</div>
+<div class="callout"><strong>Key design rule:</strong> the LLM would be the reasoning/orchestration layer; the Bio-MCP tools would perform the actual scientific operations; the repository artifacts would remain the source of truth. The MCP concept is a proposed research direction here, not a completed validated contribution yet.</div>
+</div>
+</section>
+
+<section class="section">
+<div class="wrap">
+<h2>E4 · What has been experimentally verified</h2>
+<p class="intro">The current E4 run evaluates source-only domain randomization on the unseen S-BIAD634 target domain. The workflow passed the complete target-image gate and produced a versioned artifact with provenance.</p>
 <div class="results">
-<div class="result"><span class="label">Target images</span><strong>79 / 79</strong></div>
-<div class="result"><span class="label">Mean Dice</span><strong>0.7978</strong></div>
-<div class="result"><span class="label">Mean IoU</span><strong>0.6769</strong></div>
-<div class="result"><span class="label">Mean Precision</span><strong>0.3548</strong></div>
-<div class="result"><span class="label">Mean Recall</span><strong>0.5780</strong></div>
-<div class="result"><span class="label">Mean F1</span><strong>0.4040</strong></div>
-<div class="result"><span class="label">Mean AJI</span><strong>0.4915</strong></div>
-<div class="result"><span class="label">Boundary F1</span><strong>0.1838</strong></div>
+<div class="result"><span>Target coverage</span><strong>79 / 79</strong></div>
+<div class="result"><span>Mean Dice</span><strong>0.7978</strong></div>
+<div class="result"><span>Mean IoU</span><strong>0.6769</strong></div>
+<div class="result"><span>Mean Precision</span><strong>0.3548</strong></div>
+<div class="result"><span>Mean Recall</span><strong>0.5780</strong></div>
+<div class="result"><span>Mean F1</span><strong>0.4040</strong></div>
+<div class="result"><span>Mean AJI</span><strong>0.4915</strong></div>
+<div class="result"><span>Boundary F1</span><strong>0.1838</strong></div>
 </div>
-<div class="callout"><strong>Evidence status: verified E4 execution.</strong> The workflow completed the 79-image target gate and produced a versioned artifact with provenance. These numbers are presented as the observed E4 result; they are not yet a claim that the method is universally domain-robust.</div>
-</div>
-</section>
-
-<section class="section">
-<div class="wrap">
-<h2>Datasets & evaluation philosophy</h2>
-<div class="grid">
-<div class="card"><h3>BBBC039</h3><p>Controlled fluorescence nuclear benchmark used as the source domain for the current E4 source-only experiment.</p></div>
-<div class="card"><h3>S-BIAD634</h3><p>Heterogeneous human fluorescence nuclear-imaging data used as the unseen target domain for cross-domain evaluation.</p></div>
-<div class="card"><h3>Target isolation</h3><p>The E4 protocol explicitly keeps target-domain images out of source training and evaluates the complete 79-image target set.</p></div>
-<div class="card"><h3>Metric breadth</h3><p>Evaluation records overlap, detection/classification behavior and boundary quality rather than relying on one headline metric.</p></div>
-</div>
+<div class="callout"><strong>Interpretation discipline.</strong> These are the observed E4 metrics for the verified run. They demonstrate that the pipeline executed across the full 79-image target set; they do not by themselves establish superiority over every baseline or universal domain robustness. Those claims require the remaining comparative experiments.</div>
 </div>
 </section>
 
 <section class="section alt">
 <div class="wrap">
-<h2>From segmentation score to biological reliability</h2>
-<p class="intro">For bioimaging, a single aggregate score can hide systematic failure. BioNuclei therefore treats robustness as a layered measurement problem.</p>
+<h2>Why seven metrics?</h2>
 <div class="grid">
-<div class="card"><h3>Object overlap</h3><p>Dice and IoU quantify agreement between predicted and reference nuclear regions.</p></div>
-<div class="card"><h3>Detection behavior</h3><p>Precision, recall and F1 expose missed nuclei and spurious predictions that an overlap score can obscure.</p></div>
-<div class="card"><h3>Instance quality</h3><p>AJI provides an instance-aware view of segmentation quality across nuclei.</p></div>
-<div class="card"><h3>Boundary fidelity</h3><p>Boundary F1 probes contour quality, important when nuclear morphology and separation matter downstream.</p></div>
+<div class="card"><h3>Dice + IoU</h3><p>Measure overlap between predicted and reference nuclear regions.</p></div>
+<div class="card"><h3>Precision + recall + F1</h3><p>Expose false detections and missed nuclei that a single overlap score can hide.</p></div>
+<div class="card"><h3>AJI</h3><p>Provides an instance-aware view of segmentation quality across nuclei.</p></div>
+<div class="card"><h3>Boundary F1</h3><p>Tests contour fidelity and separation quality, especially important for touching or irregular nuclei.</p></div>
 </div>
 </div>
 </section>
 
 <section class="section">
 <div class="wrap">
-<h2>Reproducibility is part of the experiment</h2>
-<p class="intro">A result is only useful if another researcher can identify exactly what was trained, evaluated and released.</p>
-<div class="grid">
-<div class="card"><h3>Dataset integrity</h3><p>Download and verification gates protect against incomplete or altered inputs.</p></div>
-<div class="card"><h3>Leakage control</h3><p>Source/target separation is explicit, with target images excluded from training.</p></div>
-<div class="card"><h3>Automated gates</h3><p>GitHub Actions verifies target coverage and required metric fields before accepting the run.</p></div>
-<div class="card"><h3>Provenance</h3><p>Seed, method, workflow run, commit and target inventory are recorded alongside the result.</p></div>
+<h2>From a benchmark to a research programme</h2>
+<p class="intro">The project is deliberately structured so that the eventual contribution is determined by evidence rather than by a pre-selected architecture story.</p>
+<div class="roadmap">
+<div class="phase"><div class="state">Verified</div><h3>Source-domain infrastructure</h3><p>Dataset handling, leakage-controlled splits, reproducible training and automated validation infrastructure.</p></div>
+<div class="phase"><div class="state">Verified</div><h3>E4 cross-domain execution</h3><p>Source-only domain randomization evaluated on all 79 S-BIAD634 target images with the required metric gate and provenance artifact.</p></div>
+<div class="phase"><div class="state">Next scientific gate</div><h3>Failure-mode stratification</h3><p>Identify which measurable image/domain characteristics explain degradation and where robustness is actually needed.</p></div>
+<div class="phase"><div class="state">Next scientific gate</div><h3>Ablations + strong baselines</h3><p>Separate the contribution of each robustness component and compare against credible alternatives under the same evaluation protocol.</p></div>
+<div class="phase"><div class="state">Planned</div><h3>Few-shot + external validation</h3><p>Test whether limited target-domain information and independent datasets change the conclusions.</p></div>
+<div class="phase"><div class="state">Research direction</div><h3>Bio-MCP</h3><p>Formalize typed bioimage tools, provenance contracts and LLM orchestration only after the underlying scientific workflow is stable enough to expose as reliable tools.</p></div>
 </div>
-<div class="code" style="margin-top:26px">method = source_only_intensity_domain_randomization
-seed = 42
-target_images = 79
-training_target_leakage = false
-release_rule = "verified artifact + complete target gate + provenance"</div>
 </div>
 </section>
 
 <section class="section alt">
 <div class="wrap">
-<h2>Phase 4 roadmap</h2>
-<div class="timeline">
-<div class="phase"><div class="state">Verified</div><h3>E4 execution & evidence</h3><p>Source-only domain-randomized training, complete 79-image target evaluation, metric gate and provenance artifact.</p></div>
-<div class="phase"><div class="state">Next</div><h3>Failure-mode stratification</h3><p>Determine where and why transfer succeeds or fails across image characteristics and biological variation.</p></div>
-<div class="phase"><div class="state">Next</div><h3>Ablations & strong baselines</h3><p>Separate the contribution of domain randomization from architecture, training and evaluation effects.</p></div>
-<div class="phase"><div class="state">Next</div><h3>Adaptation & external validation</h3><p>Test whether robustness persists under few-shot adaptation and genuinely external bioimaging domains.</p></div>
-<div class="phase"><div class="state">Final gate</div><h3>Statistical + novelty audit</h3><p>Freeze the scientific claim only after effect sizes, uncertainty, reproducibility and novelty have been independently checked.</p></div>
-</div>
-</div>
-</section>
-
-<section class="section">
-<div class="wrap">
-<h2>A possible next layer: a Bioimaging MCP</h2>
-<p class="intro">The project also opens a broader systems question: can the structured, tool-driven model used for engineering-domain research be translated into biology? A future Bioimaging MCP could expose reproducible operations for dataset validation, image-domain characterization, segmentation evaluation, robustness experiments, failure analysis and provenance.</p>
+<h2>Reproducibility by construction</h2>
 <div class="grid">
-<div class="card"><h3>Image-domain tools</h3><p>Characterize intensity, contrast, morphology and acquisition-related variation.</p></div>
-<div class="card"><h3>Segmentation tools</h3><p>Run controlled inference and calculate object, overlap and boundary metrics.</p></div>
-<div class="card"><h3>Experiment tools</h3><p>Launch standardized ablations, transfer tests and adaptation studies with frozen protocols.</p></div>
-<div class="card"><h3>Evidence tools</h3><p>Bind every result to dataset hashes, code versions, seeds, configurations and artifacts.</p></div>
+<div class="card"><h3><span class="check">✓</span> Leakage control</h3><p>Target-domain images are excluded from source training in the E4 protocol.</p></div>
+<div class="card"><h3><span class="check">✓</span> Complete target gate</h3><p>E4 requires 79 target images and 79 per-image records before promotion.</p></div>
+<div class="card"><h3><span class="check">✓</span> Versioned artifacts</h3><p>Results are tied to workflow runs, code commits, configuration and provenance.</p></div>
+<div class="card"><h3><span class="check">✓</span> Failure transparency</h3><p>Failed experiments and engineering blockers are retained rather than silently removed.</p></div>
 </div>
-<div class="callout"><strong>Important:</strong> this is a research direction, not yet a validated BioNuclei result. The framework would need a formal specification, implementation, benchmark and novelty audit before being presented as a scientific contribution.</div>
-</div>
-</section>
-
-<section class="section alt">
-<div class="wrap">
-<h2>Public research record</h2>
-<p class="intro">The repository is the source of truth for code, workflows, protocols and release evidence. The public site provides the scientific narrative; the underlying artifacts provide the audit trail.</p>
 <div class="links">
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/README.md">README<span>Project overview and entry point</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/ABOUT.md">About<span>Scope, motivation and research framing</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/DATASETS.md">Datasets<span>Data sources and provenance</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/EXPERIMENT_MATRIX.md">Experiment matrix<span>Planned and executed validation</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/VALIDATION.md">Validation<span>Scientific validation gates</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/PROGRESS.md">Progress<span>Development and evidence status</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/RESEARCH_PROTOCOL.md">Research protocol<span>Reproducible experimental procedure</span></a>
-<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/NOVELTY_AUDIT.md">Novelty audit<span>Contribution and prior-art checks</span></a>
+<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/VALIDATION.md">Validation & cross-checks<span>Scientific and reproducibility gates</span></a>
+<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/EXPERIMENT_MATRIX.md">Experiment matrix<span>Pre-specified experimental sequence</span></a>
+<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/PROGRESS.md">Research progress<span>Evidence-backed project ledger</span></a>
+<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/NOVELTY_AUDIT_2026-08-15.md">Novelty audit<span>Claims remain hypotheses until validated</span></a>
+<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/docs/DATASETS.md">Dataset record<span>Acquisition and provenance information</span></a>
+<a class="link" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">Source repository<span>Code, workflows, tests and documentation</span></a>
 </div>
-<p class="disclaimer">Scientific status is deliberately conservative: verified experiments are reported as verified; planned analyses are not presented as completed findings.</p>
 </div>
 </section>
-</main>
-<footer><div class="wrap">BioNuclei-DomainRobust · Robust nuclear segmentation for heterogeneous fluorescence bioimaging · <a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub repository</a></div></footer>
+
+<footer>
+<div class="wrap"><strong>BioNuclei-DomainRobust</strong> · Domain-robust AI for fluorescence bioimaging<br><span class="small">Research status is evidence-controlled. No fabricated metrics. No hidden data leakage. No completion marks without executable evidence. Bio-MCP is currently a proposed research direction.</span></div>
+</footer>
 </body>
 </html>
