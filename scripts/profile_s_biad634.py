@@ -31,16 +31,13 @@ def index_files(root: Path, folder: str) -> dict[str, Path]:
 def stats(image: np.ndarray, mask: np.ndarray) -> dict[str, object]:
     image = np.asarray(image)
     raw_mask = np.asarray(mask)
-    if image.ndim > 2:
-        image = np.squeeze(image)
-    if image.ndim != 2:
-        raise ValueError(f"Expected 2D image, got image={image.shape}")
+    if image.ndim not in {2, 3}:
+        raise ValueError(f"Expected 2D image or HxWxC multichannel image, got image={image.shape}")
+    if image.ndim == 3 and image.shape[-1] > 4:
+        raise ValueError(f"Expected channel-last image with at most 4 channels, got image={image.shape}")
 
-    # Use the same instance-mask decoder as evaluation. Treating an instance
-    # mask as a binary foreground mask would merge touching nuclei and corrupt
-    # object-count/area statistics used for E3 diagnosis.
     decoded_mask = decode_instance_mask(raw_mask)
-    if decoded_mask.ndim != 2 or image.shape != decoded_mask.shape:
+    if decoded_mask.ndim != 2 or image.shape[:2] != decoded_mask.shape:
         raise ValueError(
             f"Image/mask shape mismatch: image={image.shape}, mask={decoded_mask.shape}"
         )
@@ -49,20 +46,41 @@ def stats(image: np.ndarray, mask: np.ndarray) -> dict[str, object]:
     props = regionprops(labels)
     areas = np.asarray([p.area for p in props], dtype=np.float64)
     values = image.astype(np.float64, copy=False)
+    flat = values.reshape(-1)
+
+    channel_stats: list[dict[str, float]] = []
+    if image.ndim == 3:
+        for channel in range(image.shape[-1]):
+            channel_values = values[..., channel].reshape(-1)
+            channel_stats.append({
+                "channel": int(channel),
+                "min": float(channel_values.min()),
+                "max": float(channel_values.max()),
+                "mean": float(channel_values.mean()),
+                "std": float(channel_values.std()),
+                "p01": float(np.percentile(channel_values, 1)),
+                "p50": float(np.percentile(channel_values, 50)),
+                "p99": float(np.percentile(channel_values, 99)),
+                "nonzero_fraction": float(np.mean(channel_values > 0)),
+            })
+
     return {
         "shape": list(image.shape),
         "dtype": str(image.dtype),
+        "channel_count": int(image.shape[-1]) if image.ndim == 3 else 1,
+        "channel_axis": -1 if image.ndim == 3 else None,
+        "channel_stats": channel_stats,
         "mask_dtype": str(raw_mask.dtype),
         "mask_shape": list(raw_mask.shape),
         "mask_encoding": "instance_labels_or_rgb_colors_decoded_by_bionuclei.masks.decode_instance_mask",
-        "min": float(values.min()),
-        "max": float(values.max()),
-        "mean": float(values.mean()),
-        "std": float(values.std()),
-        "p01": float(np.percentile(values, 1)),
-        "p50": float(np.percentile(values, 50)),
-        "p99": float(np.percentile(values, 99)),
-        "nonzero_fraction": float(np.mean(values > 0)),
+        "min": float(flat.min()),
+        "max": float(flat.max()),
+        "mean": float(flat.mean()),
+        "std": float(flat.std()),
+        "p01": float(np.percentile(flat, 1)),
+        "p50": float(np.percentile(flat, 50)),
+        "p99": float(np.percentile(flat, 99)),
+        "nonzero_fraction": float(np.mean(flat > 0)),
         "annotation_objects": int(len(props)),
         "annotation_foreground_fraction": float(np.mean(labels > 0)),
         "annotation_area_median": float(np.median(areas)) if areas.size else 0.0,
