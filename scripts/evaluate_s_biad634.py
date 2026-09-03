@@ -7,31 +7,9 @@ import numpy as np, tifffile, torch
 from scipy import ndimage
 from skimage.io import imread
 from bionuclei.data import decode_instance_mask
-from bionuclei.metrics import boundary_f1, dice_coefficient, iou_score
+from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
 from scripts.metrics_instance import instance_prf
-
-
-def aji_score(pred, target):
-    pred_ids=[x for x in np.unique(pred) if x>0]; true_ids=[x for x in np.unique(target) if x>0]
-    if not true_ids and not pred_ids:return 1.0
-    if not true_ids or not pred_ids:return 0.0
-    used=set(); inter_sum=0.0; union_sum=0.0
-    for tid in true_ids:
-        t=target==tid; best=(0.0,None)
-        for pid in pred_ids:
-            if pid in used: continue
-            p=pred==pid; inter=np.logical_and(t,p).sum()
-            if inter==0: continue
-            score=inter/np.logical_or(t,p).sum()
-            if score>best[0]:best=(score,pid)
-        if best[1] is None: union_sum+=t.sum()
-        else:
-            pid=int(best[1]); used.add(pid); p=pred==pid
-            inter_sum+=np.logical_and(t,p).sum(); union_sum+=np.logical_or(t,p).sum()
-    for pid in pred_ids:
-        if pid not in used: union_sum+=(pred==pid).sum()
-    return float(inter_sum/union_sum) if union_sum else 1.0
 
 
 def boundary_band(mask):
