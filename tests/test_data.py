@@ -17,6 +17,17 @@ def test_decode_instance_mask_assigns_distinct_labels_to_colors():
     assert decoded[3, 0] == 0
 
 
+def test_decode_instance_mask_splits_repeated_colors_by_component():
+    mask = np.zeros((6, 6, 3), dtype=np.uint8)
+    mask[0:2, 0:2] = (255, 0, 0)
+    mask[4:6, 4:6] = (255, 0, 0)
+
+    decoded = decode_instance_mask(mask)
+
+    assert decoded.max() == 2
+    assert decoded[0, 0] != decoded[4, 4]
+
+
 def test_decode_instance_mask_preserves_grayscale_instances():
     mask = np.array([[0, 1], [2, 2]], dtype=np.uint16)
     decoded = decode_instance_mask(mask)
