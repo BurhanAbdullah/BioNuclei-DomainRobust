@@ -6,6 +6,8 @@ on:
       - 'scripts/train_domain_robust.py'
       - 'scripts/evaluate_s_biad634.py'
       - 'scripts/metrics_instance.py'
+      - 'src/bionuclei/data.py'
+      - 'src/bionuclei/metrics.py'
       - 'scripts/download_s_biad634.py'
       - 'configs/domain_robust.yaml'
       - '.github/workflows/e4_domain_robust.yml'
