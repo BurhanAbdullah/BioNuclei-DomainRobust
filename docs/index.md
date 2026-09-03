@@ -1,58 +1,85 @@
-# BioNuclei-DomainRobust
+# BioMCP — Research Documentation
 
-## Domain-Robust Nuclear Instance Segmentation for Fluorescence Bioimaging
+> **AI orchestrates. Scientific software measures.**
 
-**Public project status page**
+This documentation describes the transition from the **BioNuclei-DomainRobust** scientific research substrate toward the broader **BioMCP** ecosystem for agentic, reproducible bioimaging science.
 
-### What is this project?
+## What we are building
 
-BioNuclei-DomainRobust studies whether a nuclear instance-segmentation model trained on one fluorescence-imaging domain can remain reliable when transferred to heterogeneous human fluorescence microscopy.
+BioMCP explores an open interoperability layer between AI agents and existing bioimage-analysis tools, models, datasets, workflows and provenance systems.
 
-### Research pipeline
+```text
+Researcher
+   ↓
+AI agent / LLM
+   ↓
+BioMCP
+   ↓
+Scientific tools + models + data
+   ↓
+BioWF workflows
+   ↓
+Evidence + provenance
+   ↓
+Human review
+```
 
-**BBBC039 → boundary-aware U-Net → held-out source evaluation → S-BIAD634 zero-shot transfer → domain-shift analysis → evidence-driven robustness method → ablations → few-shot adaptation → independent validation**
+The project deliberately separates **planning and explanation** from **scientific measurement**. The LLM may coordinate a task; executable scientific software produces the measurements.
 
-### Verified infrastructure
+## The ecosystem
 
-- ✅ Reproducible Python package and experiment configuration
-- ✅ Automated tests and GitHub Actions CI
-- ✅ BBBC039 official-data acquisition and verification workflow
-- ✅ Official 100/50/50 source-domain split handling
-- ✅ Boundary-aware U-Net training/evaluation workflow
-- ✅ S-BIAD634 acquisition and deterministic image/ground-truth pairing
-- ✅ Target-domain RGB/RGBA handling, stride-compatible padding and tiled inference
-- ✅ Artifact/provenance validation gates
+- **BioFM** — domain-aware vision and multimodal model research.
+- **BioMCP** — typed agent-to-scientific-tool interoperability.
+- **BioWF** — reproducible workflow composition and execution.
+- **BioSkills** — reusable scientific procedures, validation rules and domain guidance.
 
-### Current scientific status
+These are staged research directions. Proposed components are not described as implemented until executable code and validation evidence exist.
 
-The project distinguishes **engineering validation** from **scientific claims**. A result is reported only after its corresponding experiment artifact has been checked.
+## BioNuclei research substrate
 
-- **Source-domain baseline:** completed on the verified BBBC039 split.
-- **Target-domain transfer:** evaluation infrastructure is implemented; the current release-gate result still requires verification before being promoted as the definitive result.
-- **Domain-robust method:** intentionally not frozen until target-domain failure modes are measured.
+The current repository provides the concrete scientific environment for the architecture:
 
-### Validation
+**BBBC039 → boundary-aware segmentation → source evaluation → S-BIAD634 zero-shot transfer → domain-shift diagnosis → evidence-driven robustness → ablations → few-shot adaptation → external validation.**
 
-The latest verified repository CI run completed successfully with the test suite passing. The repository also contains regression tests for the S-BIAD634 pairing logic and reproducibility gates.
+The segmentation research remains governed by the repository's leakage controls, experiment matrix, statistical rules, provenance requirements and release gates.
 
-### For researchers
+## Documentation map
 
-Start here:
+### Direction and architecture
 
-- [About the project](ABOUT.md)
-- [Research progress ledger](PROGRESS.md)
-- [Experiment matrix](EXPERIMENT_MATRIX.md)
-- [Release checklist](RELEASE_CHECKLIST.md)
-- [Novelty audit](NOVELTY_AUDIT_2026-08-15.md)
+- [BioMCP Manifesto](BIOMCP_MANIFESTO.md) — vision, principles, boundaries and research question.
+- [Architecture](ARCHITECTURE.md) — BioFM/BioMCP/BioWF/BioSkills design and proposed tool contracts.
+- [Roadmap](ROADMAP.md) — staged implementation programme.
+- [BioMCP technical README](biomcp/README.md) — implementation direction.
 
-### Repository
+### Scientific research
 
-[GitHub repository](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust)
+- [About](ABOUT.md) — project identity and BioNuclei/BioMCP relationship.
+- [Experimental Matrix](EXPERIMENT_MATRIX.md) — pre-specified scientific sequence and statistical rules.
+- [Research Protocol](RESEARCH_PROTOCOL.md) — reproducibility and evaluation protocol.
+- [Validation](VALIDATION.md) — software, dataset and scientific cross-check record.
+- [Progress Ledger](PROGRESS.md) — evidence-backed development history.
+- [Release Checklist](RELEASE_CHECKLIST.md) — publication/release gates.
+- [Datasets](DATASETS.md) — roles, acquisition and data policy.
 
-### Data policy
+## Public website
 
-Raw third-party datasets are not redistributed in this repository. Use the documented authoritative acquisition workflows and follow the original dataset terms.
+The HTML site is intentionally **vision/ecosystem focused**. Detailed scientific evidence belongs on the research pages rather than the homepage.
 
-### Reproducibility principle
+- `index.html` — public BioMCP home.
+- `architecture.html` — ecosystem architecture.
+- `biomcp.html` — BioMCP layer.
+- `biofm.html` — BioFM direction.
+- `biowf.html` — BioWF direction.
+- `bioskills.html` — BioSkills direction.
+- `research.html` — BioNuclei scientific research and evidence.
 
-No fabricated metrics. No hidden data leakage. No scientific completion marks without executable evidence.
+## Reproducibility policy
+
+No fabricated metrics. No hidden data leakage. No unsupported novelty claims. No scientific completion marks without executable evidence.
+
+Third-party datasets are not redistributed. Raw data must be obtained from authoritative providers under their applicable terms.
+
+## Independence
+
+BioMCP is an independent research initiative. It is not affiliated with Harvard University or any other institution.
