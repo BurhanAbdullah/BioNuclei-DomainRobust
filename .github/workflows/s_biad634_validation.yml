@@ -50,7 +50,9 @@ jobs:
           assert not missing, f'Missing profile fields: {sorted(missing)}'
           assert all(r['mask_encoding'].startswith('instance_labels_or_rgb_colors_decoded_by_') for r in records), 'Profile must record the canonical instance-mask decoder'
           assert all(r['annotation_objects'] >= 0 for r in records), 'Annotation object counts must be non-negative'
-          assert all(len(r['shape']) == 2 and len(r['mask_shape']) == 2 for r in records), 'Image and raw mask shapes must be 2D after profiling'
+          assert all(len(r['shape']) == 2 for r in records), 'Image shapes must be 2D after profiling'
+          assert all(len(r['mask_shape']) in (2, 3) for r in records), 'Raw mask shapes must be 2D labels or 3D RGB/RGBA arrays'
+          assert all(len(r['mask_shape']) == 2 or r['mask_shape'][-1] in (3, 4) for r in records), '3D raw masks must have RGB/RGBA channel dimension'
           print(f'Verified complete 79-image target-domain profile with canonical mask decoding: {len(records)} records.')
           PY
       - name: Upload provenance and domain profile
