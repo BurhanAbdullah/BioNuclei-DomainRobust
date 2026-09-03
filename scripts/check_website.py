@@ -35,14 +35,18 @@ def main() -> int:
         return 1
 
     title = re.search(r"<title[^>]*>(.*?)</title>", body, re.I | re.S)
-    if not title or "BioNuclei-DomainRobust" not in title.group(1):
-        print("WEBSITE_CHECK_FAILED: expected site title not found", file=sys.stderr)
+    if not title or "BioNuclei" not in title.group(1):
+        print("WEBSITE_CHECK_FAILED: expected BioNuclei site title not found", file=sys.stderr)
         return 1
 
-    required = ("Research question", "Study pipeline", "Reproducibility")
+    required = (
+        "Reliable AI for biological imaging.",
+        "Explore the research programme.",
+        "Open research. Public code. Evidence before claims.",
+    )
     missing = [item for item in required if item not in body]
     if missing:
-        print(f"WEBSITE_CHECK_FAILED: missing sections: {missing}", file=sys.stderr)
+        print(f"WEBSITE_CHECK_FAILED: missing homepage content: {missing}", file=sys.stderr)
         return 1
 
     print(f"WEBSITE_CHECK_OK: HTTP {status}; final_url={final_url}")
