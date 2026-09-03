@@ -3,41 +3,338 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BioMCP — Open Agentic AI for Bioimaging Science</title>
-<meta name="description" content="BioMCP is an open-source agentic interoperability layer connecting AI agents with the open-source bioimaging ecosystem — enabling reproducible, evidence-backed scientific workflows.">
+<title>BioMCP | Open Agentic AI for Bioimaging Science</title>
+<meta name="description" content="BioMCP is an open source agentic interoperability layer connecting AI agents with the open source bioimaging ecosystem, enabling reproducible, evidence based scientific workflows.">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
+
 <nav class="site-nav" aria-label="Primary">
   <div class="wrap nav-inner">
     <a class="brand" href="index.html"><span class="mark" aria-hidden="true"></span><span>BioMCP<small>Open Agentic AI for Bioimaging</small></span></a>
     <div class="nav-links">
-      <a href="#vision">Vision</a><a href="#ecosystem">Ecosystem</a><a href="research.html">Research</a><a href="biomcp.html">BioMCP</a><a href="#tools">Tools</a><a href="index.md">Docs</a><a href="#community">Community</a>
+      <a href="#vision">Vision</a>
+      <a href="#ecosystem">Ecosystem</a>
+      <a href="research.html">Research</a>
+      <a href="biomcp.html">BioMCP</a>
+      <a href="#tools">Tools</a>
+      <a href="index.md">Docs</a>
+      <a href="#team">Team</a><a href="#community">Community</a>
     </div>
-    <div class="nav-cta"><a class="btn small" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><a class="btn small primary" href="#involved">Get involved</a><button class="nav-toggle" aria-expanded="false" aria-controls="nav-links">Menu</button></div>
+    <div class="nav-cta">
+      <a class="btn small" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a>
+      <a class="btn small primary" href="#involved">Get involved</a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav-links">Menu</button>
+    </div>
   </div>
 </nav>
+
+<!-- ============ HERO ============ -->
 <header class="hero">
   <div class="wrap">
-    <div class="eyebrow"><span class="pill">Open source</span><span class="pill">Agentic AI</span><span class="pill">Bioimaging</span><span class="pill neutral">Research initiative</span></div>
+    <div class="eyebrow">
+      <span class="pill">Open source</span>
+      <span class="pill">Agentic AI</span>
+      <span class="pill">Bioimaging</span>
+      <span class="pill neutral">Research initiative</span>
+    </div>
     <h1>Agentic AI for<br>bioimaging science.</h1>
-    <p class="lead">BioMCP is an open-source ecosystem connecting AI agents with the open-source bioimaging tools, models and workflows researchers already use — so scientific questions can be explored through reproducible, evidence-backed analysis rather than another isolated chatbot.</p>
-    <div class="actions"><a class="btn primary" href="#ecosystem">Explore the ecosystem →</a><a class="btn" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">View on GitHub</a></div>
+    <p class="lead">BioMCP is an open source ecosystem connecting AI agents with the
+      open source bioimaging tools, models and workflows researchers already use,
+      so scientific questions can be explored through reproducible, evidence based
+      analysis rather than another isolated chatbot.</p>
+    <div class="actions">
+      <a class="btn primary" href="#ecosystem">Explore the ecosystem →</a>
+      <a class="btn" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">View on GitHub</a>
+    </div>
+  </div>
+  <div class="hero-visual" aria-label="Microscopy visual gallery">
+    <figure class="hero-image hero-image-main">
+      <img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/DAPI-stained_nuclei_of_HaCaT_keratinocytes.png" alt="Fluorescence confocal microscopy showing DAPI stained cell nuclei">
+      <figcaption>Fluorescence microscopy · nuclei and cellular structure</figcaption>
+    </figure>
+    <div class="hero-image-stack">
+      <figure class="hero-image">
+        <img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/LSM%20fluorescence%20image%20of%20HeLa%20immortalized%20cells%20showing%20fluorescent%20staining%20of%20cellular%20compartments.%20Nuclei%20are%20labeled%20in%20blue%2C%20the%20cytoplasm%20in%20orange%2C%20and%20vesicular%20transport%E2%80%93associated%20proteins%20in%20red.jpg" alt="Multichannel fluorescence microscopy of stained cells">
+        <figcaption>Multichannel cellular imaging</figcaption>
+      </figure>
+      <figure class="hero-image">
+        <img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Nikon-Inverted%20fluorescence%20microscope.jpg" alt="Inverted fluorescence microscope in a laboratory">
+        <figcaption>Microscopy instrumentation</figcaption>
+      </figure>
+    </div>
   </div>
 </header>
-<div class="wrap"><div class="diagram-panel mt" style="margin-top:-8px;margin-bottom:20px">
-<svg viewBox="0 0 1100 300" role="img" aria-labelledby="heroSvgTitle"><title id="heroSvgTitle">A fluorescence-microscopy field with nuclear boundaries outlined, representing bioimaging data that scientific software measures</title><rect width="1100" height="300" rx="16" fill="#20242a"/><g opacity="0.5"><circle cx="150" cy="90" r="90" fill="#8f1d2c"/><circle cx="430" cy="120" r="100" fill="#3c4048"/><circle cx="760" cy="90" r="90" fill="#6c1420"/><circle cx="960" cy="200" r="100" fill="#3c4048"/></g><g fill="#e9e6df" opacity="0.9"><ellipse cx="120" cy="90" rx="30" ry="24"/><ellipse cx="230" cy="150" rx="26" ry="34"/><ellipse cx="360" cy="90" rx="36" ry="28"/><ellipse cx="500" cy="140" rx="27" ry="24"/><ellipse cx="640" cy="90" rx="34" ry="30"/><ellipse cx="780" cy="170" rx="32" ry="27"/><ellipse cx="900" cy="110" rx="27" ry="30"/><ellipse cx="1010" cy="200" rx="30" ry="24"/></g><g fill="none" stroke="#c9a2a8" stroke-width="2.5"><ellipse cx="120" cy="90" rx="40" ry="33"/><ellipse cx="230" cy="150" rx="35" ry="43"/><ellipse cx="360" cy="90" rx="46" ry="37"/><ellipse cx="500" cy="140" rx="36" ry="33"/><ellipse cx="640" cy="90" rx="43" ry="39"/><ellipse cx="780" cy="170" rx="41" ry="36"/><ellipse cx="900" cy="110" rx="36" ry="39"/><ellipse cx="1010" cy="200" rx="39" ry="33"/></g><text x="24" y="34" fill="#c7cad0" font-family="Inter,sans-serif" font-size="13" letter-spacing="1">FLUORESCENCE FIELD · NUCLEAR INSTANCES · PREDICTED BOUNDARIES</text></svg>
-</div></div>
-<section class="section" id="intro"><div class="wrap"><div class="kicker">Introduction</div><h2>Bioimaging is increasingly computational — and increasingly fragmented.</h2><p class="intro">Modern microscopy generates data that researchers analyze with a wide, specialized software ecosystem: tools for visualization, segmentation, tracking, quantification and data management. Each is powerful. Few speak to one another, and stitching them into a reproducible study is manual, slow and easy to get wrong. BioMCP explores how AI agents can connect these existing, trusted open-source tools into workflows that are transparent, reproducible and scientifically accountable — rather than replacing them with a black box.</p></div></section>
-<section class="section alt" id="why"><div class="wrap"><div class="kicker">Why BioMCP</div><h2>The problem isn't a lack of tools. It's connecting them.</h2><p class="intro">Researchers already have excellent open-source software for nearly every step of bioimage analysis. What's missing is a common, agent-accessible layer that can discover the right tool, run it correctly, and keep a trustworthy record of what happened.</p><div class="flow" role="img" aria-label="Problem flow from complex biological data through fragmented tools to the need for interoperability"><div class="node"><strong>Complex biological data</strong><span>multi-channel, multi-modal imagery</span></div><div class="arrow">→</div><div class="node"><strong>Many specialized tools</strong><span>each with its own interface</span></div><div class="arrow">→</div><div class="node"><strong>Fragmented workflows</strong><span>manual glue code, lost context</span></div><div class="arrow">→</div><div class="node"><strong>Reproducibility challenges</strong><span>hard to trace or repeat</span></div><div class="arrow">→</div><div class="node"><strong>Need for interoperability</strong><span>an agentic, auditable bridge</span></div></div></div></section>
-<section class="section dark" id="vision"><div class="wrap"><div class="kicker">Our vision</div><h2>A researcher asks a question. Scientific software answers it.</h2><p class="intro" style="color:#b8bcc4">The role of the agent is to plan and orchestrate — not to replace measurement. BioMCP is built around one non-negotiable principle.</p><div class="flow"><div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Question</strong><span>natural language</span></div><div class="arrow">→</div><div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Data</strong><span>images, metadata</span></div><div class="arrow">→</div><div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Tools</strong><span>open bioimaging software</span></div><div class="arrow">→</div><div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Analysis</strong><span>measurement, quantification</span></div><div class="arrow">→</div><div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Validation</strong><span>checks, provenance</span></div><div class="arrow">→</div><div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Evidence</strong><span>traceable results</span></div></div><p class="center mt" style="font-family:var(--serif);font-size:1.7rem;color:#fff">“AI orchestrates. Scientific software measures.”</p></div></section>
-<section class="section" id="ecosystem"><div class="wrap"><div class="kicker">Ecosystem</div><h2>The BioMCP ecosystem</h2><p class="intro">Four layers, connected through BioMCP, reaching out into the open-source bioimaging tools researchers already trust.</p><div class="diagram-panel"><svg viewBox="0 0 1100 400" role="img" aria-labelledby="ecoTitle"><title id="ecoTitle">BioMCP ecosystem layers and open-source bioimaging tools</title><rect x="24" y="20" width="1052" height="120" rx="16" fill="#fff" stroke="#e6e1d8"/><text x="550" y="58" text-anchor="middle" font-family="Inter,sans-serif" font-size="15" font-weight="700" fill="#1a1c1f">BIOMCP — AGENT / TOOL INTEROPERABILITY LAYER</text><g font-family="Inter,sans-serif"><rect x="55" y="78" width="215" height="46" rx="10" fill="#fbecee" stroke="#f6dfe2"/><text x="162" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#6c1420">BioFM · foundation models</text><rect x="298" y="78" width="215" height="46" rx="10" fill="#8f1d2c"/><text x="405" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">BioMCP · orchestration</text><rect x="541" y="78" width="215" height="46" rx="10" fill="#fbecee" stroke="#f6dfe2"/><text x="648" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#6c1420">BioWF · workflows</text><rect x="784" y="78" width="215" height="46" rx="10" fill="#fbecee" stroke="#f6dfe2"/><text x="891" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#6c1420">BioSkills · knowledge</text></g><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#c9a2a8"/></marker></defs><path d="M550 140V190" stroke="#c9a2a8" stroke-width="2" fill="none" marker-end="url(#arrow)"/><rect x="24" y="190" width="1052" height="66" rx="14" fill="#f6f3ee" stroke="#e6e1d8"/><text x="550" y="228" text-anchor="middle" font-family="Inter,sans-serif" font-size="14" font-weight="700" fill="#1a1c1f">OPEN-SOURCE BIOIMAGING ECOSYSTEM</text><path d="M550 256V286" stroke="#c9a2a8" stroke-width="2" fill="none" marker-end="url(#arrow)"/><g font-family="Inter,sans-serif" font-size="13" font-weight="600" fill="#1a1c1f"><rect x="24" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="118" y="317" text-anchor="middle">Fiji / ImageJ</text><rect x="228" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="322" y="317" text-anchor="middle">napari</text><rect x="432" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="526" y="317" text-anchor="middle">CellProfiler</text><rect x="636" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="730" y="317" text-anchor="middle">QuPath</text><rect x="840" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="934" y="317" text-anchor="middle">OMERO</text></g><g font-family="Inter,sans-serif" font-size="12" fill="#5b6169"><text x="550" y="365" text-anchor="middle">+ ilastik · Cellpose · StarDist · Bio-Formats/OME · scikit-image · BioImage Model Zoo</text><text x="550" y="388" text-anchor="middle" font-style="italic">ecosystem targets — see status labels on the BioMCP page for what is connected today</text></g></svg></div><div class="grid grid-4 mt"><a class="card card-link" href="biofm.html"><span class="tag">BioFM</span><h3>Foundation models</h3><p>A research direction for domain-aware vision and multimodal models for microscopy.</p><span class="explore">Explore →</span></a><a class="card card-link" href="biomcp.html"><span class="tag">BioMCP</span><h3>Agent / tool interoperability</h3><p>The typed interface connecting agents to open-source bioimaging tools.</p><span class="explore">Explore →</span></a><a class="card card-link" href="biowf.html"><span class="tag">BioWF</span><h3>Reproducible workflows</h3><p>Auditable, versioned sequences that turn tool calls into a complete study.</p><span class="explore">Explore →</span></a><a class="card card-link" href="bioskills.html"><span class="tag">BioSkills</span><h3>Scientific knowledge</h3><p>Reusable domain instructions, protocols and task-specific capabilities.</p><span class="explore">Explore →</span></a></div></div></section>
-<section class="section alt" id="how"><div class="wrap"><div class="kicker">How it works</div><h2>From a question to accountable evidence</h2><div class="flow"><div class="node"><strong>Researcher</strong><span>asks a question</span></div><div class="arrow">→</div><div class="node"><strong>Agent</strong><span>plans, reasons</span></div><div class="arrow">→</div><div class="node"><strong>BioMCP</strong><span>selects a tool</span></div><div class="arrow">→</div><div class="node"><strong>Open bioimaging tool</strong><span>runs the analysis</span></div><div class="arrow">→</div><div class="node"><strong>Evidence + memory</strong><span>provenance retained</span></div></div></div></section>
-<section class="section" id="tools"><div class="wrap"><div class="kicker">Open-source bioimaging</div><h2>Built for the tools researchers already use</h2><p class="intro">BioMCP is not another ImageJ, napari or CellProfiler — it's the layer that helps agents discover and use them correctly, across the categories bioimaging already relies on.</p><div class="grid grid-4 mt"><div class="card"><h3>Visualization</h3><p>napari, Fiji/ImageJ</p></div><div class="card"><h3>Segmentation</h3><p>Cellpose, StarDist, ilastik</p></div><div class="card"><h3>Quantification</h3><p>CellProfiler, scikit-image</p></div><div class="card"><h3>Data management</h3><p>OMERO, Bio-Formats / OME</p></div></div><p class="disclaimer">Listed tools represent the ecosystem BioMCP targets, not a claim that every integration exists today. See the BioMCP page for what is implemented versus planned.</p></div></section>
-<section class="section alt" id="research"><div class="wrap"><div class="kicker">Research</div><h2>Research directions</h2><p class="intro">The homepage stays at the vision level. Detailed methodology, implementation status and verified experimental evidence live on the research page.</p><div class="grid grid-3 mt"><div class="card"><h3>Agentic bioimage analysis</h3><p>Connecting agents to deterministic bioimaging tools.</p></div><div class="card"><h3>Robust bioimage AI</h3><p>Domain-robust nuclear segmentation as a validation foundation.</p></div><div class="card"><h3>Scientific memory</h3><p>Retaining workflow context, not just conversation.</p></div></div><div class="mt"><a class="btn primary" href="research.html">Explore research →</a></div></div></section>
-<section class="section" id="community"><div class="wrap"><div class="kicker">Open research</div><h2>Open source. Open tools. Open workflows.</h2><p class="intro">BioMCP is developed in the open. Documentation, code and research protocols are public, and the project welcomes scrutiny and contribution from the bioimaging and AI-agent communities.</p><div class="grid grid-4 mt"><div class="card"><h3>Open source</h3><p>Code and configs are public on GitHub.</p></div><div class="card"><h3>Open tools</h3><p>Built on and for existing open bioimaging software.</p></div><div class="card"><h3>Reproducible</h3><p>Fixed protocols, seeds and provenance artifacts.</p></div><div class="card"><h3>Public docs</h3><p>Validation, progress and roadmap tracked in-repo.</p></div></div></div></section>
-<section class="section dark" id="involved"><div class="wrap center"><div class="kicker">Get involved</div><h2 style="color:#fff">Build with us.</h2><p class="intro center" style="margin:0 auto;color:#b8bcc4">Explore the ecosystem. Contribute to open scientific AI for bioimaging.</p><div class="actions center" style="justify-content:center"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><a class="btn" style="background:transparent;border-color:#4a4e55;color:#fff" href="index.md">Documentation</a><a class="btn" style="background:transparent;border-color:#4a4e55;color:#fff" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/README.md">Contribute</a></div></div></section>
-<footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioMCP</h4><p style="color:#9a9ea5;max-width:280px">Open-source agentic AI for bioimaging science — connecting AI agents with the tools, models and workflows of the open bioimaging ecosystem.</p></div><div><h4>Explore</h4><a href="#vision">Vision</a><a href="#ecosystem">Ecosystem</a><a href="research.html">Research</a><a href="biomcp.html">BioMCP</a></div><div><h4>Ecosystem</h4><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a><a href="#tools">Tools</a></div><div><h4>Project</h4><a href="index.md">Documentation</a><a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><a href="#community">Community</a></div></div><div class="foot-bottom"><span>BioMCP is developed as part of the BioNuclei-DomainRobust research project.</span><span>Open source · MIT-style research code</span></div></div></footer>
+
+<!-- ============ INTRODUCTION ============ -->
+<section class="section" id="intro">
+  <div class="wrap">
+    <div class="kicker">Introduction</div>
+    <h2>Bioimaging is increasingly computational and increasingly fragmented.</h2>
+    <p class="intro">Modern microscopy generates data that researchers analyze with a
+      wide, specialized software ecosystem: tools for visualization, segmentation,
+      tracking, quantification and data management. Each is powerful. Few speak to
+      one another, and stitching them into a reproducible study is manual, slow and
+      easy to get wrong. BioMCP explores how AI agents can connect these existing,
+      trusted open source tools into workflows that are transparent, reproducible
+      and scientifically accountable, rather than replacing them with a black box.</p>
+  </div>
+</section>
+
+<!-- ============ WHY BIOMCP ============ -->
+<section class="section alt" id="why">
+  <div class="wrap">
+    <div class="kicker">Why BioMCP</div>
+    <h2>The problem is not a lack of tools. It is connecting them.</h2>
+    <p class="intro">Researchers already have excellent open source software for
+      nearly every step of bioimage analysis. What is missing is a common,
+      agent accessible layer that can discover the right tool, run it correctly,
+      and keep a trustworthy record of what happened.</p>
+    <div class="flow" role="img" aria-label="Problem flow: complex biological data leads through fragmented tools to the need for intelligent interoperability">
+      <div class="node"><strong>Complex biological data</strong><span>multi channel, multi modal imagery</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Many specialized tools</strong><span>each with its own interface</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Fragmented workflows</strong><span>manual glue code, lost context</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Reproducibility challenges</strong><span>hard to trace or repeat</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Need for interoperability</strong><span>an agentic, auditable bridge</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ VISION ============ -->
+<section class="section dark" id="vision">
+  <div class="wrap">
+    <div class="kicker">Our vision</div>
+    <h2>A researcher asks a question. Scientific software answers it.</h2>
+    <p class="intro" style="color:#b8bcc4">The role of the agent is to plan and
+      orchestrate, not to replace measurement. BioMCP is built around one
+      non negotiable principle.</p>
+    <div class="flow" role="img" aria-label="Question leads to data, tools, analysis, validation, then evidence">
+      <div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Question</strong><span>natural language</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Data</strong><span>images, metadata</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Tools</strong><span>open bioimaging software</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Analysis</strong><span>measurement, quantification</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Validation</strong><span>checks, provenance</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node" style="background:#262a30;border-color:#3a3e45"><strong style="color:#fff">Evidence</strong><span>traceable results</span></div>
+    </div>
+    <p class="center mt" style="font-family:var(--serif);font-size:1.7rem;color:#fff;letter-spacing:-.01em">
+      “AI orchestrates. Scientific software measures.”
+    </p>
+  </div>
+</section>
+
+<!-- ============ ECOSYSTEM ============ -->
+<section class="section" id="ecosystem">
+  <div class="wrap">
+    <div class="kicker">Ecosystem</div>
+    <h2>The BioMCP ecosystem</h2>
+    <p class="intro">Four layers, connected through BioMCP, reaching out into the
+      open source bioimaging tools researchers already trust.</p>
+
+    <div class="diagram-panel">
+      <svg viewBox="0 0 1100 400" role="img" aria-labelledby="ecoTitle">
+        <title id="ecoTitle">BioMCP sits above BioFM, BioMCP itself, BioWF and BioSkills, which connect down into the open bioimaging ecosystem of tools such as Fiji, napari, CellProfiler, OMERO and QuPath</title>
+        <rect x="24" y="20" width="1052" height="120" rx="16" fill="#fff" stroke="#e6e1d8"/>
+        <text x="550" y="58" text-anchor="middle" font-family="Inter,sans-serif" font-size="15" font-weight="700" fill="#1a1c1f">BIOMCP | AGENT AND TOOL INTEROPERABILITY LAYER</text>
+        <g font-family="Inter,sans-serif">
+          <rect x="55" y="78" width="215" height="46" rx="10" fill="#fbecee" stroke="#f6dfe2"/>
+          <text x="162" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#6c1420">BioFM · foundation models</text>
+          <rect x="298" y="78" width="215" height="46" rx="10" fill="#8f1d2c"/>
+          <text x="405" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">BioMCP · orchestration</text>
+          <rect x="541" y="78" width="215" height="46" rx="10" fill="#fbecee" stroke="#f6dfe2"/>
+          <text x="648" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#6c1420">BioWF · workflows</text>
+          <rect x="784" y="78" width="215" height="46" rx="10" fill="#fbecee" stroke="#f6dfe2"/>
+          <text x="891" y="106" text-anchor="middle" font-size="14" font-weight="700" fill="#6c1420">BioSkills · knowledge</text>
+        </g>
+        <path d="M550 140V190" stroke="#c9a2a8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0 0L8 4L0 8Z" fill="#c9a2a8"/>
+          </marker>
+        </defs>
+        <rect x="24" y="190" width="1052" height="66" rx="14" fill="#f6f3ee" stroke="#e6e1d8"/>
+        <text x="550" y="228" text-anchor="middle" font-family="Inter,sans-serif" font-size="14" font-weight="700" fill="#1a1c1f">OPEN SOURCE BIOIMAGING ECOSYSTEM</text>
+        <path d="M550 256V286" stroke="#c9a2a8" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+        <g font-family="Inter,sans-serif" font-size="13" font-weight="600" fill="#1a1c1f">
+          <rect x="24" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="118" y="317" text-anchor="middle">Fiji / ImageJ</text>
+          <rect x="228" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="322" y="317" text-anchor="middle">napari</text>
+          <rect x="432" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="526" y="317" text-anchor="middle">CellProfiler</text>
+          <rect x="636" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="730" y="317" text-anchor="middle">QuPath</text>
+          <rect x="840" y="286" width="188" height="54" rx="10" fill="#fff" stroke="#e6e1d8"/><text x="934" y="317" text-anchor="middle">OMERO</text>
+        </g>
+        <g font-family="Inter,sans-serif" font-size="12" fill="#5b6169">
+          <text x="550" y="365" text-anchor="middle">+ ilastik · Cellpose · StarDist · Bio Formats / OME · scikit image · BioImage Model Zoo</text>
+          <text x="550" y="388" text-anchor="middle" font-style="italic">ecosystem targets. See the BioMCP page for what is connected today</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="grid grid-4 mt">
+      <a class="card card-link" href="biofm.html"><span class="tag">BioFM</span><h3>Foundation models</h3><p>A research direction for domain aware vision and multimodal models for microscopy.</p><span class="explore">Explore →</span></a>
+      <a class="card card-link" href="biomcp.html"><span class="tag">BioMCP</span><h3>Agent and tool interoperability</h3><p>The typed interface connecting agents to open source bioimaging tools.</p><span class="explore">Explore →</span></a>
+      <a class="card card-link" href="biowf.html"><span class="tag">BioWF</span><h3>Reproducible workflows</h3><p>Auditable, versioned sequences that turn tool calls into a complete study.</p><span class="explore">Explore →</span></a>
+      <a class="card card-link" href="bioskills.html"><span class="tag">BioSkills</span><h3>Scientific knowledge</h3><p>Reusable domain instructions, protocols and task specific capabilities.</p><span class="explore">Explore →</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section class="section alt" id="how">
+  <div class="wrap">
+    <div class="kicker">How it works</div>
+    <h2>From a question to accountable evidence</h2>
+    <div class="flow" role="img" aria-label="Researcher asks agent, which uses BioMCP to select an open source bioimaging tool, producing analysis, validation, evidence and provenance, retained as scientific memory">
+      <div class="node"><strong>Researcher</strong><span>asks a question</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Agent</strong><span>plans and reasons</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>BioMCP</strong><span>selects a tool</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Open bioimaging tool</strong><span>runs the analysis</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><strong>Evidence and memory</strong><span>provenance retained</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OPEN SOURCE TOOLS ============ -->
+<section class="section" id="tools">
+  <div class="wrap">
+    <div class="kicker">Open source bioimaging</div>
+    <h2>Built for the tools researchers already use</h2>
+    <p class="intro">BioMCP is not another ImageJ, napari or CellProfiler. It is the
+      layer that helps agents discover and use them correctly, across the
+      categories bioimaging already relies on.</p>
+    <div class="grid grid-4 mt">
+      <div class="card"><h3>Visualization</h3><p>napari, Fiji and ImageJ</p></div>
+      <div class="card"><h3>Segmentation</h3><p>Cellpose, StarDist, ilastik</p></div>
+      <div class="card"><h3>Quantification</h3><p>CellProfiler, scikit image</p></div>
+      <div class="card"><h3>Data management</h3><p>OMERO, Bio Formats and OME</p></div>
+    </div>
+    <p class="disclaimer">Listed tools represent the ecosystem BioMCP targets, not a
+      claim that every integration exists today. See the BioMCP page for what is
+      implemented versus planned.</p>
+  </div>
+</section>
+
+<!-- ============ RESEARCH ============ -->
+<section class="section alt" id="research">
+  <div class="wrap">
+    <div class="kicker">Research</div>
+    <h2>Research directions</h2>
+    <p class="intro">The homepage stays at the vision level. Detailed methodology,
+      implementation status and verified experimental evidence live on the
+      research page.</p>
+    <div class="grid grid-3 mt">
+      <div class="card"><h3>Agentic bioimage analysis</h3><p>Connecting agents to deterministic bioimaging tools.</p></div>
+      <div class="card"><h3>Robust bioimage AI</h3><p>Domain robust nuclear segmentation as a validation foundation.</p></div>
+      <div class="card"><h3>Scientific memory</h3><p>Retaining workflow context, not just conversation.</p></div>
+    </div>
+    <div class="mt"><a class="btn primary" href="research.html">Explore research →</a></div>
+  </div>
+</section>
+
+<!-- ============ TEAM ============ -->
+<section class="section alt" id="team">
+  <div class="wrap">
+    <div class="kicker">Team</div>
+    <h2>People building BioMCP.</h2>
+    <p class="intro">BioMCP is an open research project. The founding project lead is shown first, followed by contributors whose work is recorded in the public GitHub repository. This list updates automatically as the project grows.</p>
+    <div class="team-grid" id="team-grid" aria-live="polite">
+      <article class="team-card team-lead">
+        <img src="https://github.com/BurhanAbdullah.png?size=160" alt="Burhan Abdullah" class="team-avatar">
+        <div class="team-info">
+          <span class="tag">Project lead</span>
+          <h3>Burhan Abdullah</h3>
+          <p>Founder and lead of the BioMCP research direction.</p>
+          <a href="https://github.com/BurhanAbdullah" class="team-link">GitHub profile →</a>
+        </div>
+      </article>
+      <div class="team-loading" id="team-loading">Loading GitHub contributors...</div>
+    </div>
+    <p class="disclaimer">Contributor profiles are populated from public GitHub contribution data. Commit based contribution is used for automatic inclusion. Bots and service accounts are excluded.</p>
+  </div>
+</section>
+
+<!-- ============ COMMUNITY ============ -->
+<section class="section" id="community">
+  <div class="wrap">
+    <div class="kicker">Open research</div>
+    <h2>Open source. Open tools. Open workflows.</h2>
+    <p class="intro">BioMCP is developed in the open. Documentation, code and
+      research protocols are public, and the project welcomes scrutiny and
+      contribution from the bioimaging and AI agent communities.</p>
+    <div class="grid grid-4 mt">
+      <div class="card"><h3>Open source</h3><p>Code and configs are public on GitHub.</p></div>
+      <div class="card"><h3>Open tools</h3><p>Built on and for existing open bioimaging software.</p></div>
+      <div class="card"><h3>Reproducible</h3><p>Fixed protocols, seeds and provenance artifacts.</p></div>
+      <div class="card"><h3>Public docs</h3><p>Validation, progress and roadmap tracked in repo.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GET INVOLVED ============ -->
+<section class="section dark" id="involved">
+  <div class="wrap center">
+    <div class="kicker">Get involved</div>
+    <h2 style="color:#fff">Build with us.</h2>
+    <p class="intro center" style="margin:0 auto;color:#b8bcc4">Explore the
+      ecosystem. Contribute to open scientific AI for bioimaging.</p>
+    <div class="actions center" style="justify-content:center">
+      <a class="btn primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a>
+      <a class="btn" style="background:transparent;border-color:#4a4e55;color:#fff" href="index.md">Documentation</a>
+      <a class="btn" style="background:transparent;border-color:#4a4e55;color:#fff" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/blob/main/README.md">Contribute</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <h4>BioMCP</h4>
+        <p style="color:#9a9ea5;max-width:280px">Open source agentic AI for bioimaging
+          science, connecting AI agents with the tools, models and workflows of the
+          open bioimaging ecosystem.</p>
+      </div>
+      <div>
+        <h4>Explore</h4>
+        <a href="#vision">Vision</a>
+        <a href="#ecosystem">Ecosystem</a>
+        <a href="research.html">Research</a>
+        <a href="biomcp.html">BioMCP</a>
+      </div>
+      <div>
+        <h4>Ecosystem</h4>
+        <a href="biofm.html">BioFM</a>
+        <a href="biowf.html">BioWF</a>
+        <a href="bioskills.html">BioSkills</a>
+        <a href="#tools">Tools</a>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <a href="index.md">Documentation</a>
+        <a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a>
+        <a href="#team">Team</a>
+        <a href="#community">Community</a>
+      </div>
+    </div>
+    <div class="image-credit">Microscopy imagery: Wikimedia Commons. DAPI stained HaCaT keratinocytes by Accuratelibrarian, multichannel fluorescence imaging by WillredDallto, and Nikon inverted fluorescence microscope imagery. Source pages contain the applicable license and attribution information.</div>
+    <div class="foot-bottom">
+      <span>BioMCP is developed as part of the BioNuclei research project.</span>
+      <span>Open source · MIT style research code</span>
+    </div>
+  </div>
+</footer>
+
 <script src="assets/site.js"></script>
 </body>
 </html>
