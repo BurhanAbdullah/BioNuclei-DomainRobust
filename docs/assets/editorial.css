@@ -15,5 +15,16 @@ p{font-size:1em;line-height:1.72}
 .explore-meta{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;margin:0 0 20px;padding-top:2px;font-size:.86rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
 .feature-card.is-filtered{display:none}
 .feature-card[data-category]{cursor:pointer}
-@media(max-width:760px){body{font-size:17px}.page h1,.hero h1,.hero2 h1,.page-hero h1{font-size:clamp(2.8rem,12vw,4.5rem)}.page>section p,.hero p,.hero2 p,.page-hero .lead{font-size:1.08rem}.feature-card h3{font-size:1.8rem}}
+/* Header scale: the project identity and navigation should read immediately. */
+.nav-inner{min-height:94px;gap:32px}
+.brand{font-size:1.55rem;gap:15px}
+.brand small{font-size:.7rem;margin-top:2px}
+.mark{width:48px;height:48px}
+.mark:before{width:15px;height:15px;left:13px;top:13px}
+.mark:after{width:52px;height:17px;left:-5px;top:12px}
+.nav-links{font-size:1.06rem;gap:25px}
+.nav-links a{font-weight:700}
+.nav-cta .btn{font-size:1.03rem;padding:13px 23px}
+@media(max-width:1050px){.nav-links{gap:15px;font-size:1rem}.nav-inner{gap:20px}}
+@media(max-width:760px){body{font-size:17px}.page h1,.hero h1,.hero2 h1,.page-hero h1{font-size:clamp(2.8rem,12vw,4.5rem)}.page>section p,.hero p,.hero2 p,.page-hero .lead{font-size:1.08rem}.feature-card h3{font-size:1.8rem}.nav-inner{min-height:82px}.brand{font-size:1.35rem}.brand small{font-size:.62rem}.mark{width:40px;height:40px}.nav-links.open{top:82px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
