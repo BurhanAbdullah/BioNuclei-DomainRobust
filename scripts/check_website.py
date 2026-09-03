@@ -41,7 +41,7 @@ def main() -> int:
 
     required = (
         "Reliable AI for biological imaging.",
-        "Explore the research programme.",
+        "BioNuclei",
         "Open research. Public code. Evidence before claims.",
     )
     missing = [item for item in required if item not in body]
