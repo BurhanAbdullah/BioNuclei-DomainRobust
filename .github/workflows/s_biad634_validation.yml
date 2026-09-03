@@ -24,6 +24,35 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy tifffile scikit-image imagecodecs
           python -m pip install -e . --no-deps
+      - name: Record run provenance
+        run: |
+          python - <<'PY'
+          import json
+          import platform
+          import subprocess
+          import sys
+          from pathlib import Path
+          import bionuclei
+
+          def git_revision(path):
+              return subprocess.check_output(
+                  ['git', '-C', str(path), 'rev-parse', 'HEAD'], text=True
+              ).strip()
+
+          root = Path('.').resolve()
+          provenance = {
+              'repository': 'BurhanAbdullah/BioNuclei-DomainRobust',
+              'git_commit': git_revision(root),
+              'python': sys.version,
+              'platform': platform.platform(),
+              'bionuclei_version': getattr(bionuclei, '__version__', 'unknown'),
+          }
+          Path('outputs').mkdir(parents=True, exist_ok=True)
+          Path('outputs/s_biad634_profile_run_provenance.json').write_text(
+              json.dumps(provenance, indent=2) + '\n'
+          )
+          print(json.dumps(provenance, indent=2))
+          PY
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Profile target-domain image and annotation properties
@@ -67,4 +96,5 @@ jobs:
           path: |
             data/raw/S-BIAD634/download_manifest.json
             outputs/s_biad634_domain_profile.json
+            outputs/s_biad634_profile_run_provenance.json
           retention-days: 30
