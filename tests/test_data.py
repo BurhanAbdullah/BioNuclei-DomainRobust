@@ -39,6 +39,17 @@ def test_decode_instance_mask_preserves_touching_different_color_instances():
     assert decoded[1, 1] != decoded[1, 2]
 
 
+def test_decode_instance_mask_ignores_rgba_alpha_channel():
+    mask = np.zeros((2, 4, 4), dtype=np.uint8)
+    mask[:, :2] = (255, 0, 0, 10)
+    mask[:, 2:] = (0, 255, 0, 240)
+
+    decoded = decode_instance_mask(mask)
+
+    assert decoded.max() == 2
+    assert decoded[0, 0] != decoded[0, 2]
+
+
 def test_decode_instance_mask_preserves_grayscale_instances():
     mask = np.array([[0, 1], [2, 2]], dtype=np.uint16)
     decoded = decode_instance_mask(mask)
