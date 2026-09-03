@@ -21,17 +21,17 @@ Create a composable, auditable path from a human bioimaging question to executab
 │ typed scientific tool layer  │
 └──────────┬───────────────────┘
            ↓
- ┌─────────┼──────────┬─────────┐
- ↓         ↓          ↓         ↓
-Data     Image      Models    Metrics /
-& meta   operations  & infer.  validation
- └─────────┼──────────┴─────────┘
+┌──────────────────────────────┐
+│ BioNuclei                    │
+│ first scientific foundation  │
+│ and implementation testbed   │
+└──────────┬───────────────────┘
            ↓
-┌──────────────────────┐
-│ BioWF                │
-│ reproducible         │
-│ workflow composition │
-└──────────┬───────────┘
+ ┌─────────┼──────────┬────────────┐
+ ↓         ↓          ↓            ↓
+BioFM     BioWF      BioSkills   Data / tools /
+models    workflows  procedures   validation
+ └─────────┼──────────┴────────────┘
            ↓
 ┌──────────────────────┐
 │ Evidence + provenance│
@@ -43,23 +43,52 @@ Data     Image      Models    Metrics /
 └──────────────────────┘
 ```
 
-## Four layers
+## Ecosystem order
 
-### BioFM
+The architecture is intentionally ordered around **BioMCP first, BioNuclei second, then the broader Bio* layers**.
 
-Model layer for domain-aware visual representation and multimodal biological reasoning. It can provide models to BioMCP, but model outputs remain subject to explicit evaluation and provenance.
+1. **BioMCP** — the interoperability layer that connects agents to scientific capabilities through typed, auditable contracts.
+2. **BioNuclei** — the first concrete scientific foundation and implementation testbed, providing real bioimaging data, models, evaluation, failure analysis and provenance.
+3. **BioFM** — domain-aware vision and multimodal foundation-model research.
+4. **BioWF** — reproducible and auditable workflow composition.
+5. **BioSkills** — reusable scientific procedures, validation rules and domain guidance.
 
-### BioMCP
+This ordering is architectural rather than a claim that every layer is already implemented. BioNuclei is the current scientific base; the other Bio* layers expand around the BioMCP interoperability boundary as they are implemented and validated.
 
-Interoperability layer. Each capability is exposed as a typed tool with an explicit contract.
+## BioMCP
 
-### BioWF
+BioMCP is the central interoperability layer. Each scientific capability is exposed through a typed contract describing its purpose, inputs, outputs, constraints, validation rules, execution semantics and provenance requirements.
 
-Workflow layer. A workflow records a sequence of tool invocations and their dependencies, parameters and artifacts.
+The agent plans and selects operations; BioMCP mediates access to them; the underlying scientific software performs the measurement.
 
-### BioSkills
+## BioNuclei — first scientific foundation
 
-Scientific knowledge/procedure layer. Skills encode how to choose and validate operations for a scientific task without replacing the underlying executable tools.
+BioNuclei is the first concrete implementation used to test this architecture against a real scientific workload.
+
+Its workflow naturally provides the initial tool surface:
+
+- dataset acquisition and integrity verification;
+- image loading and preprocessing;
+- Boundary-aware U-Net inference;
+- instance separation and post-processing;
+- Dice, IoU, AJI and boundary metrics;
+- domain-shift and failure-mode diagnosis;
+- experiment manifests and provenance;
+- E1–E7 controlled research protocol.
+
+This makes BioNuclei the **scientific foundation and testbed** for BioMCP rather than merely another ecosystem page.
+
+## BioFM
+
+BioFM is the model/reasoning layer for domain-aware visual representation and multimodal biological reasoning. It can provide models to BioMCP, but model outputs remain subject to explicit evaluation and provenance.
+
+## BioWF
+
+BioWF is the workflow layer. A workflow records a sequence of tool invocations and their dependencies, parameters and artifacts so that a scientific study can be reproduced and audited.
+
+## BioSkills
+
+BioSkills is the scientific knowledge/procedure layer. Skills encode how to choose and validate operations for a scientific task without replacing the underlying executable tools.
 
 ## Proposed tool classes
 
@@ -121,21 +150,6 @@ Human-facing interpretation
 ```
 
 The exact schema will be defined during implementation and tested against the BioNuclei experiments.
-
-## BioNuclei as the first implementation testbed
-
-The existing BioNuclei workflow naturally maps to the architecture:
-
-- dataset acquisition and integrity verification → Dataset tools;
-- image pairing and preprocessing → Image tools;
-- Boundary-aware U-Net inference → Model tools;
-- Dice, IoU, AJI and boundary metrics → Metric tools;
-- domain-shift and failure-mode analysis → Diagnosis tools;
-- experiment manifests and provenance → Provenance tools;
-- E1–E7 study protocol → BioWF workflow definitions;
-- validation rules and scientific constraints → BioSkills.
-
-The next step is to expose these operations through explicit contracts, then measure whether agents can use them correctly.
 
 ## Reliability boundary
 
