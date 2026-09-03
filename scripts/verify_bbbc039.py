@@ -8,12 +8,16 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
+from skimage.io import imread
 
+from bionuclei.data import decode_instance_mask
+from bionuclei.targets import instance_to_boundary_target
 from build_bbbc039_split import discover_partition_files, parse_partition_file
 
 EXPECTED_IMAGES = 200
 EXPECTED_SHAPE = (520, 696)
 EXPECTED_DTYPE = np.dtype("uint16")
+EXPECTED_CHANNELS = 1
 EXPECTED_SPLITS = {"train": 100, "validation": 50, "test": 50}
 
 
@@ -38,6 +42,27 @@ def inspect_metadata(root: Path) -> dict[str, int]:
         partition: len(parse_partition_file(path, partition))
         for partition, path in files.items()
     }
+
+
+def infer_channel_count(arr: np.ndarray) -> int:
+    if arr.ndim == 2:
+        return 1
+    if arr.ndim == 3:
+        if arr.shape[0] in (1, 3, 4):
+            return int(arr.shape[0])
+        if arr.shape[-1] in (1, 3, 4):
+            return int(arr.shape[-1])
+    raise ValueError(f"Unsupported image shape for channel inference: {arr.shape}")
+
+
+def verify_mask_target_conversion(mask_path: Path) -> None:
+    decoded = decode_instance_mask(np.asarray(imread(mask_path)))
+    target = instance_to_boundary_target(decoded)
+    if decoded.shape != target.shape:
+        raise ValueError(f"Target conversion shape mismatch for {mask_path}")
+    labels = set(np.unique(target).tolist())
+    if not labels.issubset({0, 1, 2}):
+        raise ValueError(f"Unexpected target labels for {mask_path}: {sorted(labels)}")
 
 
 def main() -> None:
@@ -72,15 +97,23 @@ def main() -> None:
 
     shape_counts: dict[str, int] = {}
     dtype_counts: dict[str, int] = {}
+    channel_counts: dict[str, int] = {}
     for path in images:
         arr = tifffile.imread(path)
         shape_counts[str(tuple(arr.shape))] = shape_counts.get(str(tuple(arr.shape)), 0) + 1
         dtype_counts[str(arr.dtype)] = dtype_counts.get(str(arr.dtype), 0) + 1
+        channels = infer_channel_count(arr)
+        channel_counts[str(channels)] = channel_counts.get(str(channels), 0) + 1
 
     if shape_counts != {str(EXPECTED_SHAPE): EXPECTED_IMAGES}:
         raise SystemExit(f"Image shape verification failed: {shape_counts}")
     if dtype_counts != {str(EXPECTED_DTYPE): EXPECTED_IMAGES}:
         raise SystemExit(f"Image dtype verification failed: {dtype_counts}")
+    if channel_counts != {str(EXPECTED_CHANNELS): EXPECTED_IMAGES}:
+        raise SystemExit(f"Image channel verification failed: {channel_counts}")
+
+    for mask_path in masks:
+        verify_mask_target_conversion(mask_path)
 
     split_counts = inspect_metadata(metadata_root)
     result = {
@@ -89,7 +122,9 @@ def main() -> None:
         "masks": len(masks),
         "image_shape": list(EXPECTED_SHAPE),
         "image_dtype": str(EXPECTED_DTYPE),
+        "image_channels": EXPECTED_CHANNELS,
         "image_mask_correspondence_verified": True,
+        "target_conversion_verified": True,
         "split_counts_detected": split_counts,
         "expected_split_counts": EXPECTED_SPLITS,
         "split_counts_verified": split_counts == EXPECTED_SPLITS,

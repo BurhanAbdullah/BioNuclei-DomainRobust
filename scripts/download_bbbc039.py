@@ -8,6 +8,7 @@ separate archives. Raw data are never committed to this repository.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import shutil
@@ -32,10 +33,17 @@ def digest(path: Path, algorithm: str = "sha256", chunk_size: int = 1024 * 1024)
     return h.hexdigest()
 
 
-def download(url: str, destination: Path) -> None:
+def download(url: str, destination: Path) -> dict[str, str | int | None]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=120) as response, destination.open("wb") as out:
         shutil.copyfileobj(response, out)
+        content_length = response.headers.get("Content-Length")
+        return {
+            "downloaded_at_utc": datetime.now(timezone.utc).isoformat(),
+            "content_length_bytes": int(content_length) if content_length else None,
+            "etag": response.headers.get("ETag"),
+            "last_modified": response.headers.get("Last-Modified"),
+        }
 
 
 def inventory(root: Path) -> list[str]:
@@ -70,11 +78,12 @@ def download_archive(name: str, url: str, root: Path, keep: bool) -> dict:
     extracted.mkdir(parents=True, exist_ok=True)
 
     print(f"Downloading {name}: {url}")
-    download(url, archive)
+    transfer = download(url, archive)
     record = {
         "url": url,
         "sha256": digest(archive, "sha256"),
         "md5": digest(archive, "md5"),
+        **transfer,
     }
 
     with zipfile.ZipFile(archive) as zf:
@@ -100,6 +109,7 @@ def main() -> None:
 
     manifest = {
         "dataset": "BBBC039v1",
+        "release": "v1",
         "authoritative_reference": OFFICIAL_PAGE,
         "base_url": BASE_URL,
         "archives": {},
