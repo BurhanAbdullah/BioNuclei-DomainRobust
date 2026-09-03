@@ -1,13 +1,4 @@
 document.addEventListener('DOMContentLoaded', function () {
-  /* Shared editorial layer, loaded consistently on every research page. */
-  if (!document.querySelector('link[data-bionuclei-editorial]')) {
-    var styleLink = document.createElement('link');
-    styleLink.rel = 'stylesheet';
-    styleLink.href = 'assets/editorial.css';
-    styleLink.setAttribute('data-bionuclei-editorial', 'true');
-    document.head.appendChild(styleLink);
-  }
-
   var toggle = document.querySelector('.nav-toggle');
   var links = document.querySelector('.nav-links');
   if (toggle && links) {
@@ -34,7 +25,7 @@ document.addEventListener('DOMContentLoaded', function () {
     el.textContent = new Date().getFullYear();
   });
 
-  /* Keep visible editorial copy clean. Code, SVG and scripts are untouched. */
+  /* Keep visible editorial copy clean and consistent. Code, SVG and scripts are untouched. */
   var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   var textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
@@ -44,68 +35,54 @@ document.addEventListener('DOMContentLoaded', function () {
     node.nodeValue = node.nodeValue.replace(/\s*[→←]\s*/g, ' ').replace(/\s*[—–]\s*/g, ' ').replace(/\s{2,}/g, ' ');
   });
 
-  /* Homepage Explore section: dynamic filters over the actual project cards. */
-  var featureGrid = document.querySelector('.landing-feature .feature-grid');
-  if (featureGrid && !featureGrid.dataset.enhanced) {
-    featureGrid.dataset.enhanced = 'true';
-    var categoryMap = {
-      'BioNuclei': 'science',
-      'Vision': 'science architecture',
-      'Architecture': 'architecture',
-      'Research': 'science',
-      'Datasets': 'science',
-      'BioMCP': 'architecture ecosystem',
-      'BioFM': 'ecosystem',
-      'BioWF': 'ecosystem',
-      'BioSkills': 'ecosystem',
-      'People': 'community',
-      'Community': 'community'
-    };
-    var cards = Array.prototype.slice.call(featureGrid.querySelectorAll('.feature-card'));
-    cards.forEach(function (card) {
-      var title = card.querySelector('h3');
-      var name = title ? title.textContent.trim() : '';
-      card.dataset.category = categoryMap[name] || 'science';
-    });
-    var toolbar = document.createElement('div');
-    toolbar.className = 'explore-toolbar';
-    toolbar.setAttribute('role', 'toolbar');
-    toolbar.setAttribute('aria-label', 'Filter project sections');
-    ['All', 'Science', 'Architecture', 'Ecosystem', 'Community'].forEach(function (label, index) {
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'explore-filter' + (index === 0 ? ' active' : '');
-      button.dataset.filter = label.toLowerCase();
-      button.setAttribute('aria-pressed', index === 0 ? 'true' : 'false');
-      button.textContent = label;
-      toolbar.appendChild(button);
-    });
-    var meta = document.createElement('div');
-    meta.className = 'explore-meta';
-    meta.innerHTML = '<span data-explore-count></span><span>Interactive project map</span>';
-    featureGrid.parentNode.insertBefore(toolbar, featureGrid);
-    featureGrid.parentNode.insertBefore(meta, featureGrid);
-
-    function applyExploreFilter(filter) {
-      var shown = 0;
+  /* Homepage explorer. */
+  var explorer = document.querySelector('[data-explorer]');
+  if (explorer) {
+    var cards = Array.prototype.slice.call(explorer.querySelectorAll('[data-category]'));
+    var buttons = explorer.querySelectorAll('[data-filter]');
+    var count = explorer.querySelector('[data-count]');
+    function applyFilter(filter) {
+      var visible = 0;
       cards.forEach(function (card) {
-        var categories = (card.dataset.category || '').split(/\s+/);
-        var visible = filter === 'all' || categories.indexOf(filter) !== -1;
-        card.classList.toggle('is-filtered', !visible);
-        if (visible) shown += 1;
+        var show = filter === 'all' || (card.getAttribute('data-category') || '').split(' ').indexOf(filter) !== -1;
+        card.hidden = !show;
+        if (show) visible += 1;
       });
-      var count = meta.querySelector('[data-explore-count]');
-      if (count) count.textContent = shown + ' of ' + cards.length + ' sections shown';
-      toolbar.querySelectorAll('.explore-filter').forEach(function (button) {
-        var active = button.dataset.filter === filter;
+      buttons.forEach(function (button) {
+        var active = button.getAttribute('data-filter') === filter;
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
+      if (count) count.textContent = visible + ' of ' + cards.length + ' layers shown';
     }
-    toolbar.querySelectorAll('.explore-filter').forEach(function (button) {
-      button.addEventListener('click', function () { applyExploreFilter(button.dataset.filter); });
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () { applyFilter(button.getAttribute('data-filter')); });
     });
-    applyExploreFilter('all');
+    applyFilter('all');
+  }
+
+  /* Single source of truth for the public Bio* research map. Status labels describe research maturity, not scientific validity. */
+  var projects = [
+    { name: 'BioNuclei', type: 'Scientific foundation', status: 'Active research', category: 'science', description: 'Domain-robust nuclear instance segmentation, reproducible evaluation, failure analysis and external validation.', href: 'research.html' },
+    { name: 'BioMCP', type: 'Interoperability layer', status: 'Architecture / prototyping', category: 'architecture', description: 'Typed interfaces connecting AI agents with established bioimaging tools, models, workflows and provenance.', href: 'biomcp.html' },
+    { name: 'BioFM', type: 'Foundation-model research', status: 'Research direction', category: 'ecosystem', description: 'Domain-aware vision and multimodal foundation-model research for biological imaging.', href: 'biofm.html' },
+    { name: 'BioWF', type: 'Workflow layer', status: 'Design / research direction', category: 'ecosystem', description: 'Versioned, reproducible and auditable composition and execution of scientific imaging workflows.', href: 'biowf.html' },
+    { name: 'BioSkills', type: 'Scientific knowledge layer', status: 'Design / research direction', category: 'ecosystem', description: 'Reusable scientific procedures, validation rules, failure analysis and domain guidance for agents and workflows.', href: 'bioskills.html' }
+  ];
+
+  var registry = document.querySelector('[data-project-registry]');
+  if (registry) {
+    projects.forEach(function (project) {
+      var card = document.createElement('article');
+      card.className = 'research-card';
+      card.setAttribute('data-project', project.name.toLowerCase());
+      card.innerHTML = '<span class="status progress">' + project.status + '</span>' +
+        '<p class="kicker">' + project.type + '</p>' +
+        '<h3><a href="' + project.href + '">' + project.name + '</a></h3>' +
+        '<p>' + project.description + '</p>' +
+        '<a class="text-link" href="' + project.href + '">Open project</a>';
+      registry.appendChild(card);
+    });
   }
 
   if ('IntersectionObserver' in window) {
@@ -117,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
     }, { threshold: 0.08 });
-    document.querySelectorAll('.card,.feature-card,.team-card,.research-card,.metric,.process-card,.diagram-panel,.landing-intro-grid,.landing-research-grid').forEach(function (el) {
+    document.querySelectorAll('.card,.feature-card,.team-card,.research-card,.metric,.process-card,.diagram-panel,.landing-intro-grid,.landing-research-grid,.explore-toolbar').forEach(function (el) {
       el.classList.add('reveal');
       observer.observe(el);
     });
@@ -134,11 +111,12 @@ document.addEventListener('DOMContentLoaded', function () {
         people.forEach(function (p) {
           var card = document.createElement('article');
           card.className = 'team-card reveal is-visible';
-          var safeLogin = p.login.replace(/[&<>"']/g, '');
-          var safeAvatar = String(p.avatar_url || '').replace(/"/g, '%22');
-          var safeUrl = String(p.html_url || '').replace(/"/g, '%22');
-          card.innerHTML = '<img class="team-avatar" src="' + safeAvatar + '" alt="GitHub contributor avatar" loading="lazy"><div class="team-info"><h3>' + safeLogin + '</h3><p>GitHub contributor</p><a class="team-link" href="' + safeUrl + '">View contribution profile</a></div>';
-          contributors.appendChild(card);
+          var img = document.createElement('img'); img.className = 'team-avatar'; img.src = p.avatar_url; img.alt = 'GitHub contributor avatar'; img.loading = 'lazy';
+          var info = document.createElement('div'); info.className = 'team-info';
+          var name = document.createElement('h3'); name.textContent = p.login;
+          var role = document.createElement('p'); role.textContent = 'GitHub contributor';
+          var link = document.createElement('a'); link.className = 'team-link'; link.href = p.html_url; link.textContent = 'View contribution profile';
+          info.appendChild(name); info.appendChild(role); info.appendChild(link); card.appendChild(img); card.appendChild(info); contributors.appendChild(card);
         });
       }).catch(function () {});
   }
