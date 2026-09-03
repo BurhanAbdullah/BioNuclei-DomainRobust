@@ -45,7 +45,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Extract and independently inspect Dice, IoU, AJI, and boundary F1 from the fresh archived test metrics.
 - [x] Compute/verify image-level bootstrap confidence intervals from the fresh archived test metrics.
 - [x] Centralize AJI and instance PRF validation in reusable metric code and add regression tests for shape safety, empty masks, non-contiguous labels, and split-instance errors.
-- [ ] Re-run the source baseline after the RGB instance-mask decoder correction. Prior baseline numerical metrics are retained as historical artifacts but are not release evidence.
+- [x] Re-run the source baseline after the RGB instance-mask decoder correction. Corrected run `33768426630` completed on the official split and archived artifact `bbbc039-baseline-33768426630` with digest `sha256:ec31fba69ee40de1f86d89ac0275d4341f58ec31a41f4129b33cf2501d3ce74f`.
 - [ ] Complete a single reproducibility audit tying seed, configuration, split manifest, checkpoint hash, decoder revision, and metrics together.
 - [ ] Produce qualitative overlays and failure analysis.
 
@@ -59,15 +59,15 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Fix the target-profile workflow gate to validate the profile schema actually emitted by the profiling script and require all 79 per-image records.
 - [ ] Re-run and archive the corrected target-domain profile after the RGB decoder correction.
 - [ ] Define biological-group-aware target-domain evaluation.
-- [ ] Run zero-shot BBBC039 → S-BIAD634 transfer using the corrected evaluator and decoder.
+- [x] Run zero-shot BBBC039 to S-BIAD634 transfer using the corrected evaluator and decoder. GitHub Actions run `33776934058` completed successfully on all 79 target images.
 - [x] Diagnose the historical zero-shot pairing failure.
 - [x] Fix target pairing to require exactly one matching ground truth per raw image and ignore unrelated GT files.
 - [x] Add regression tests for unrelated extra GT files and duplicate matching GT files.
 - [x] Add stride-compatible padding and bounded-memory tiled inference for target-domain images.
 - [x] Add deterministic RGB/RGBA-to-grayscale conversion for target-domain inputs.
 - [x] Change the workflow to select the exact verified baseline artifact rather than a wildcard artifact pattern.
-- [ ] Archive and independently verify the corrected current-code zero-shot metrics.
-- [ ] Quantify domain-shift failure modes.
+- [x] Archive and independently verify the corrected current-code zero-shot metrics. Artifact `s-biad634-zero-shot-33776934058`, SHA-256 digest `sha256:dbd1a7c0e2bda5dd893a87e6e16b960155989ba1a595227a0dc28cddbe83ffe8`, contains 79 per-image records and passed the completeness gate.
+- [x] Quantify domain-shift failure modes at the image/instance level; see `docs/E3_S_BIAD634_DIAGNOSIS_2026-09-04.md`.
 
 ## Phase 4 — domain-robust method
 
@@ -101,12 +101,12 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [ ] Release code, manifests, configurations, and reproducibility instructions.
 - [ ] Prepare manuscript only after the evidence supports the claims.
 
-## Current state — 2026-09-03
+## Current state — 2026-09-04
 
-A substantive instance-mask defect was found during release auditing. The RGB/RGBA decoder previously reduced a color-coded instance mask to foreground using only the first channel and then connected-component labeled the foreground. That can erase distinctions between touching instances represented by different RGB colors and therefore can corrupt instance identities before training, E3 profiling, and AJI evaluation. The decoder has now been corrected to label each exact RGB color independently by connected component, preserving touching different-color instances while still splitting disconnected repeats of the same color. Regression coverage now includes touching RGB instances and RGBA alpha handling.
+The RGB/RGBA instance-mask decoder correction has now been exercised by a corrected source baseline and a corrected S-BIAD634 zero-shot transfer run. The corrected source baseline is GitHub Actions run `33768426630`; it trained for 20 epochs on the official 100-image training split and evaluated the 50-image validation and 50-image held-out test splits. Its held-out test means are Dice `0.9696520862500608`, IoU `0.9411678377723045`, AJI `0.9105499261289745`, and boundary F1 `0.6911822539055567`, with image-level 95% bootstrap intervals generated from 2,000 resamples at seed 42. These numbers are traceable to the archived baseline artifact and are now valid corrected baseline evidence.
 
-The first CI run after this correction (`33774497733`) reached the test stage and exposed a separate regression-test expectation error: a split prediction whose two halves each have IoU exactly 0.5 with the target is a valid match under the implemented `>= 0.5` convention. The test incorrectly expected no match at that boundary. The test has now been corrected to use a strict 0.51 threshold when asserting the sub-threshold split behavior. The corrected test change is committed as `67f97e2a882c1b5603768b020d01de9fd71267c1` and requires a fresh CI execution; no CI success is claimed yet.
+The corrected S-BIAD634 zero-shot transfer is GitHub Actions run `33776934058`, evaluated on all 79 target images using the corrected evaluator and the corrected baseline artifact from run `33768426630`. Its artifact contains 79 per-image records and has digest `sha256:dbd1a7c0e2bda5dd893a87e6e16b960155989ba1a595227a0dc28cddbe83ffe8`. The image-level means are Dice `0.39958885532931326`, IoU `0.3018572277069463`, instance precision `0.1657510101162464`, instance recall `0.19997259690033162`, instance F1 `0.16421214727788674`, AJI `0.20774710882927272`, and boundary F1 `0.17674640533036035`.
 
-Because the decoder is part of both target generation and evaluation, this correction invalidates the prior baseline and E4 numerical results as release evidence. Their hosted runs remain historical execution artifacts only. A clean source baseline and E4 rerun must precede E3 diagnosis or any robustness-method freeze. The instance audit was also corrected so touching instances are reported rather than treated as an audit failure.
+The E3 artifact shows a heterogeneous transfer failure dominated, on many images, by over-production of predicted instances and poor matching. Across the 79 images, mean target-instance count is 99.46 while mean predicted-instance count is 420.68; mean true positives, false positives and false negatives are 40.47, 380.22 and 57.81. Median instance precision is 0.0179 and median instance recall is 0.0704. Several images have zero true-positive matches. These observations support an instance-level transfer failure diagnosis but do not by themselves establish a biological or acquisition mechanism. The detailed evidence boundary is documented in `docs/E3_S_BIAD634_DIAGNOSIS_2026-09-04.md`.
 
-The release therefore remains scientifically blocked. No E3 mechanism, E4 improvement claim, ablation, strong-baseline comparison, few-shot result, external-validation result, final statistical conclusion, release checkpoint, or Release 1.0 status is being marked complete without corresponding evidence from the corrected decoder.
+The next gate is corrected target-domain profiling and biological-group-aware evaluation, followed by a corrected E4 rerun. No robustness improvement, method freeze, ablation, strong-baseline comparison, few-shot result, external-validation result, or Release 1.0 status is claimed yet.
