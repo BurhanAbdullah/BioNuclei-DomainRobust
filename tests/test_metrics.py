@@ -51,10 +51,12 @@ def test_aji_uses_instance_labels_when_touching_instances_share_one_component():
     assert script_aji_score(pred, target) == pytest.approx(1.0 / 3.0)
 
 
-def test_instance_prf_counts_split_prediction_as_fp_and_fn():
+def test_instance_prf_counts_strictly_subthreshold_split_prediction_as_fp_and_fn():
+    # With a 0.51 threshold, each half of a two-instance split prediction has
+    # IoU 0.5 against the sole target and therefore neither may be matched.
     target = np.array([[1, 1, 1, 1]], dtype=np.int32)
     pred = np.array([[2, 2, 3, 3]], dtype=np.int32)
-    result = instance_prf(pred, target, iou_threshold=0.5)
+    result = instance_prf(pred, target, iou_threshold=0.51)
     assert result["tp"] == 0
     assert result["fp"] == 2
     assert result["fn"] == 1
