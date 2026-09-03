@@ -41,10 +41,17 @@ jobs:
           assert n == 79, f'Expected 79 target image/ground-truth pairs, got {n!r}'
           records = d.get('per_image', [])
           assert len(records) == 79, f'Expected 79 per-image records, got {len(records)}'
-          required = {'shape', 'dtype', 'mask_dtype', 'annotation_objects', 'annotation_area_median'}
+          required = {
+              'shape', 'dtype', 'mask_dtype', 'mask_shape', 'mask_encoding',
+              'annotation_objects', 'annotation_foreground_fraction',
+              'annotation_area_median',
+          }
           missing = required - set(records[0]) if records else required
           assert not missing, f'Missing profile fields: {sorted(missing)}'
-          print(f'Verified complete 79-image target-domain profile: {len(records)} records.')
+          assert all(r['mask_encoding'].startswith('instance_labels_or_rgb_colors_decoded_by_') for r in records), 'Profile must record the canonical instance-mask decoder'
+          assert all(r['annotation_objects'] >= 0 for r in records), 'Annotation object counts must be non-negative'
+          assert all(len(r['shape']) == 2 and len(r['mask_shape']) == 2 for r in records), 'Image and raw mask shapes must be 2D after profiling'
+          print(f'Verified complete 79-image target-domain profile with canonical mask decoding: {len(records)} records.')
           PY
       - name: Upload provenance and domain profile
         if: always()
