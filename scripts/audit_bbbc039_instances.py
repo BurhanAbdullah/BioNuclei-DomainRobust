@@ -82,11 +82,6 @@ def main() -> None:
         target_ids = np.unique(target[target > 0])
         pred_ids = np.unique(pred[pred > 0])
         _, target_component_count = ndimage.label(target > 0, structure=np.ones((3, 3), dtype=np.uint8))
-        if len(target_ids) != target_component_count:
-            raise RuntimeError(
-                f"Decoded BBBC039 instance count disagrees with foreground components for {name}: "
-                f"instances={len(target_ids)}, components={target_component_count}"
-            )
         if raw_mask.ndim == 3 and raw_mask.shape[-1] in (3, 4):
             unique_colors = int(np.unique(raw_mask[..., :3].reshape(-1, 3), axis=0).shape[0])
         else:
@@ -100,6 +95,7 @@ def main() -> None:
             "decoded_target_instances": int(len(target_ids)),
             "target_connected_components": int(target_component_count),
             "target_instances_per_connected_component": float(len(target_ids) / target_component_count) if target_component_count else None,
+            "touching_instance_labels": bool(len(target_ids) > target_component_count),
             "predicted_instances": int(len(pred_ids)),
             "predicted_foreground_fraction": float(np.mean(pred > 0)),
             "target_foreground_fraction": float(np.mean(target > 0)),
@@ -109,9 +105,7 @@ def main() -> None:
     ratios = [r["prediction_to_target_instance_ratio"] for r in records if r["prediction_to_target_instance_ratio"] is not None]
     target_instance_counts = [r["decoded_target_instances"] for r in records]
     target_component_counts = [r["target_connected_components"] for r in records]
-    records_with_touching = sum(
-        r["decoded_target_instances"] > r["target_connected_components"] for r in records
-    )
+    records_with_touching = sum(r["touching_instance_labels"] for r in records)
     report = {
         "dataset": "BBBC039v1",
         "split": args.split,
@@ -121,7 +115,7 @@ def main() -> None:
         "interpretation_guard": {
             "instance_count_is_decoded_label_count": True,
             "connected_component_count_is_not_used_as_instance_count": True,
-            "decoded_instances_must_equal_foreground_components": True,
+            "connected_components_may_merge_touching_instances": True,
             "touching_instances_detected_when_decoded_count_exceeds_foreground_components": True,
         },
         "summary": {
