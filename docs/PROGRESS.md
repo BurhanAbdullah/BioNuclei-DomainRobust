@@ -39,10 +39,13 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Train boundary-aware U-Net on the official training split for the reproducible hosted run.
 - [x] Evaluate the official validation split.
 - [x] Evaluate the held-out official test split.
-- [x] Archive the baseline checkpoint and evaluation artifact. Artifact: `bbbc039-baseline-31995038694`, SHA-256 digest `d046ba70ab0facbf3b6b01cb2bbd76df06054938af9c857c259d3e5d1ba6ac35`.
-- [ ] Extract and independently audit Dice, IoU, AJI, and boundary F1 from the archived metrics before reporting numerical results.
-- [ ] Compute/verify confidence intervals.
-- [ ] Audit seed, configuration, split manifest, checkpoint hash, and metrics as a single reproducibility record.
+- [x] Archive the baseline checkpoint and evaluation artifact. Artifact: `bbbc039-baseline-31995038694`.
+- [x] Execute a fresh complete BBBC039 baseline run on the same protocol. GitHub Actions run `33737710362` completed successfully.
+- [x] Archive the fresh baseline artifact: `bbbc039-baseline-33737710362`, SHA-256 digest `a784132322319663754bb8466b311b3812b821a9f14f9a3f2b77a23c43c00313`.
+- [x] Extract and independently inspect Dice, IoU, AJI, and boundary F1 from the fresh archived test metrics.
+- [x] Compute/verify image-level bootstrap confidence intervals from the fresh archived test metrics.
+- [ ] Resolve the unusually low AJI relative to the high pixel-overlap metrics before any baseline numerical claim is promoted to the release record.
+- [ ] Complete a single reproducibility audit tying seed, configuration, split manifest, checkpoint hash, and metrics together.
 - [ ] Produce qualitative overlays and failure analysis.
 
 ## Phase 3 — cross-domain generalization
@@ -67,7 +70,9 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 - [x] Conduct a provisional focused 2023–2026 novelty audit; see `docs/NOVELTY_AUDIT_2026-08-15.md`.
 - [ ] Finalize the novelty audit after current baseline/zero-shot failure modes are known.
-- [ ] Define the proposed domain-robust method from observed failure modes.
+- [x] Execute a complete E4 source-only intensity/domain-randomization run with all 79 target images evaluated. GitHub Actions run `33618446838` passed the target completeness gate and archived artifact `e4-domain-robust-33618446838`.
+- [ ] Independently audit the E4 artifact and compare it against the fresh baseline under a matched protocol.
+- [ ] Define the final domain-robust method from observed failure modes.
 - [ ] Run controlled ablations.
 - [ ] Compare against strong published and conventional baselines.
 - [ ] Perform statistical analysis across biological groups/images.
@@ -90,12 +95,10 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [ ] Release code, manifests, configurations, and reproducibility instructions.
 - [ ] Prepare manuscript only after the evidence supports the claims.
 
-## Current state — 2026-08-18
+## Current state — 2026-09-03
 
-Phase 1 is complete. The real BBBC039v1 archives were downloaded and verified on GitHub's hosted runner; the accepted dataset contains 200 unique fluorescence TIFFs and 200 corresponding PNG masks, all images 520 x 696 uint16. The official metadata defines 100 training, 50 validation, and 50 test images with no pairwise overlap. The immutable split manifest and acquisition provenance are retained as workflow artifacts.
+The scientific foundation is being closed systematically rather than declared complete early. A fresh BBBC039 baseline run (`33737710362`) completed successfully, including held-out test/validation evaluation and image-level bootstrap confidence intervals. Its artifact is retained. During independent metric inspection, the pixel-overlap metrics were high while AJI was unexpectedly low; this is now an explicit release blocker until the instance-metric implementation and/or mask encoding are audited. No numerical baseline result is promoted to a scientific claim until that discrepancy is resolved.
 
-Phase 2 has a verified completed real-data baseline execution. GitHub Actions run `31995038694` completed all steps successfully: dependency setup, official BBBC039 acquisition/verification, boundary-aware U-Net training, held-out test evaluation, validation evaluation, and artifact upload. The baseline artifact is retained. Numerical metrics remain deliberately unreported until they are independently extracted and audited from the artifact.
+The E4 domain-randomization workflow has also completed a full target-domain evaluation on 79 S-BIAD634 images in run `33618446838`, with the completeness/provenance gates passing and an artifact retained. That is engineering/experimental evidence of a completed E4 execution, not yet evidence that the method improves scientific robustness. A fresh E4 run (`33737663312`) is currently progressing through target evaluation and will be independently checked when complete.
 
-S-BIAD634 / S-BSST265 acquisition is verified: the hosted inventory contains 79 raw fluorescence TIFFs and 79 image-corresponding ground-truth TIFFs from the CC0 release. The zero-shot evaluator has received multiple engineering fixes: exact raw/GT directory discovery, deterministic pairing, RGB/RGBA-to-grayscale conversion, stride-compatible padding, bounded-memory tiling, and exact baseline-artifact selection. The current-code zero-shot result is not promoted to the research record until a corresponding current-code workflow artifact containing `metrics.json` has been independently verified.
-
-Target-domain profiling, current-code zero-shot verification, domain-shift analysis, robustness-method development, ablations, few-shot adaptation, external validation, and final release work remain open. The provisional novelty audit remains intentionally non-committal until the empirical failure modes are established.
+The immediate sequence is therefore: audit the source instance metrics → complete current zero-shot evaluation/profile → quantify domain-shift mechanisms → select/freeze the mechanism-driven robustness method → ablations and strong baselines → few-shot adaptation → independent external validation → final statistical/reproducibility audit → Release 1.0. The community layer follows the scientific release rather than preceding it.
