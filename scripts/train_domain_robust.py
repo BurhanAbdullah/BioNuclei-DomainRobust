@@ -35,12 +35,17 @@ def augment(x,c):
         m=y.mean(dim=(-2,-1),keepdim=True); y=torch.clamp((y-m)*random.uniform(a['contrast_min'],a['contrast_max'])+m,0,1)
     return y
 
+def resolve_device(device_config):
+    if device_config=='auto':
+        return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    return torch.device(device_config)
+
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--config',type=Path,required=True); p.add_argument('--manifest',type=Path,required=True); p.add_argument('--data-root',type=Path,required=True); p.add_argument('--output',type=Path,required=True); p.add_argument('--epochs',type=int,default=None); a=p.parse_args()
     c=yaml.safe_load(a.config.read_text()); seed_everything(int(c['seed'])); m=json.loads(a.manifest.read_text()); names=m['partitions']['train']
     root=a.data_root; images=[resolve(root,n,'image') for n in names]; masks=[resolve(root,n,'mask') for n in names]
     loader=DataLoader(InstanceMaskDataset(images,masks),batch_size=int(c['training']['batch_size']),shuffle=True,num_workers=int(c['training']['num_workers']),collate_fn=collate)
-    dc=c['training']['device']; device=torch.device('cuda' if dc=='auto' and torch.cuda.is_available() else dc)
+    dc=c['training']['device']; device=resolve_device(dc)
     model=BoundaryUNet(in_channels=int(c['model']['in_channels']),out_channels=int(c['model']['out_channels']),base_channels=int(c['model']['base_channels'])).to(device)
     loss=BoundaryAwareLoss(boundary_weight=float(c['loss']['boundary_weight']),dice_weight=float(c['loss']['dice_weight'])).to(device)
     opt=torch.optim.AdamW(model.parameters(),lr=float(c['training']['learning_rate']),weight_decay=float(c['training']['weight_decay']))
