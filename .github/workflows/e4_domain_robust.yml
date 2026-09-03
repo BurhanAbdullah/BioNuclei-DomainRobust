@@ -17,9 +17,9 @@ on:
         required: false
         default: '20'
       baseline_run_id:
-        description: 'Successful BBBC039 baseline run ID'
+        description: 'Successful BBBC039 baseline run ID (retained for provenance; E4 retrains the source model)'
         required: false
-        default: '31995120233'
+        default: '31995038694'
 
 jobs:
   train-evaluate:
