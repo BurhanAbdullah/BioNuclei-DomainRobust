@@ -1,87 +1,130 @@
-# BioNuclei-DomainRobust
+# BioMCP — About the Project
 
-## Domain-Robust Nuclear Instance Segmentation for Fluorescence Bioimaging
+## Vision
 
-**BioNuclei-DomainRobust** is a reproducible biomedical-AI research project studying whether nuclear instance segmentation learned from one fluorescence-imaging domain can transfer reliably to heterogeneous human fluorescence bioimaging.
+**BioMCP is an independent research direction for agentic AI in bioimaging.** It explores how AI agents can reliably interact with existing bioimage-analysis software, models, datasets and workflows through explicit, typed interfaces while preserving scientific provenance.
 
-### Research question
+> **AI orchestrates. Scientific software measures.**
 
-> Can a nuclear segmentation model trained on a controlled fluorescence benchmark generalize to heterogeneous human fluorescence bioimaging without uncontrolled annotation leakage or an arbitrary architecture change?
+The goal is not to replace established scientific applications with a language model. The goal is to make their capabilities composable, inspectable and reproducible.
 
-### Study design
+## What the ecosystem means
+
+### BioFM
+
+Domain-aware vision and multimodal foundation-model research for biological imagery. BioFM represents the model layer: perception, representation learning and multimodal scientific reasoning.
+
+### BioMCP
+
+The interoperability layer. BioMCP is intended to expose deterministic scientific capabilities as structured tools that an agent can discover and invoke with explicit inputs, outputs, constraints and provenance.
+
+### BioWF
+
+The workflow layer. BioWF is intended to compose BioMCP operations into reproducible scientific workflows with explicit dependencies, parameters, intermediate artifacts and validation steps.
+
+### BioSkills
+
+The scientific-procedure layer. BioSkills is intended to encode reusable analysis protocols, domain knowledge, validation rules and failure-handling guidance without hiding the underlying computation.
+
+## Architectural boundary
 
 ```text
-BBBC039
-   |
-   v
-Boundary-aware nuclear instance segmentation
-   |
-   v
-Held-out source-domain evaluation
-   |
-   v
-Zero-shot transfer to S-BIAD634 / S-BSST265
-   |
-   v
-Domain-shift + failure-mode analysis
-   |
-   v
-Evidence-driven robustness method
-   |
-   +--> Ablations
-   +--> Strong baselines
-   +--> Few-shot adaptation
-   +--> Independent external validation
+                 Researcher
+                     │
+                     ▼
+              AI agent / LLM
+          planning • selection • explanation
+                     │
+                     ▼
+                   BioMCP
+       typed tools • schemas • provenance
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+   Bioimage       Models       Data/metadata
+   software       & inference   & provenance
+        │            │            │
+        └────────────┼────────────┘
+                     ▼
+               BioWF workflows
+                     │
+                     ▼
+          structured evidence/artifacts
+                     │
+                     ▼
+              human scientific review
 ```
 
-### Datasets
+The LLM may propose a plan or select a tool, but a claim such as a Dice score, object count, segmentation mask, intensity measurement or statistical test must originate from an executable scientific operation and its recorded output.
 
-The repository does **not** redistribute third-party datasets. It provides acquisition instructions, integrity checks, manifests, preprocessing code, configurations, tests, and GitHub Actions workflows so that datasets can be obtained from authoritative providers under their applicable terms.
+## BioNuclei as the research substrate
 
-- **BBBC039** — controlled fluorescence nuclear benchmark from the Broad Bioimage Benchmark Collection.
-- **S-BIAD634 / S-BSST265** — heterogeneous human fluorescence nuclear-imaging dataset used for cross-domain evaluation.
-- **ORION-CRC / HTAN** — reserved for later multimodal cancer-tissue validation after the core domain-generalization study is established.
+The current repository, **BioNuclei-DomainRobust**, is the first concrete scientific environment for developing and testing these principles.
 
-### Reproducibility commitments
+Its domain-robust segmentation study asks whether a model trained on a controlled fluorescence domain can generalize to heterogeneous human fluorescence microscopy without leakage or arbitrary architectural changes. The study provides real datasets, reproducibility constraints, segmentation models, quantitative metrics, provenance and failure analysis that can later be exposed through BioMCP tools.
 
-- Official source-domain partitions are preserved.
-- Image/sample/patient-level leakage is explicitly controlled.
-- Dataset provenance and accessions are recorded.
-- Raw third-party data remain outside Git history.
-- Every reported metric must come from a versioned experiment artifact.
-- Statistical resampling is performed at the image/biological-unit level where appropriate.
-- Baselines are retained before claiming improvement.
-- Failed experiments and engineering blockers are recorded instead of silently removed.
-- Novelty claims remain hypotheses until supported by a focused literature audit.
+The relationship is therefore:
 
-### Validation policy
+```text
+BioNuclei-DomainRobust
+        │
+        ├── scientific datasets
+        ├── segmentation models
+        ├── evaluation metrics
+        ├── domain-shift analysis
+        ├── provenance / artifacts
+        └── reproducible experiments
+                 │
+                 ▼
+              BioMCP
+                 │
+       agent-accessible interfaces
+                 │
+          BioWF + BioSkills
+                 │
+                 ▼
+      broader bioimaging ecosystem
+```
 
-The project uses separate gates for **software validation**, **dataset validation**, and **scientific validation**. A green CI run proves the tested software path works; it does not by itself prove model performance. Experimental numbers are promoted only after the corresponding artifact, dataset manifest, configuration, checkpoint provenance, and evaluation record have been checked.
+The repository name is retained for continuity. **BioNuclei is the research/validation component; BioMCP is the longer-term ecosystem identity.**
 
-### Current public status
+## Research philosophy
 
-- **BBBC039 source-domain infrastructure:** verified.
-- **BBBC039 baseline workflow:** completed on the verified official split.
-- **S-BIAD634 acquisition/evaluation infrastructure:** implemented and regression-tested.
-- **Current target-domain scientific result:** pending final release-gate verification.
-- **Domain-robust method:** intentionally deferred until measured target-domain failure modes are independently verified.
+1. **Tools before claims.** Scientific measurements come from executable software.
+2. **Explicit interfaces.** Inputs, outputs, schemas and constraints should be machine-readable.
+3. **Provenance by construction.** Dataset, software, configuration, model and output identity should travel with an analysis.
+4. **Human review remains authoritative.** Agent output is an interface to evidence, not a replacement for scientific judgment.
+5. **Failure is evidence.** Failed runs and limitations remain visible.
+6. **No benchmark theater.** Held-out evaluation, independent validation and pre-specified protocols matter more than attractive demos.
+7. **Open interoperability.** BioMCP should connect existing scientific tools rather than force researchers into a closed stack.
 
-### Public status page
+## What is implemented vs proposed
 
-See the concise public project status page: [`docs/index.md`](index.md).
+**Implemented research substrate:** BioNuclei code, experiment configurations, reproducibility workflows, dataset acquisition/verification, segmentation and evaluation infrastructure, tests and provenance-oriented release gates.
 
-### Research documentation
+**Under development / proposed:** the general BioMCP tool contracts, BioWF workflow engine, BioSkills library, BioFM model layer, agent reliability benchmarks and a broader ecosystem of tool servers.
 
-- [`README.md`](../README.md) — project overview and quick orientation.
-- [`PROGRESS.md`](PROGRESS.md) — evidence-backed project ledger.
-- [`EXPERIMENT_MATRIX.md`](EXPERIMENT_MATRIX.md) — pre-specified experiments and statistical rules.
-- [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — final paper/release gate.
-- [`NOVELTY_AUDIT_2026-08-15.md`](NOVELTY_AUDIT_2026-08-15.md) — provisional literature/novelty audit.
+The project will not describe proposed components as completed capabilities until executable implementations and corresponding validation evidence exist.
 
-### Repository
+## Datasets and data policy
 
-https://github.com/BurhanAbdullah/BioNuclei-DomainRobust
+Third-party datasets are not redistributed. Acquisition instructions, manifests, integrity checks and processing workflows are maintained in the repository; users obtain data from authoritative providers under their applicable terms.
 
-### License
+Current roles include BBBC039 as the controlled source domain, S-BIAD634/S-BSST265 for heterogeneous target-domain evaluation, BBBC038 as a later external validation benchmark, and ORION-CRC/HTAN as a longer-term multimodal direction.
 
-Code in this repository is released under the MIT License. Third-party datasets retain their original licenses and access conditions.
+## Validation policy
+
+Software validation, dataset validation and scientific validation are separate gates. A green CI run demonstrates that the tested software path passed; it does not establish generalization or scientific superiority. Experimental results are promoted only when their artifacts, manifests, configurations, provenance and evaluation records are cross-checked.
+
+## Independence
+
+BioMCP is an independent research initiative. It is not affiliated with Harvard University or any other institution. Similar high-level ideas in agentic scientific infrastructure may exist elsewhere; BioMCP defines its own architecture, interfaces, experiments and validation standards.
+
+## Documentation
+
+- [`BIOMCP_MANIFESTO.md`](BIOMCP_MANIFESTO.md)
+- [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- [`ROADMAP.md`](ROADMAP.md)
+- [`EXPERIMENT_MATRIX.md`](EXPERIMENT_MATRIX.md)
+- [`VALIDATION.md`](VALIDATION.md)
+- [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)
