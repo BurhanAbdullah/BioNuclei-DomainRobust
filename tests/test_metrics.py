@@ -47,8 +47,8 @@ def test_aji_uses_instance_labels_when_touching_instances_share_one_component():
     # that merges them into one object is therefore penalized by AJI.
     target = np.array([[1, 1, 2, 2]], dtype=np.int32)
     pred = np.array([[7, 7, 7, 7]], dtype=np.int32)
-    assert aji_score(pred, target) == pytest.approx(0.5)
-    assert script_aji_score(pred, target) == pytest.approx(0.5)
+    assert aji_score(pred, target) == pytest.approx(1.0 / 3.0)
+    assert script_aji_score(pred, target) == pytest.approx(1.0 / 3.0)
 
 
 def test_instance_prf_counts_split_prediction_as_fp_and_fn():
