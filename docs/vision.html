@@ -1,1 +1,94 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vision | BioNuclei</title><meta name="description" content="The research vision behind BioNuclei for reliable, inspectable and interoperable bioimaging AI."><link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/site.css"></head><body><nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Research for robust bioimaging AI</small></span></a><div class="nav-links"><a href="vision.html">Vision</a><a href="research.html">Research</a><a href="datasets.html">Datasets</a><a href="architecture.html">Architecture</a><a href="biomcp.html">BioMCP</a><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a><a href="team.html">People</a><a href="community.html">Community</a></div><div class="nav-cta"><a class="btn small primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><button class="nav-toggle" aria-label="Open navigation">Menu</button></div></div></nav><main><header class="page-hero"><div class="wrap"><div class="eyebrow"><span class="pill">Vision</span><span class="pill">Open research</span></div><h1>Make scientific software work together.</h1><p class="lead">BioNuclei begins with reliable bioimaging research and grows toward an interoperable scientific ecosystem. The goal is not another closed assistant. The goal is a way for researchers and AI systems to discover trusted software, execute explicit operations, inspect results and preserve the evidence.</p></div></header><section class="section"><div class="wrap"><div class="section-head"><div class="kicker">Three principles</div><h2>Reliability should be designed into the workflow.</h2></div><div class="grid grid-3"><article class="card"><div class="tag">01</div><h3>Understand</h3><p>Translate a scientific question into explicit analysis intent, data requirements and constraints.</p></article><article class="card"><div class="tag">02</div><h3>Connect</h3><p>Expose specialized bioimaging capabilities through typed and discoverable interfaces.</p></article><article class="card"><div class="tag">03</div><h3>Prove</h3><p>Record parameters, tool versions, inputs, outputs and validation evidence so a workflow can be inspected.</p></article></div></div></section><section class="section dark"><div class="wrap"><div class="section-head"><div class="kicker">Scientific boundary</div><h2>AI orchestrates. Scientific software measures.</h2><p>The language model is positioned as a planning and interface component. Segmentation, quantification and scientific measurements remain grounded in explicit computational tools and validation procedures.</p></div><div class="grid grid-2"><article class="card"><h3>What the agent can do</h3><p>Interpret a research question, identify suitable operations, coordinate a workflow and explain the resulting evidence.</p></article><article class="card"><h3>What the agent must not replace</h3><p>The scientific software that performs segmentation, measurement, visualization and other domain specific computation.</p></article></div></div></section><section class="section alt"><div class="wrap split"><div><div class="kicker">The sequence</div><h2>Evidence comes before abstraction.</h2></div><div><p>BioNuclei first establishes reproducible cross domain segmentation experiments. The wider BioMCP direction can then be evaluated against a real scientific substrate instead of a hypothetical demonstration.</p><a class="btn primary" href="research.html">Explore the research</a></div></div></section></main><footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioNuclei</h4><p>Open research for robust, reproducible and interoperable bioimaging science.</p></div><div><h4>Research</h4><a href="research.html">Research</a><a href="datasets.html">Datasets</a><a href="architecture.html">Architecture</a></div><div><h4>Ecosystem</h4><a href="biomcp.html">BioMCP</a><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a></div><div><h4>Community</h4><a href="team.html">People</a><a href="community.html">Community</a></div></div><div class="foot-bottom"><span>Open research. Public code. Evidence before claims.</span><span>Independent research initiative.</span></div></div></footer><script src="assets/site.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vision | BioNuclei</title>
+<meta name="description" content="The research vision behind BioNuclei for reliable, inspectable and interoperable bioimaging AI.">
+<link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/site.css">
+<style>
+.vision-hero{position:relative;overflow:hidden;padding:125px 0 105px;background:#fff;border-bottom:1px solid var(--line)}
+.vision-hero:before{content:"";position:absolute;width:520px;height:520px;border:1px solid rgba(165,28,48,.13);border-radius:50%;right:-150px;top:-250px;box-shadow:0 0 0 70px rgba(165,28,48,.025),0 0 0 140px rgba(165,28,48,.018)}
+.vision-hero .wrap{position:relative;z-index:1}
+.vision-index{font-size:.78rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--harvard);margin-bottom:18px}
+.vision-hero h1{max-width:1050px;font-size:clamp(4rem,7.5vw,8rem);margin-bottom:28px}
+.vision-hero .lead{max-width:800px;font-size:1.3rem}
+.vision-hero-meta{display:flex;gap:30px;flex-wrap:wrap;margin-top:55px;padding-top:20px;border-top:2px solid var(--harvard);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.vision-section{padding:120px 0}
+.vision-section.soft{background:var(--cream);border-block:1px solid var(--line)}
+.vision-head{max-width:880px;margin-bottom:55px}
+.vision-head .kicker{margin-bottom:14px}
+.vision-head h2{font-size:clamp(2.8rem,5vw,5rem)}
+.vision-head p{font-size:1.15rem;max-width:760px}
+.vision-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.vision-card{position:relative;min-height:255px;padding:31px 34px 34px;background:#fff;border:1px solid #c9c3bd;border-top:4px solid var(--harvard);overflow:hidden;transition:transform .28s ease,box-shadow .28s ease,border-color .28s ease;background-image:linear-gradient(135deg,rgba(165,28,48,.035),transparent 38%)}
+.vision-card:after{content:"";position:absolute;left:0;bottom:0;width:0;height:5px;background:var(--harvard);transition:width .35s ease}
+.vision-card:hover,.vision-card.is-active{transform:translateY(-7px);box-shadow:0 18px 38px rgba(30,30,30,.11);border-color:#b7aaa0}
+.vision-card:hover:after,.vision-card.is-active:after{width:100%}
+.vision-number{display:inline-flex;width:54px;height:54px;align-items:center;justify-content:center;background:var(--harvard);color:#fff;font-size:1.45rem;font-weight:700;margin-bottom:27px}
+.vision-card h3{font-size:2rem;color:var(--harvard);margin-bottom:12px}
+.vision-card p{max-width:610px;font-size:1rem}
+.vision-card .micro-label{font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:10px}
+.vision-card:nth-child(2){border-top-color:var(--blue)}
+.vision-card:nth-child(3){border-top-color:var(--gold)}
+.vision-card:nth-child(4){border-top-color:var(--green)}
+.vision-card:nth-child(5){border-top-color:var(--harvard)}
+.vision-card:nth-child(6){border-top-color:var(--blue)}
+.vision-card:nth-child(2) .vision-number,.vision-card:nth-child(6) .vision-number{background:var(--blue)}
+.vision-card:nth-child(3) .vision-number{background:var(--gold);color:#1e1e1e}
+.vision-card:nth-child(4) .vision-number{background:var(--green)}
+.boundary{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.boundary-card{padding:38px;background:#fff;border:1px solid var(--line);min-height:280px}
+.boundary-card h3{font-size:2rem;margin-top:10px}
+.boundary-card:first-child{border-top:5px solid var(--harvard)}
+.boundary-card:last-child{border-top:5px solid var(--ink)}
+.boundary-card p{font-size:1.08rem}
+.vision-sequence{display:grid;grid-template-columns:1.1fr .9fr;gap:85px;align-items:center}
+.sequence-panel{border:1px solid var(--line);background:#fff;padding:30px}
+.sequence-step{display:grid;grid-template-columns:52px 1fr;gap:18px;padding:18px 0;border-bottom:1px solid var(--line);transition:padding .25s ease,background .25s ease}
+.sequence-step:last-child{border-bottom:0}
+.sequence-step:hover{padding-left:10px;background:var(--rose)}
+.sequence-step b{display:flex;width:42px;height:42px;align-items:center;justify-content:center;background:var(--harvard);color:#fff;font-size:.85rem}
+.sequence-step h3{font-size:1.25rem;margin:0 0 4px}
+.sequence-step p{font-size:.94rem;margin:0;color:var(--muted)}
+.vision-statement{padding:105px 0;background:var(--harvard);color:#fff}
+.vision-statement h2,.vision-statement p{color:#fff}
+.vision-statement h2{max-width:1000px;font-size:clamp(3rem,5.5vw,5.7rem)}
+.vision-statement p{max-width:760px;font-size:1.18rem}
+.reveal-vision{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal-vision.visible{opacity:1;transform:none}
+@media(max-width:850px){.vision-grid,.boundary,.vision-sequence{grid-template-columns:1fr}.vision-hero{padding:90px 0 75px}.vision-section{padding:80px 0}.vision-hero h1{font-size:clamp(3.2rem,13vw,5.5rem)}.vision-card{min-height:220px}.vision-statement{padding:80px 0}}
+@media(prefers-reduced-motion:reduce){.vision-card,.sequence-step,.reveal-vision{transition:none!important}.reveal-vision{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Research for robust bioimaging AI</small></span></a><div class="nav-links"><a href="vision.html">Vision</a><a href="research.html">Research</a><a href="datasets.html">Datasets</a><a href="architecture.html">Architecture</a><a href="biomcp.html">BioMCP</a><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a><a href="team.html">People</a><a href="community.html">Community</a></div><div class="nav-cta"><a class="btn small primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><button class="nav-toggle" aria-label="Open navigation">Menu</button></div></div></nav>
+<main>
+<header class="vision-hero"><div class="wrap"><div class="vision-index">Research vision</div><h1>Make scientific software work together.</h1><p class="lead">BioNuclei begins with reliable bioimaging research and grows toward an interoperable scientific ecosystem. The goal is not another closed assistant. The goal is a way for researchers and AI systems to discover trusted software, execute explicit operations, inspect results and preserve the evidence.</p><div class="vision-hero-meta"><span>Reliable</span><span>Inspectable</span><span>Reproducible</span><span>Interoperable</span></div></div></header>
+<section class="vision-section"><div class="wrap"><div class="vision-head reveal-vision"><div class="kicker">The vision</div><h2>Six principles for scientific AI that can be trusted.</h2><p>The initiative is built around a simple progression: understand the scientific question, connect the right tools, prove what happened, preserve the evidence, respect the measurement boundary and only then build broader interoperability.</p></div><div class="vision-grid">
+<article class="vision-card reveal-vision"><span class="micro-label">Principle 01</span><span class="vision-number">01</span><h3>Understand</h3><p>Translate a scientific question into explicit analysis intent, data requirements and constraints.</p></article>
+<article class="vision-card reveal-vision"><span class="micro-label">Principle 02</span><span class="vision-number">02</span><h3>Connect</h3><p>Expose specialized bioimaging capabilities through typed and discoverable interfaces.</p></article>
+<article class="vision-card reveal-vision"><span class="micro-label">Principle 03</span><span class="vision-number">03</span><h3>Prove</h3><p>Record parameters, tool versions, inputs, outputs and validation evidence so a workflow can be inspected.</p></article>
+<article class="vision-card reveal-vision"><span class="micro-label">Principle 04</span><span class="vision-number">04</span><h3>Preserve</h3><p>Keep provenance attached to computation so that datasets, configurations and results remain traceable across a research workflow.</p></article>
+<article class="vision-card reveal-vision"><span class="micro-label">Principle 05</span><span class="vision-number">05</span><h3>Measure</h3><p>Keep segmentation, quantification and scientific measurement grounded in explicit computational tools and validation procedures.</p></article>
+<article class="vision-card reveal-vision"><span class="micro-label">Principle 06</span><span class="vision-number">06</span><h3>Interoperate</h3><p>Build broader agent and tool interoperability only after the underlying scientific operations are explicit, inspectable and reproducible.</p></article>
+</div></div></section>
+<section class="vision-section soft"><div class="wrap"><div class="vision-head reveal-vision"><div class="kicker">Scientific boundary</div><h2>AI orchestrates. Scientific software measures.</h2><p>The language model is positioned as a planning and interface component. It does not become the measurement engine.</p></div><div class="boundary"><article class="boundary-card reveal-vision"><div class="kicker">Agent layer</div><h3>What the agent can do</h3><p>Interpret a research question, identify suitable operations, coordinate a workflow and explain the resulting evidence.</p></article><article class="boundary-card reveal-vision"><div class="kicker">Scientific layer</div><h3>What the agent must not replace</h3><p>The scientific software that performs segmentation, measurement, visualization and other domain specific computation.</p></article></div></div></section>
+<section class="vision-section"><div class="wrap"><div class="vision-sequence"><div class="reveal-vision"><div class="kicker">The sequence</div><h2>Evidence comes before abstraction.</h2><p class="lead">BioNuclei first establishes reproducible cross domain segmentation experiments. The wider BioMCP direction can then be evaluated against a real scientific substrate instead of a hypothetical demonstration.</p><div class="actions"><a class="btn primary" href="research.html">Explore the research</a></div></div><div class="sequence-panel reveal-vision"><div class="sequence-step"><b>01</b><div><h3>Scientific question</h3><p>Define the problem and its measurable claims.</p></div></div><div class="sequence-step"><b>02</b><div><h3>Controlled experiment</h3><p>Fix data roles, configuration and evaluation protocol.</p></div></div><div class="sequence-step"><b>03</b><div><h3>Failure evidence</h3><p>Diagnose where and why the method fails.</p></div></div><div class="sequence-step"><b>04</b><div><h3>Robustness</h3><p>Evaluate interventions against the frozen baseline.</p></div></div><div class="sequence-step"><b>05</b><div><h3>Interoperability</h3><p>Expose proven operations through explicit interfaces.</p></div></div></div></div></div></section>
+<section class="vision-statement"><div class="wrap"><div class="kicker" style="color:#fff">The standard</div><h2>Science first. Software second. Claims last.</h2><p>Every capability should be measurable, reproducible and inspectable. The architecture can become broader as the evidence becomes stronger.</p></div></section>
+</main>
+<footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioNuclei</h4><p>Open research for robust, reproducible and interoperable bioimaging science.</p></div><div><h4>Research</h4><a href="research.html">Research</a><a href="datasets.html">Datasets</a><a href="architecture.html">Architecture</a></div><div><h4>Ecosystem</h4><a href="biomcp.html">BioMCP</a><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a></div><div><h4>Community</h4><a href="team.html">People</a><a href="community.html">Community</a></div></div><div class="foot-bottom"><span>Open research. Public code. Evidence before claims.</span><span>Independent research initiative.</span></div></div></footer>
+<script src="assets/site.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var cards=document.querySelectorAll('.vision-card');
+  cards.forEach(function(card){card.addEventListener('click',function(){cards.forEach(function(c){c.classList.remove('is-active')});card.classList.add('is-active')})});
+  var items=document.querySelectorAll('.reveal-vision');
+  if(!('IntersectionObserver' in window)){items.forEach(function(el){el.classList.add('visible')});return}
+  var observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){entry.target.classList.add('visible');observer.unobserve(entry.target)}})},{threshold:.12});
+  items.forEach(function(el){observer.observe(el)});
+});
+</script>
+</body>
+</html>
