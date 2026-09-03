@@ -24,6 +24,16 @@ document.addEventListener('DOMContentLoaded', function () {
     el.textContent = new Date().getFullYear();
   });
 
+  /* Keep visible editorial copy clean and consistent. Code, SVG and scripts are untouched. */
+  var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  var textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(function (node) {
+    var parent = node.parentElement;
+    if (!parent || /^(SCRIPT|STYLE|CODE|PRE|SVG)$/i.test(parent.tagName)) return;
+    node.nodeValue = node.nodeValue.replace(/\s*[→←]\s*/g, ' ').replace(/\s*[—–]\s*/g, ' ').replace(/\s{2,}/g, ' ');
+  });
+
   if ('IntersectionObserver' in window) {
     var observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
@@ -47,7 +57,6 @@ document.addEventListener('DOMContentLoaded', function () {
         var people = items.filter(function (p) {
           return p.type === 'User' && p.login.toLowerCase() !== 'burhanabdullah' && !/bot$/i.test(p.login) && !/\[bot\]/i.test(p.login);
         });
-        if (!people.length) return;
         people.forEach(function (p) {
           var card = document.createElement('article');
           card.className = 'team-card reveal is-visible';
