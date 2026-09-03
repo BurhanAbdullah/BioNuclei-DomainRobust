@@ -17,13 +17,21 @@ document.addEventListener('DOMContentLoaded', function () {
     if (name) name.innerHTML='BioNuclei<small>Research for robust bioimaging AI</small>';
   }
 
-  /* Current scientific research belongs on the BioNuclei research page. */
+  /* Keep current BioNuclei scientific details confined to the BioNuclei pages. */
   if (path !== 'bionuclei.html' && path !== 'research.html') {
     document.querySelectorAll('main section').forEach(function(section){
       var text=(section.textContent||'').toLowerCase();
       if (text.indexOf('current scientific substrate') !== -1 || text.indexOf('research foundation') !== -1 || text.indexOf('current foundation') !== -1) section.remove();
       if (path === 'biomcp.html' && (text.indexOf('example research question') !== -1 || text.indexOf('implementation boundary') !== -1)) section.remove();
     });
+  }
+
+  /* BioMCP has one concise workflow overview without importing current BioNuclei research details. */
+  if (path === 'biomcp.html' && !document.querySelector('.biomcp-sequence')) {
+    var status=document.querySelector('.section.dark');
+    var section=document.createElement('section');section.className='section';
+    section.innerHTML='<div class="wrap"><div class="section-head"><div class="kicker">From question to evidence</div><h2>Every transition should remain inspectable.</h2><p class="intro">A proposed agentic workflow can be represented as explicit stages, with each handoff preserving the information needed to inspect what happened.</p></div><div class="process"><div class="process-card"><span class="program-num">01</span><h3>Researcher</h3><p>Defines the scientific question and constraints.</p></div><div class="process-card"><span class="program-num">02</span><h3>LLM agent</h3><p>Plans a sequence of scientific operations.</p></div><div class="process-card"><span class="program-num">03</span><h3>BioMCP</h3><p>Provides typed interfaces for discovery and invocation.</p></div><div class="process-card"><span class="program-num">04</span><h3>Scientific tools</h3><p>Perform image analysis and measurement.</p></div><div class="process-card"><span class="program-num">05</span><h3>Validation</h3><p>Checks outputs and experimental requirements.</p></div><div class="process-card"><span class="program-num">06</span><h3>Evidence</h3><p>Records results, parameters and provenance.</p></div></div></div>';
+    var footer=document.querySelector('footer');if(footer) footer.parentNode.insertBefore(section,footer);
   }
 
   if (!document.getElementById('bionuclei-site-audit')) {
@@ -40,7 +48,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var contributors=document.querySelector('[data-contributors]');
   if (!contributors) return;
   fetch('https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/contributors?per_page=100').then(function(r){return r.ok?r.json():[];}).then(function(items){
-    var people=items.filter(function(p){return p.type==='User'&&p.login.toLowerCase()!=='burhanabdullah'&&!/bot$/i.test(p.login)&&!/\[bot\]/i.test(p.login);});
+    var people=items.filter(function(p){return p.type==='User'&&p.login.toLowerCase()!=='burhanabdullah'&&!/bot$/i.test(p.login)&&!/[bot]/i.test(p.login);});
     if(!people.length){contributors.innerHTML='<p class="feature">No additional public repository contributors are currently listed.</p>';return;}
     people.forEach(function(p){var card=document.createElement('article');card.className='team-card';var image=document.createElement('img');image.className='team-avatar';image.src=p.avatar_url;image.alt='GitHub contributor avatar';image.loading='lazy';var info=document.createElement('div');info.className='team-info';var name=document.createElement('h3');name.textContent=p.login;var role=document.createElement('p');role.textContent='GitHub contributor';var profile=document.createElement('a');profile.className='team-link';profile.href=p.html_url;profile.textContent='View contribution profile';info.appendChild(name);info.appendChild(role);info.appendChild(profile);card.appendChild(image);card.appendChild(info);contributors.appendChild(card);});
   }).catch(function(){contributors.innerHTML='<p class="feature">Public contributor profiles could not be loaded right now. The project lead and repository remain available above.</p>';});
