@@ -44,7 +44,8 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Archive the fresh baseline artifact: `bbbc039-baseline-33737710362`, SHA-256 digest `a784132322319663754bb8466b311b3812b821a9f14f9a3f2b77a23c43c00313`.
 - [x] Extract and independently inspect Dice, IoU, AJI, and boundary F1 from the fresh archived test metrics.
 - [x] Compute/verify image-level bootstrap confidence intervals from the fresh archived test metrics.
-- [ ] Resolve the unusually low AJI relative to the high pixel-overlap metrics before any baseline numerical claim is promoted to the release record.
+- [x] Centralize AJI and instance PRF validation in reusable metric code and add regression tests for shape safety, empty masks, non-contiguous labels, and split-instance errors.
+- [ ] Resolve the unusually low AJI relative to the high pixel-overlap metrics on the real baseline artifact; a clean re-evaluation is required after the metric audit before any baseline numerical claim is promoted.
 - [ ] Complete a single reproducibility audit tying seed, configuration, split manifest, checkpoint hash, and metrics together.
 - [ ] Produce qualitative overlays and failure analysis.
 
@@ -54,7 +55,9 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Verify the target archive inventory contains 79 raw fluorescence TIFFs and 79 corresponding ground-truth TIFFs; provenance SHA-256: `8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1`.
 - [x] Add deterministic target-domain profiling tooling for image intensity, shape, dtype, annotation count and annotation-area distributions.
 - [x] Add LZW TIFF decoding dependency and unconditional diagnostic artifact upload.
-- [ ] Execute and archive the target-domain profile.
+- [x] Fix target profiling to decode instance masks with the same repository decoder used by evaluation, preventing touching nuclei from being merged during E3 object-count and area analysis.
+- [x] Fix the target-profile workflow gate to validate the profile schema actually emitted by the profiling script and require all 79 per-image records.
+- [ ] Execute and archive the corrected target-domain profile.
 - [ ] Define biological-group-aware target-domain evaluation.
 - [ ] Run zero-shot BBBC039 → S-BIAD634 transfer on the current evaluator commit.
 - [x] Diagnose the historical zero-shot pairing failure.
@@ -71,7 +74,9 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Conduct a provisional focused 2023–2026 novelty audit; see `docs/NOVELTY_AUDIT_2026-08-15.md`.
 - [ ] Finalize the novelty audit after current baseline/zero-shot failure modes are known.
 - [x] Execute a complete E4 source-only intensity/domain-randomization run with all 79 target images evaluated. GitHub Actions run `33618446838` passed the target completeness gate and archived artifact `e4-domain-robust-33618446838`.
-- [ ] Independently audit the E4 artifact and compare it against the fresh baseline under a matched protocol.
+- [x] Execute a fresh E4 run on the same source-only protocol. GitHub Actions run `33737663312` completed successfully; artifact `e4-domain-robust-33737663312` was retained with digest `bea00c3a78311e7294954e36b505294ef6b511b7aa9377df346e4475147ec206` and includes 79 target-image metrics plus provenance.
+- [x] Independently inspect the fresh E4 artifact structure, method record, configuration, target count, and provenance linkage.
+- [ ] Compare E4 against the fresh baseline under a matched and audited evaluator after the AJI/instance-mask gate is resolved.
 - [ ] Define the final domain-robust method from observed failure modes.
 - [ ] Run controlled ablations.
 - [ ] Compare against strong published and conventional baselines.
@@ -97,8 +102,10 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current state — 2026-09-03
 
-The scientific foundation is being closed systematically rather than declared complete early. A fresh BBBC039 baseline run (`33737710362`) completed successfully, including held-out test/validation evaluation and image-level bootstrap confidence intervals. Its artifact is retained. During independent metric inspection, the pixel-overlap metrics were high while AJI was unexpectedly low; this is now an explicit release blocker until the instance-metric implementation and/or mask encoding are audited. No numerical baseline result is promoted to a scientific claim until that discrepancy is resolved.
+The release remains scientifically blocked. The fresh BBBC039 baseline run `33737710362` is retained and its image-level confidence intervals were independently inspected, but the unexpectedly low AJI relative to pixel-overlap metrics still requires a real-data re-evaluation after the instance metric and mask-semantics audit. The reusable AJI/instance-PRF implementation now validates mask shape and dimensionality and has regression coverage; this engineering fix does not retroactively validate the prior scientific metric.
 
-The E4 domain-randomization workflow has also completed a full target-domain evaluation on 79 S-BIAD634 images in run `33618446838`, with the completeness/provenance gates passing and an artifact retained. That is engineering/experimental evidence of a completed E4 execution, not yet evidence that the method improves scientific robustness. A fresh E4 run (`33737663312`) is currently progressing through target evaluation and will be independently checked when complete.
+The fresh E4 run `33737663312` completed successfully and evaluated all 79 target images. Independent inspection of the retained artifact confirms the declared source-only intensity/domain-randomization method, seed 42, target count 79, configuration, and provenance linkage. This is evidence that E4 executed and was archived, not evidence that E4 is superior or that the robustness method is frozen.
 
-The immediate sequence is therefore: audit the source instance metrics → complete current zero-shot evaluation/profile → quantify domain-shift mechanisms → select/freeze the mechanism-driven robustness method → ablations and strong baselines → few-shot adaptation → independent external validation → final statistical/reproducibility audit → Release 1.0. The community layer follows the scientific release rather than preceding it.
+The E3 profile gate was also corrected because the workflow previously expected fields (`n_images`, `images`) that the profiling script did not emit. The profiler now uses the same instance-mask decoder as evaluation, and the workflow requires 79 per-image records with mask and annotation fields. The corrected profile has not yet been executed on the hosted runner, so E3 diagnosis remains open.
+
+No E3 mechanism, E4 improvement claim, ablation, strong-baseline comparison, few-shot result, external-validation result, final statistical conclusion, release checkpoint, or Release 1.0 status is being marked complete without its corresponding executable evidence.
