@@ -8,7 +8,9 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
-from skimage.measure import label, regionprops
+from skimage.measure import regionprops
+
+from bionuclei.data import decode_instance_mask
 
 
 def index_files(root: Path, folder: str) -> dict[str, Path]:
@@ -28,22 +30,31 @@ def index_files(root: Path, folder: str) -> dict[str, Path]:
 
 def stats(image: np.ndarray, mask: np.ndarray) -> dict[str, object]:
     image = np.asarray(image)
-    mask = np.asarray(mask)
+    raw_mask = np.asarray(mask)
     if image.ndim > 2:
         image = np.squeeze(image)
-    if mask.ndim > 2:
-        mask = np.squeeze(mask)
-    if image.ndim != 2 or mask.ndim != 2:
-        raise ValueError(f"Expected 2D arrays, got image={image.shape}, mask={mask.shape}")
-    if image.shape != mask.shape:
-        raise ValueError(f"Image/mask shape mismatch: image={image.shape}, mask={mask.shape}")
-    labels = label(mask > 0, connectivity=1)
+    if image.ndim != 2:
+        raise ValueError(f"Expected 2D image, got image={image.shape}")
+
+    # Use the same instance-mask decoder as evaluation. Treating an instance
+    # mask as a binary foreground mask would merge touching nuclei and corrupt
+    # object-count/area statistics used for E3 diagnosis.
+    decoded_mask = decode_instance_mask(raw_mask)
+    if decoded_mask.ndim != 2 or image.shape != decoded_mask.shape:
+        raise ValueError(
+            f"Image/mask shape mismatch: image={image.shape}, mask={decoded_mask.shape}"
+        )
+
+    labels = decoded_mask.astype(np.int64, copy=False)
     props = regionprops(labels)
     areas = np.asarray([p.area for p in props], dtype=np.float64)
     values = image.astype(np.float64, copy=False)
     return {
         "shape": list(image.shape),
         "dtype": str(image.dtype),
+        "mask_dtype": str(raw_mask.dtype),
+        "mask_shape": list(raw_mask.shape),
+        "mask_encoding": "instance_labels_or_rgb_colors_decoded_by_bionuclei.data.decode_instance_mask",
         "min": float(values.min()),
         "max": float(values.max()),
         "mean": float(values.mean()),
@@ -53,7 +64,7 @@ def stats(image: np.ndarray, mask: np.ndarray) -> dict[str, object]:
         "p99": float(np.percentile(values, 99)),
         "nonzero_fraction": float(np.mean(values > 0)),
         "annotation_objects": int(len(props)),
-        "annotation_foreground_fraction": float(np.mean(mask > 0)),
+        "annotation_foreground_fraction": float(np.mean(labels > 0)),
         "annotation_area_median": float(np.median(areas)) if areas.size else 0.0,
         "annotation_area_mean": float(areas.mean()) if areas.size else 0.0,
     }
