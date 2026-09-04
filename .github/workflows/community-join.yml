@@ -1,0 +1,56 @@
+name: Community Join
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  add-member:
+    if: contains(github.event.issue.labels.*.name, 'community-join')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add GitHub member to registry
+        env:
+          ACTOR: ${{ github.event.issue.user.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          path = Path('community-members.json')
+          data = json.loads(path.read_text())
+          members = data.setdefault('members', [])
+          login = os.environ['ACTOR']
+
+          if not any(m.get('github', '').lower() == login.lower() for m in members):
+              members.append({
+                  'github': login,
+                  'profile': f'https://github.com/{login}',
+                  'source_issue': os.environ['ISSUE_URL']
+              })
+              members.sort(key=lambda m: m['github'].lower())
+              path.write_text(json.dumps(data, indent=2) + '\n')
+          PY
+
+      - name: Commit member registry
+        run: |
+          git config user.name 'BioNuclei Community Bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add community-members.json
+          git diff --cached --quiet || git commit -m "Add community member ${{ github.event.issue.user.login }}"
+          git push
+
+      - name: Close join issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue close "$ISSUE_NUMBER" --comment "Welcome to BioNuclei, @${{ github.event.issue.user.login }}. Your public GitHub profile has been added to the community registry and will appear on the People page." 
