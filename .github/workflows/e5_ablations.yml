@@ -1,0 +1,91 @@
+name: E5 ablations and strong baseline
+
+on:
+  push:
+    paths:
+      - 'scripts/train_domain_robust.py'
+      - 'scripts/evaluate_s_biad634.py'
+      - 'scripts/metrics_instance.py'
+      - 'src/bionuclei/data.py'
+      - 'src/bionuclei/masks.py'
+      - 'src/bionuclei/metrics.py'
+      - 'configs/domain_robust.yaml'
+      - 'configs/bbbc039_baseline.yaml'
+      - 'scripts/e5_run_ablation.py'
+      - 'docs/E5_PREREGISTRATION.md'
+      - '.github/workflows/e5_ablations.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Matched E5 source-training epochs'
+        required: false
+        default: '20'
+
+jobs:
+  e5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 700
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm pytest imagecodecs
+          python -m pip install -e . --no-deps
+      - name: Verify source dataset and split
+        run: |
+          python scripts/download_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata --output data/manifests/bbbc039_official_split.json
+      - name: Download and inventory target dataset
+        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Run preregistered E5 variants
+        env:
+          EPOCHS: ${{ inputs.epochs || '20' }}
+        run: |
+          PYTHONPATH="$PWD" python scripts/e5_run_ablation.py \
+            --config configs/domain_robust.yaml \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --source-root data/raw/BBBC039 \
+            --target-root data/raw/S-BIAD634 \
+            --output outputs/e5 \
+            --epochs "$EPOCHS"
+      - name: Verify E5 completeness and provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('outputs/e5')
+          variants=sorted(p for p in root.iterdir() if p.is_dir())
+          assert {'no_intensity_randomization','no_contrast'} <= {p.name for p in variants}
+          for v in variants:
+              d=json.loads((v/'metrics.json').read_text())
+              assert d.get('n_images') == 79
+              assert len(d.get('per_image', [])) == 79
+              for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
+                  assert k in d.get('mean',{}) and k in d.get('median',{})
+              prov=json.loads((v/'provenance.json').read_text())
+              assert prov.get('target_data_used_for_training') is False
+          PY
+      - name: Upload E5 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5-ablations-${{ github.run_id }}
+          path: |
+            outputs/e5/
+            configs/domain_robust.yaml
+            configs/bbbc039_baseline.yaml
+            data/manifests/bbbc039_official_split.json
+            data/raw/BBBC039/download_manifest.json
+            data/raw/S-BIAD634/download_manifest.json
+            docs/E5_PREREGISTRATION.md
+          retention-days: 30
