@@ -29,6 +29,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--config', type=Path, required=True)
     p.add_argument('--manifest', type=Path, required=True)
+    p.add_argument('--target-manifest', type=Path, required=True)
     p.add_argument('--source-root', type=Path, required=True)
     p.add_argument('--target-root', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
@@ -62,6 +63,7 @@ def main():
         provenance = {
             'experiment': f'e5_{name}', 'variant': name, 'seed': int(cfg['seed']),
             'epochs': int(a.epochs), 'source_split_manifest_sha256': sha256(a.manifest),
+            'target_manifest_sha256': sha256(a.target_manifest),
             'config_sha256': sha256(cfg_path), 'checkpoint_sha256': sha256(ckpt),
             'decoder': 'bionuclei.masks.decode_instance_mask',
             'target_data_used_for_training': False, 'n_target_images': 79,
