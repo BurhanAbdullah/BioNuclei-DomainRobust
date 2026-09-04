@@ -58,14 +58,15 @@ jobs:
             --target-root data/raw/S-BIAD634 \
             --output outputs/e5 \
             --epochs "$EPOCHS"
-      - name: Verify E5 completeness and provenance
+      - name: Verify E5 full-method and ablation completeness
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           root=Path('outputs/e5')
           variants=sorted(p for p in root.iterdir() if p.is_dir())
-          assert {'no_intensity_randomization','no_contrast'} <= {p.name for p in variants}
+          required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
+          assert required <= {p.name for p in variants}
           for v in variants:
               d=json.loads((v/'evaluation'/'metrics.json').read_text())
               assert d.get('n_images') == 79
@@ -75,6 +76,18 @@ jobs:
               prov=json.loads((v/'provenance.json').read_text())
               assert prov.get('target_data_used_for_training') is False
           PY
+      - name: Record strong-baseline gate state
+        run: |
+          cat > outputs/e5/STRONG_BASELINE_GATE.md <<'EOF'
+          # E5 strong-baseline gate
+
+          The preregistration requires at least one eligible strong conventional/public
+          baseline with auditable implementation/version/configuration/training data/
+          checkpoint provenance. The current E5 runner evaluates the frozen method and
+          its applicable ablations only; therefore this gate remains OPEN and the E5
+          workflow must not be interpreted as complete until a qualifying baseline is
+          independently evaluated under the matched protocol.
+          EOF
       - name: Upload E5 artifact
         if: always()
         uses: actions/upload-artifact@v4
