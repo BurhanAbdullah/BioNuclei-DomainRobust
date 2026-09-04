@@ -36,13 +36,13 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Phase 4 — domain-robust method
 - [x] Provisional 2023–2026 novelty audit.
-- [x] Execute corrected E4 source-only intensity/domain-randomization evaluation across all 79 target images: run `33791838274`; artifact digest `sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa`.
+- [x] Execute corrected E4 source-only intensity-domain-randomization evaluation across all 79 target images: run `33791838274`; artifact digest `sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa`.
 - [x] Verify E4 artifact completeness, method record and no-target-training provenance.
-- [ ] Independently compare corrected E4 against corrected E3 under the matched evaluator and frozen image set.
+- [x] Independently cross-validate the matched E4-versus-E3 comparison on the identical 79-image set under the prespecified image-level analysis protocol; verification archived in `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
 - [ ] Define/freeze the final domain-robust method from observed failure mechanisms.
 - [ ] Run controlled ablations.
 - [ ] Compare against strong published/conventional baselines.
-- [ ] Perform prespecified image-level and, where justified, group-level statistics.
+- [x] Execute the prespecified matched image-level statistical analysis; machine-readable result `outputs/e3_e4_statistics_2026-09-04.json` and verification record `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
 
 ## Phase 5 — adaptation and external validation
 - [ ] Run few-shot adaptation at pre-registered label fractions.
@@ -62,8 +62,10 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Current state — 2026-09-04
 
-The highest-priority instance-mask audit passed after correcting RGB/color-mask decoding semantics. The corrected BBBC039 baseline, corrected S-BIAD634 zero-shot transfer and corrected E4 execution are artifact-backed. The corrected S-BIAD634 target profile is now also artifact-backed: run `33818554862` completed successfully with 79 image/ground-truth pairs and digest `sha256:c5223353fec6c84d1745d1fd32c3dd7a4c169e38c3706fa7440b3548f49b7f3d`. Verification is archived in `docs/E3_TARGET_PROFILE_VERIFICATION_2026-09-04.md`.
+The highest-priority instance-mask audit passed after correcting RGB/color-mask decoding semantics. The corrected BBBC039 baseline, corrected S-BIAD634 zero-shot transfer, corrected E4 execution and corrected S-BIAD634 target profile are artifact-backed. The matched E3/E4 comparison has now been independently cross-validated from the retained artifacts under the prespecified image-level statistical protocol: 79 identical image identifiers, primary endpoint AJI, 10,000 deterministic image-level bootstrap resamples with seed 42, paired Wilcoxon signed-rank testing and Holm correction for the six secondary endpoints. The machine-readable result and verification record are retained in the repository.
 
-The profile establishes substantial target image/annotation heterogeneity but does not contain an authoritative biological/acquisition-group mapping. Filename families are therefore not promoted to biological strata. No biological-group claim is made without supporting metadata.
+The primary AJI mean paired change is +0.283799 with a 95% image-level bootstrap interval of [0.239086, 0.329079] and paired Wilcoxon p = 5.87e-13. The analysis supports a substantial matched improvement in AJI and several secondary region/instance metrics, while boundary F1 shows a small, statistically uncertain change (mean paired change +0.007030; 95% interval [-0.002601, 0.018104]; Holm-adjusted p 0.561).
 
-The immediate next scientific gate is an independently reproducible, matched E4-versus-E3 comparison using the same 79-image set and corrected evaluator, followed by formal failure analysis, method definition/freeze, controlled ablations and strong-baseline comparison. No Release 1.0 readiness, superiority claim, few-shot result or external-validation result is currently claimed.
+These results are not interpreted as biological generalization or superiority across biological groups. The target profile still lacks authoritative biological/acquisition-group mapping, and filenames are not promoted to biological strata.
+
+The immediate next gate is formal method definition/freeze against the observed failure mechanism, followed by controlled ablations and strong-baseline comparisons. Release 1.0 readiness remains unclaimed.
