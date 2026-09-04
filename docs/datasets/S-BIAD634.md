@@ -39,10 +39,8 @@ After the zero-shot experiment is locked, a separate few-shot protocol may use a
 - Record the exact file inventory and split manifest before training.
 - Do not tune preprocessing thresholds on the final target test subset.
 
-## Acquisition
+## Execution status
 
-Download through the BioImage Archive study page or its documented FTP/Aspera mechanisms. Raw third-party data must remain outside Git and must not be committed to this repository.
+The execution environment has verified and profiled the 79 expert-annotated image/GT pairs used for the locked zero-shot evaluation. A separate, authoritative adaptation subset has **not** yet been established. Therefore E6 few-shot adaptation must not reuse the 79-image locked zero-shot test set. E6 remains blocked until a leakage-safe adaptation pool and target-test split are explicitly defined and retained.
 
-## Status
-
-**Not yet acquired or validated in the execution environment.** No S-BIAD634 performance number is reported until the actual files and annotations have been inspected.
+Raw third-party data remain outside Git and are not committed to this repository.
