@@ -10,10 +10,10 @@ E6 must use a target-domain adaptation pool that is disjoint from the locked 79-
 2. A retained target-test manifest for the locked zero-shot evaluation set.
 3. Zero identifier overlap between the two manifests.
 4. SHA-256 hashes for both manifests retained with the E6 run provenance.
-5. Annotation/image correspondence verified for every adaptation image.
+5. Every adaptation and test manifest row must explicitly identify an annotation/ground-truth/mask reference; the validator now fails closed when this correspondence field is absent.
 6. The E6 workflow must fail closed if either manifest is missing or overlap is non-zero.
 
-The validator is `scripts/verify_e6_split.py`.
+The validator is `scripts/verify_e6_split.py`. It checks identifier uniqueness, annotation-reference presence, disjointness, minimum adaptation size, and manifest SHA-256 provenance. It does not inspect biological group labels or infer strata from filenames.
 
 Example validation command once the manifests exist:
 
