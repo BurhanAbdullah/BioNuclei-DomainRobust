@@ -5,6 +5,10 @@ The frozen E4 implementation has one combined intensity block
 (gain/gamma/bias/noise) and one separately parameterized contrast block.
 Therefore E5 evaluates the frozen full method plus the two independently
 identifiable removals. No new augmentation component is invented here.
+
+Release-integrity guard: fail before training if either source or target
+manifest is missing/empty, so provenance cannot be recorded for an accidental
+or incomplete dataset inventory.
 """
 from __future__ import annotations
 import argparse, hashlib, json, subprocess, sys
@@ -18,6 +22,19 @@ def sha256(path: Path) -> str:
         for b in iter(lambda: f.read(1024 * 1024), b''):
             h.update(b)
     return h.hexdigest()
+
+
+def require_manifest(path: Path, label: str) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f'{label} manifest missing: {path}')
+    if path.stat().st_size == 0:
+        raise RuntimeError(f'{label} manifest is empty: {path}')
+    try:
+        payload = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f'{label} manifest is not valid JSON: {path}') from exc
+    if not payload:
+        raise RuntimeError(f'{label} manifest contains no records: {path}')
 
 
 def run(cmd):
@@ -35,6 +52,8 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--epochs', type=int, default=20)
     a = p.parse_args()
+    require_manifest(a.manifest, 'source split')
+    require_manifest(a.target_manifest, 'target')
     base = yaml.safe_load(a.config.read_text())
     variants = {
         'full_frozen_e4': lambda c: None,
