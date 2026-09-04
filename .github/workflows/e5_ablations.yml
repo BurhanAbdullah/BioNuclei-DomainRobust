@@ -54,6 +54,7 @@ jobs:
           PYTHONPATH="$PWD" python scripts/e5_run_ablation.py \
             --config configs/domain_robust.yaml \
             --manifest data/manifests/bbbc039_official_split.json \
+            --target-manifest data/raw/S-BIAD634/download_manifest.json \
             --source-root data/raw/BBBC039 \
             --target-root data/raw/S-BIAD634 \
             --output outputs/e5 \
@@ -66,27 +67,82 @@ jobs:
           root=Path('outputs/e5')
           variants=sorted(p for p in root.iterdir() if p.is_dir())
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
-          assert required <= {p.name for p in variants}
-          for v in variants:
-              d=json.loads((v/'evaluation'/'metrics.json').read_text())
+          assert required <= {p.name for p in variants}, (required, {p.name for p in variants})
+          for v in required:
+              d=json.loads((root/v/'evaluation'/'metrics.json').read_text())
               assert d.get('n_images') == 79
               assert len(d.get('per_image', [])) == 79
               for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
                   assert k in d.get('mean',{}) and k in d.get('median',{})
-              prov=json.loads((v/'provenance.json').read_text())
+              prov=json.loads((root/v/'provenance.json').read_text())
               assert prov.get('target_data_used_for_training') is False
+              assert prov.get('target_manifest_sha256')
+      - name: Evaluate retained conventional baseline on matched target set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p outputs/strong_baseline_source
+          gh run download 33768426630 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name bbbc039-baseline-33768426630 \
+            --dir outputs/strong_baseline_source
+          CKPT="outputs/strong_baseline_source/outputs/bbbc039_baseline/last.pt"
+          test -f "$CKPT"
+          PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
+            --checkpoint "$CKPT" \
+            --data-root data/raw/S-BIAD634 \
+            --output outputs/strong_baseline_target
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          def sha256(p):
+              h=hashlib.sha256(); h.update(p.read_bytes()); return h.hexdigest()
+          d=Path('outputs/strong_baseline_target/metrics.json')
+          x=json.loads(d.read_text())
+          assert x.get('n_images') == 79 and len(x.get('per_image', [])) == 79
+          ckpt=Path('outputs/strong_baseline_source/outputs/bbbc039_baseline/last.pt')
+          prov={
+            'name':'corrected_bbbc039_boundary_unet_baseline',
+            'type':'conventional_boundary_aware_unet_comparator',
+            'source_run_id':33768426630,
+            'source_artifact_digest':'sha256:ec31fba69ee40de1f86d89ac0275d4341f58ec31a41f4129b33cf2501d3ce74f',
+            'checkpoint_sha256':sha256(ckpt),
+            'config_sha256':sha256(Path('configs/bbbc039_baseline.yaml')),
+            'source_split_manifest_sha256':sha256(Path('data/manifests/bbbc039_official_split.json')),
+            'target_manifest_sha256':sha256(Path('data/raw/S-BIAD634/download_manifest.json')),
+            'decoder':'bionuclei.masks.decode_instance_mask',
+            'evaluator':'scripts/evaluate_s_biad634.py',
+            'target_data_used_for_training':False,
+            'n_target_images':79,
+          }
+          Path('outputs/strong_baseline_target/provenance.json').write_text(json.dumps(prov,indent=2)+'\n')
+          PY
+      - name: Verify strong-baseline eligibility evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('outputs/strong_baseline_target/provenance.json').read_text())
+          required=['source_run_id','source_artifact_digest','checkpoint_sha256','config_sha256','source_split_manifest_sha256','target_manifest_sha256','decoder','evaluator']
+          assert all(p.get(k) for k in required)
+          assert p['target_data_used_for_training'] is False
+          m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
+          assert m['n_images']==79 and len(m['per_image'])==79
           PY
       - name: Record strong-baseline gate state
         run: |
           cat > outputs/e5/STRONG_BASELINE_GATE.md <<'EOF'
           # E5 strong-baseline gate
 
-          The preregistration requires at least one eligible strong conventional/public
-          baseline with auditable implementation/version/configuration/training data/
-          checkpoint provenance. The current E5 runner evaluates the frozen method and
-          its applicable ablations only; therefore this gate remains OPEN and the E5
-          workflow must not be interpreted as complete until a qualifying baseline is
-          independently evaluated under the matched protocol.
+          The retained corrected BBBC039 Boundary U-Net baseline is evaluated on the
+          identical 79-image S-BIAD634 target set using the corrected evaluator. Its
+          source run, artifact digest, checkpoint hash, source split, target manifest,
+          decoder and command provenance are retained in
+          `outputs/strong_baseline_target/provenance.json`.
+
+          Eligibility is an evidence classification: this is a conventional,
+          auditable comparator, not a copied published number. No biological-group
+          claim is inferred from the target filenames.
           EOF
       - name: Upload E5 artifact
         if: always()
@@ -95,6 +151,7 @@ jobs:
           name: e5-ablations-${{ github.run_id }}
           path: |
             outputs/e5/
+            outputs/strong_baseline_target/
             configs/domain_robust.yaml
             configs/bbbc039_baseline.yaml
             data/manifests/bbbc039_official_split.json
