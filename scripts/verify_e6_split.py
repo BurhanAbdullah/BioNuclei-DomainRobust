@@ -10,10 +10,21 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Iterable
+
+IMAGE_KEYS = ("image_id", "id", "image", "filename", "file")
+ANNOTATION_KEYS = (
+    "annotation_id",
+    "annotation",
+    "annotation_file",
+    "ground_truth",
+    "ground_truth_file",
+    "mask",
+    "mask_file",
+    "mask_path",
+)
 
 
-def load_ids(path: Path) -> set[str]:
+def load_rows(path: Path) -> list[object]:
     obj = json.loads(path.read_text())
     if isinstance(obj, dict):
         rows = obj.get("images") or obj.get("items") or obj.get("records")
@@ -21,17 +32,25 @@ def load_ids(path: Path) -> set[str]:
         rows = obj
     if not isinstance(rows, list):
         raise ValueError(f"{path}: expected a JSON list or a dict containing images/items/records")
+    return rows
+
+
+def load_ids_and_validate_annotations(path: Path) -> set[str]:
+    rows = load_rows(path)
     ids: list[str] = []
     for row in rows:
-        if isinstance(row, str):
-            ids.append(row)
-            continue
         if not isinstance(row, dict):
-            raise ValueError(f"{path}: manifest row is not an object/string")
-        key = next((k for k in ("image_id", "id", "image", "filename", "file") if row.get(k)), None)
-        if key is None:
+            raise ValueError(f"{path}: every manifest row must be an object containing image and annotation correspondence")
+        image_key = next((k for k in IMAGE_KEYS if row.get(k)), None)
+        annotation_key = next((k for k in ANNOTATION_KEYS if row.get(k)), None)
+        if image_key is None:
             raise ValueError(f"{path}: manifest row has no image identifier: {row}")
-        ids.append(str(row[key]))
+        if annotation_key is None:
+            raise ValueError(
+                f"{path}: manifest row has no annotation/mask reference; "
+                f"expected one of {ANNOTATION_KEYS}"
+            )
+        ids.append(str(row[image_key]))
     if len(ids) != len(set(ids)):
         raise ValueError(f"{path}: duplicate image identifiers detected")
     return set(ids)
@@ -56,8 +75,8 @@ def main() -> int:
         if not p.is_file():
             raise SystemExit(f"E6 BLOCKED: missing required manifest: {p}")
 
-    adaptation = load_ids(args.adaptation_manifest)
-    test = load_ids(args.test_manifest)
+    adaptation = load_ids_and_validate_annotations(args.adaptation_manifest)
+    test = load_ids_and_validate_annotations(args.test_manifest)
     overlap = adaptation & test
     if len(adaptation) < args.min_adaptation_images:
         raise SystemExit(
@@ -74,6 +93,7 @@ def main() -> int:
         "adaptation_images": len(adaptation),
         "test_images": len(test),
         "overlap_images": 0,
+        "annotation_correspondence_checked": True,
         "adaptation_manifest_sha256": sha256(args.adaptation_manifest),
         "test_manifest_sha256": sha256(args.test_manifest),
         "target_test_reuse_allowed": False,
