@@ -1,5 +1,10 @@
 name: E5 ablations and strong baseline
 
+# Release-integrity note: every E5 run must retain full_frozen_e4 plus every
+# applicable ablation and the matched conventional comparator. This workflow
+# intentionally retriggers on workflow changes so the strengthened gate is
+# executed rather than inferred from an older successful run.
+
 on:
   push:
     paths:
