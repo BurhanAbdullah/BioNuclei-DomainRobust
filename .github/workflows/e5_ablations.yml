@@ -67,7 +67,7 @@ jobs:
           variants=sorted(p for p in root.iterdir() if p.is_dir())
           assert {'no_intensity_randomization','no_contrast'} <= {p.name for p in variants}
           for v in variants:
-              d=json.loads((v/'metrics.json').read_text())
+              d=json.loads((v/'evaluation'/'metrics.json').read_text())
               assert d.get('n_images') == 79
               assert len(d.get('per_image', [])) == 79
               for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
