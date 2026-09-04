@@ -5,6 +5,8 @@ name: E5 ablations and strong baseline
 # intentionally retriggers on workflow changes so the strengthened gate is
 # executed rather than inferred from an older successful run.
 # 2026-09-04: retrigger after E6 gate hardening; no E5 scientific criteria changed.
+# 2026-09-05: include release-status documentation in the trigger paths so a
+# documented gate update cannot leave the executable release check stale.
 
 on:
   push:
@@ -19,6 +21,7 @@ on:
       - 'configs/bbbc039_baseline.yaml'
       - 'scripts/e5_run_ablation.py'
       - 'docs/E5_PREREGISTRATION.md'
+      - 'docs/PROGRESS.md'
       - '.github/workflows/e5_ablations.yml'
       - 'pyproject.toml'
   workflow_dispatch:
