@@ -4,6 +4,7 @@ name: E5 ablations and strong baseline
 # applicable ablation and the matched conventional comparator. This workflow
 # intentionally retriggers on workflow changes so the strengthened gate is
 # executed rather than inferred from an older successful run.
+# 2026-09-04: retrigger after E6 gate hardening; no E5 scientific criteria changed.
 
 on:
   push:
