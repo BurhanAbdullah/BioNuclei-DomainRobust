@@ -8,6 +8,13 @@
   <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/site.css">
   <link rel="stylesheet" href="assets/home.css">
+  <style>
+    .landing .site-nav{border-bottom-width:6px;position:sticky;overflow:hidden}
+    .landing .site-nav:after{content:"";position:absolute;left:-15%;bottom:0;width:130%;height:6px;background:linear-gradient(90deg,var(--harvard),#c92d49,var(--harvard),#c92d49,var(--harvard));background-size:220% 100%;animation:home-fluid-line 8s ease-in-out infinite;pointer-events:none}
+    .landing .site-nav>*{position:relative;z-index:1}
+    @keyframes home-fluid-line{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+    @media(prefers-reduced-motion:reduce){.landing .site-nav:after{animation:none}}
+  </style>
 </head>
 <body class="landing">
   <nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Research for robust bioimaging AI</small></span></a><div class="nav-links"></div><div class="nav-cta"><a class="btn small primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><button class="nav-toggle" aria-label="Open navigation" aria-expanded="false">Menu</button></div></div></nav>
