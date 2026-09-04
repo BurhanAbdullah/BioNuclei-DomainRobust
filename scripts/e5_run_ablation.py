@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Run the preregistered E5 full method and applicable ablations.
+"""Run one or all preregistered E5 variants.
 
-The frozen E4 implementation has one combined intensity block
-(gain/gamma/bias/noise) and one separately parameterized contrast block.
-Therefore E5 evaluates the frozen full method plus the two independently
-identifiable removals. No new augmentation component is invented here.
+E5 variants are independently executable so hosted CI can run them in parallel
+and avoid a single wall-clock timeout. The scientific definition is unchanged:
+full frozen E4 plus the two independently identifiable removals.
 
 Release-integrity guard: fail before training if either source or target
 manifest is missing/empty, so provenance cannot be recorded for an accidental
@@ -51,6 +50,7 @@ def main():
     p.add_argument('--target-root', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--epochs', type=int, default=20)
+    p.add_argument('--variant', choices=('full_frozen_e4', 'no_intensity_randomization', 'no_contrast', 'all'), default='all')
     a = p.parse_args()
     require_manifest(a.manifest, 'source split')
     require_manifest(a.target_manifest, 'target')
@@ -60,10 +60,11 @@ def main():
         'no_intensity_randomization': lambda c: c['augmentation'].__setitem__('apply_probability', 0.0),
         'no_contrast': lambda c: c['augmentation'].__setitem__('contrast_probability', 0.0),
     }
+    names = list(variants) if a.variant == 'all' else [a.variant]
     a.output.mkdir(parents=True, exist_ok=True)
-    for name, mutate in variants.items():
+    for name in names:
         cfg = json.loads(json.dumps(base))
-        mutate(cfg)
+        variants[name](cfg)
         cfg['experiment'] = f'e5_{name}'
         cfg_path = a.output / f'{name}.yaml'
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
@@ -90,7 +91,7 @@ def main():
             'metrics_file': str(eval_out / 'metrics.json'),
         }
         (out / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
-    print('E5 full frozen method and applicable ablations completed')
+    print(f'E5 completed variants: {", ".join(names)}')
 
 
 if __name__ == '__main__':
