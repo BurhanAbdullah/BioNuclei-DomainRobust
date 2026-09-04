@@ -1,12 +1,9 @@
 name: E5 ablations and strong baseline
 
 # Release-integrity note: every E5 run must retain full_frozen_e4 plus every
-# applicable ablation and the matched conventional comparator. This workflow
-# intentionally retriggers on workflow changes so the strengthened gate is
-# executed rather than inferred from an older successful run.
-# 2026-09-04: retrigger after E6 gate hardening; no E5 scientific criteria changed.
-# 2026-09-05: include release-status documentation in the trigger paths so a
-# documented gate update cannot leave the executable release check stale.
+# applicable ablation and the matched conventional comparator. Variants execute
+# independently in parallel so one hosted-job wall-clock timeout cannot produce
+# a partial scientific release artifact.
 
 on:
   push:
@@ -32,12 +29,19 @@ on:
         default: '20'
 
 jobs:
-  e5:
+  e5_variant:
+    name: E5 ${{ matrix.variant }}
     runs-on: ubuntu-latest
-    timeout-minutes: 700
+    timeout-minutes: 360
     permissions:
       contents: read
-      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - full_frozen_e4
+          - no_intensity_randomization
+          - no_contrast
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,7 +60,7 @@ jobs:
           python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata --output data/manifests/bbbc039_official_split.json
       - name: Download and inventory target dataset
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
-      - name: Run preregistered E5 variants
+      - name: Run preregistered E5 variant
         env:
           EPOCHS: ${{ inputs.epochs || '20' }}
         run: |
@@ -67,29 +71,90 @@ jobs:
             --source-root data/raw/BBBC039 \
             --target-root data/raw/S-BIAD634 \
             --output outputs/e5 \
-            --epochs "$EPOCHS"
-      - name: Verify E5 full-method and ablation completeness
+            --epochs "$EPOCHS" \
+            --variant "${{ matrix.variant }}"
+      - name: Verify variant completeness
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v=Path('outputs/e5') / '${{ matrix.variant }}'
+          d=json.loads((v/'evaluation'/'metrics.json').read_text())
+          assert d.get('n_images') == 79
+          assert len(d.get('per_image', [])) == 79
+          for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
+              assert k in d.get('mean',{}) and k in d.get('median',{})
+          p=json.loads((v/'provenance.json').read_text())
+          assert p.get('target_data_used_for_training') is False
+          assert p.get('target_manifest_sha256')
+          assert p.get('source_split_manifest_sha256')
+          assert p.get('checkpoint_sha256')
+          print('verified', '${{ matrix.variant }}')
+          PY
+      - name: Upload E5 variant artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5-variant-${{ github.run_id }}-${{ matrix.variant }}
+          path: |
+            outputs/e5/${{ matrix.variant }}/
+            outputs/e5/${{ matrix.variant }}.yaml
+            configs/domain_robust.yaml
+            data/manifests/bbbc039_official_split.json
+            data/raw/BBBC039/download_manifest.json
+            data/raw/S-BIAD634/download_manifest.json
+            docs/E5_PREREGISTRATION.md
+          retention-days: 30
+
+  e5_gate:
+    name: E5 completeness and comparator gate
+    needs: e5_variant
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm pytest imagecodecs
+          python -m pip install -e . --no-deps
+      - name: Download E5 variant artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e5-variant-${{ github.run_id }}-*
+          merge-multiple: true
+          path: outputs/e5
+      - name: Verify all preregistered variants and provenance
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           root=Path('outputs/e5')
-          variants=sorted(p for p in root.iterdir() if p.is_dir())
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
-          assert required <= {p.name for p in variants}, (required, {p.name for p in variants})
-          for v in required:
-              d=json.loads((root/v/'evaluation'/'metrics.json').read_text())
-              assert d.get('n_images') == 79
-              assert len(d.get('per_image', [])) == 79
-              for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
-                  assert k in d.get('mean',{}) and k in d.get('median',{})
-              prov=json.loads((root/v/'provenance.json').read_text())
-              assert prov.get('target_data_used_for_training') is False
-              assert prov.get('target_manifest_sha256')
-      - name: Evaluate retained conventional baseline on matched target set
+          assert required <= {p.name for p in root.iterdir() if p.is_dir()}
+          for name in required:
+              v=root/name
+              d=json.loads((v/'evaluation'/'metrics.json').read_text())
+              assert d['n_images']==79 and len(d['per_image'])==79
+              assert all(k in d['mean'] and k in d['median'] for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'))
+              p=json.loads((v/'provenance.json').read_text())
+              assert p['target_data_used_for_training'] is False
+              assert p['n_target_images']==79
+              for k in ('target_manifest_sha256','source_split_manifest_sha256','config_sha256','checkpoint_sha256'):
+                  assert p.get(k)
+          print('all preregistered E5 variants complete')
+          PY
+      - name: Verify matched conventional baseline
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
           mkdir -p outputs/strong_baseline_source
           gh run download 33768426630 \
             --repo "$GITHUB_REPOSITORY" \
@@ -106,9 +171,8 @@ jobs:
           from pathlib import Path
           def sha256(p):
               h=hashlib.sha256(); h.update(p.read_bytes()); return h.hexdigest()
-          d=Path('outputs/strong_baseline_target/metrics.json')
-          x=json.loads(d.read_text())
-          assert x.get('n_images') == 79 and len(x.get('per_image', [])) == 79
+          m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
+          assert m['n_images']==79 and len(m['per_image'])==79
           ckpt=Path('outputs/strong_baseline_source/outputs/bbbc039_baseline/last.pt')
           prov={
             'name':'corrected_bbbc039_boundary_unet_baseline',
@@ -126,7 +190,7 @@ jobs:
           }
           Path('outputs/strong_baseline_target/provenance.json').write_text(json.dumps(prov,indent=2)+'\n')
           PY
-      - name: Verify strong-baseline eligibility evidence
+      - name: Verify strong-baseline eligibility
         run: |
           python - <<'PY'
           import json
@@ -138,7 +202,7 @@ jobs:
           m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
           assert m['n_images']==79 and len(m['per_image'])==79
           PY
-      - name: Record strong-baseline gate state
+      - name: Record and upload E5 gate artifact
         run: |
           cat > outputs/e5/STRONG_BASELINE_GATE.md <<'EOF'
           # E5 strong-baseline gate
@@ -151,20 +215,18 @@ jobs:
 
           Eligibility is an evidence classification: this is a conventional,
           auditable comparator, not a copied published number. No biological-group
-          claim is inferred from the target filenames.
+          claim is inferred from target filenames.
           EOF
-      - name: Upload E5 artifact
-        if: always()
+      - name: Upload E5 gate artifact
         uses: actions/upload-artifact@v4
         with:
-          name: e5-ablations-${{ github.run_id }}
+          name: e5-gate-${{ github.run_id }}
           path: |
             outputs/e5/
             outputs/strong_baseline_target/
             configs/domain_robust.yaml
             configs/bbbc039_baseline.yaml
             data/manifests/bbbc039_official_split.json
-            data/raw/BBBC039/download_manifest.json
             data/raw/S-BIAD634/download_manifest.json
             docs/E5_PREREGISTRATION.md
           retention-days: 30
