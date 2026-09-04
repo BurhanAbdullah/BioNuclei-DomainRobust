@@ -1,234 +1,334 @@
 # BioNuclei-DomainRobust
 
-> **Reproducible research for domain-robust nuclear instance segmentation in fluorescence bioimaging.**
+> **Reproducible research and local tooling for domain-robust nuclear instance segmentation in fluorescence bioimaging.**
 
-**BioNuclei-DomainRobust** evaluates cross-domain generalization from **BBBC039** to **S-BIAD634 / S-BSST265** with rigorous validation, reproducible experiments, explicit dataset provenance and evidence-driven robustness analysis.
+BioNuclei-DomainRobust studies whether nuclear instance segmentation remains reliable when fluorescence microscopy data move beyond the domain used for model development. It combines executable image-analysis software, controlled experiments, dataset provenance, statistical evaluation, failure analysis and reproducibility checks.
 
-This repository is first and foremost a **scientific research project**. Its immediate goal is to establish a rigorous, reproducible foundation for robust fluorescence nuclear instance segmentation under domain shift.
+> **Scientific status:** active research. The software is locally testable, but the benchmark study is not declared scientifically complete until all scientific, reporting and reproducibility gates pass. Current instance-level evaluation is being audited before benchmark claims are finalized.
 
-## Research objective
+## Quick start
 
-Fluorescence bioimaging datasets can differ substantially in acquisition conditions, biological context, staining, intensity distributions and imaging characteristics. A model that performs well in one dataset may therefore degrade when applied to another domain.
+### Users
 
-BioNuclei studies this problem systematically rather than treating cross-domain performance as an afterthought.
+Start with [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md). The package provides a `bionuclei` CLI for local prediction and evaluation.
 
-The current research path is:
+```bash
+python -m venv .venv
+python -m pip install -e .
+bionuclei --help
+bionuclei --version
+```
+
+Prediction requires a compatible `.pt` checkpoint:
+
+```bash
+bionuclei predict \
+  --input my_fluorescence_image.tif \
+  --checkpoint model.pt \
+  --output results/
+```
+
+Evaluation requires ground truth:
+
+```bash
+bionuclei evaluate \
+  --input my_fluorescence_image.tif \
+  --ground-truth ground_truth.png \
+  --checkpoint model.pt \
+  --output evaluation/
+```
+
+The current local prediction bundle contains:
 
 ```text
-BBBC039
-  |
-  v
-Nuclear instance segmentation
-  |
-  v
-Controlled source-domain evaluation
-  |
-  v
-S-BIAD634 / S-BSST265
-  |
-  v
-Cross-domain generalization
-  |
-  v
-Failure-mode analysis
-  |
-  v
-Evidence-driven robustness
-  |
-  v
-Ablation and baseline comparison
-  |
-  v
+results/
+├── segmentation_mask.tif
+├── overlay.tif
+├── measurements.csv
+├── results.json
+└── provenance.json
+```
+
+`segmentation_mask.tif` contains integer-labelled predicted instances. `measurements.csv` contains per-instance area, centroid and bounding-box measurements. `results.json` contains the structured prediction summary. `provenance.json` records execution metadata. The local evaluation command currently reports Dice, IoU and Boundary-F1; the research benchmark pipeline remains authoritative for the complete protocol and AJI analysis.
+
+**Important:** a GitHub Actions artifact is temporary and is not treated as the permanent public model release. A versioned checkpoint must be published as a release asset before advertising a stable Release 1.0 one-command workflow.
+
+### Researchers
+
+Start with:
+
+1. [`docs/EXPERIMENT_MATRIX.md`](docs/EXPERIMENT_MATRIX.md) — experiment definitions and gates.
+2. [`docs/RESEARCH_PROTOCOL.md`](docs/RESEARCH_PROTOCOL.md) — scientific protocol.
+3. [`docs/DATASETS.md`](docs/DATASETS.md) — dataset roles and provenance.
+4. [`docs/VALIDATION.md`](docs/VALIDATION.md) — validation rules.
+5. [`docs/PROGRESS.md`](docs/PROGRESS.md) — verified progress and evidence.
+6. [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — final release gate.
+
+## What is being studied?
+
+The central question is:
+
+> **Can nuclear instance segmentation remain useful when the imaging domain changes?**
+
+Fluorescence datasets can differ in acquisition conditions, biological context, staining, intensity distribution, morphology and imaging characteristics. A model that performs well in its development domain may therefore fail when transferred elsewhere.
+
+BioNuclei treats this as a controlled scientific problem rather than as a single benchmark number.
+
+## Scientific workflow
+
+```text
+BBBC039 source domain
+        |
+        v
+Source-domain baseline
+        |
+        v
+Frozen zero-shot transfer
+        |
+        v
+S-BIAD634 target domain
+        |
+        v
+Domain-shift / failure diagnosis
+        |
+        v
+Evidence-driven robustness method
+        |
+        v
+Ablations + strong baselines
+        |
+        v
 Few-shot adaptation
-  |
-  v
+        |
+        v
 Independent external validation
 ```
 
-The scientific workflow is designed so that robustness decisions are supported by observed failure modes, controlled experiments and held-out evaluation.
+The order is intentional. The robustness intervention should be justified by measured failure mechanisms rather than selected only because an architecture appears promising.
 
-## What is evaluated
+## How the model works
 
-The repository focuses on **domain-robust nuclear instance segmentation in fluorescence microscopy**.
+The current scientific substrate is a compact **Boundary U-Net**. It predicts three semantic classes:
 
-The evaluation framework considers:
+- background
+- nuclear interior
+- boundary
 
-- Source-domain performance on BBBC039
-- Cross-domain transfer to S-BIAD634 / S-BSST265
-- Instance-level segmentation quality
-- Boundary quality
-- Domain-shift behaviour and failure modes
-- Reproducibility of preprocessing, training and evaluation
-- Statistical validity at the appropriate biological/image unit
-- Independent validation after protocol freeze
+Semantic predictions are converted into individual nuclear instances by explicit post-processing. Measurements are generated by scientific Python code, not by a language model.
 
-The repository distinguishes engineering success from scientific evidence. A workflow passing CI does not by itself establish scientific superiority.
+```text
+Fluorescence image
+       |
+       v
+Normalization
+       |
+       v
+Boundary U-Net
+       |
+       v
+Background / interior / boundary prediction
+       |
+       v
+Instance separation
+       |
+       +-----------------------+
+       |                       |
+       v                       v
+Instance mask          Per-instance measurements
+       |                       |
+       +-----------+-----------+
+                   v
+          Structured outputs
+                   |
+                   v
+       Provenance / validation
+```
 
-## Reproducibility first
+## Experiment phases
 
-Every scientific result should be traceable to the code, configuration, dataset manifest and generated artifact used to obtain it.
+| Phase | Purpose | Required evidence |
+|---|---|---|
+| **E1** | Source-domain BBBC039 baseline | Declared split, reproducible training and held-out evaluation |
+| **E2** | Zero-shot target transfer | Frozen source model; no target fine-tuning |
+| **E3** | Domain-shift diagnosis | Quantitative mechanism/failure analysis |
+| **E4** | Robustness intervention | Complete target evaluation and provenance |
+| **E5** | Ablations and strong baselines | Controlled component and baseline comparisons |
+| **E6** | Few-shot adaptation | Predefined 1%, 5%, 10%, 25% protocol |
+| **E7** | Independent validation | External dataset after protocol freeze |
 
-The project therefore maintains:
+A phase is not considered scientifically complete merely because its code executes successfully. The evidence, protocol and reporting gates must also pass.
 
-- Versioned experiment configurations
-- Dataset manifests and provenance records
-- Explicit train/evaluation separation
-- Automated validation gates
-- Reproducible evaluation scripts
-- Test coverage for critical code paths
-- Evidence-backed progress records
-- Documentation of failed experiments and engineering blockers
-- A novelty audit rather than unsupported novelty claims
-
-Raw third-party datasets are not redistributed by this repository. Users should obtain them from their authoritative sources and follow their applicable terms.
-
-## Dataset roles
+## Datasets
 
 | Dataset | Role |
 |---|---|
 | **BBBC039** | Source-domain training and controlled evaluation |
-| **S-BIAD634** | Cross-domain evaluation |
-| **S-BSST265** | Cross-domain evaluation / broader robustness analysis |
+| **S-BIAD634** | Cross-domain target evaluation |
+| **S-BSST265** | Broader cross-domain robustness direction |
 | **BBBC038** | Reserved independent external validation |
 | **ORION-CRC / HTAN** | Longer-term multimodal biological validation direction |
 
-See [`docs/DATASETS.md`](docs/DATASETS.md) for the detailed dataset policy and acquisition information.
+Raw third-party datasets are not redistributed by this repository. Users must obtain them from their authoritative sources and follow applicable access and license terms. Dataset manifests, hashes and roles are documented in [`docs/DATASETS.md`](docs/DATASETS.md).
 
-## Experimental evidence
+## Evidence and reproducibility
 
-The research is organized into explicit experimental stages rather than a single benchmark number. The experiment matrix records the intended sequence, gates and statistical rules.
+Every important scientific result should be reconstructable from:
 
-- [`docs/EXPERIMENT_MATRIX.md`](docs/EXPERIMENT_MATRIX.md)
-- [`docs/RESEARCH_PROTOCOL.md`](docs/RESEARCH_PROTOCOL.md)
-- [`docs/VALIDATION.md`](docs/VALIDATION.md)
-- [`docs/PROGRESS.md`](docs/PROGRESS.md)
-- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
-- [`docs/NOVELTY_AUDIT_2026-08-15.md`](docs/NOVELTY_AUDIT_2026-08-15.md)
+- repository commit
+- experiment configuration
+- dataset identity and manifest
+- random seed
+- model checkpoint
+- evaluation command
+- machine-readable outputs
+- statistical analysis and confidence intervals where appropriate
+- provenance metadata
 
-## Scientific model
+The project maintains failed-run records and anomalies instead of silently replacing them.
 
-The current segmentation research uses a **Boundary U-Net** based approach. The model is evaluated as a scientific measurement system within a controlled reproducibility protocol.
+A green CI workflow demonstrates that the software workflow executed. It does **not** by itself establish scientific superiority.
 
-The project does not treat a language model as the segmentation engine and does not allow generated language to substitute for quantitative image analysis.
+## Current release gate
 
-## Future direction: BioMCP
+The final release checklist deliberately separates engineering readiness from scientific-result readiness. Current outstanding gates include the complete final experiment record, clean-environment reproduction, domain-shift diagnosis, method freeze, ablations, strong baselines, few-shot adaptation, independent validation, statistical/failure analysis, traceable reporting, literature audit and final reproducibility review.
 
-Once the **BioNuclei scientific foundation is mature and rigorously validated**, the research direction can expand toward a broader project: **BioMCP**.
+The current instance-level AJI evaluation is also being audited because an anomalous result must be resolved before it can support a scientific claim. Until the audit and any required reruns are complete, those values are treated as investigation evidence rather than publishable conclusions.
 
-The long-term idea is to develop a full-fledged **Model Context Protocol layer for bioimaging**, inspired by the general pattern of MCP-based scientific tool interoperability, that can connect LLM-based agents to established open-source imaging software and reproducible scientific workflows.
+See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) for the authoritative gate list.
 
-Conceptually:
+## Installation and development
+
+Clone and install:
+
+```bash
+git clone https://github.com/BurhanAbdullah/BioNuclei-DomainRobust.git
+cd BioNuclei-DomainRobust
+python -m pip install -e .
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+CPU inference is the default. If the installed PyTorch environment supports CUDA:
+
+```bash
+bionuclei predict \
+  --input image.tif \
+  --checkpoint model.pt \
+  --output results/ \
+  --device cuda
+```
+
+The CLI currently expects a 2-D fluorescence image and a compatible checkpoint. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the complete end-user path.
+
+## Repository structure
+
+```text
+BioNuclei-DomainRobust/
+├── src/bionuclei/        Reusable scientific package and CLI
+├── configs/              Experiment configurations
+├── scripts/              Reproducibility, training and evaluation entry points
+├── tests/                Unit and integration tests
+├── docs/                 Research, validation and user documentation
+├── data/                 Local dataset mount points; raw data are gitignored
+└── outputs/              Local experiment outputs and curated evidence
+```
+
+## Scientific integrity rules
+
+### Scientific software remains authoritative
+
+The segmentation, measurement and evaluation operations are executable scientific code. Generated language must not substitute for quantitative measurement.
+
+### Evidence precedes claims
+
+A successful run is not automatically a scientific result. Results must survive validation, comparison, statistical review and reproducibility checks.
+
+### Provenance is part of the result
+
+A number without its dataset, configuration, code version and artifact provenance is incomplete evidence.
+
+### Test data remain isolated
+
+The final evaluation protocol must prevent target/test leakage and test-set tuning.
+
+### Anomalies remain visible
+
+Unexpected results, failed experiments and implementation problems are documented and investigated rather than hidden.
+
+## BioMCP relationship
+
+BioNuclei is the current scientific substrate for a broader **BioMCP** research direction.
 
 ```text
 Researcher
     |
     v
-LLM / scientific agent
+Scientific agent / LLM
     |
     v
-BioMCP
+  BioMCP
     |
-    +-------------------+
-    |                   |
-    v                   v
-Image analysis       Scientific data
-software             and metadata
-    |                   |
-    +---------+---------+
-              |
-              v
-        Reproducible
-        workflows
-              |
-              v
+    +----------------------+
+    |                      |
+    v                      v
+Bioimage tools        Scientific data
+    |                      |
+    +----------+-----------+
+               v
+       Reproducible workflow
+               |
+               v
        Structured evidence
-              |
-              v
+               |
+               v
        Human scientific review
 ```
 
-Potential integrations could eventually include open-source bioimage analysis environments for visualization, segmentation, measurement, tracking, annotation, metadata handling and workflow execution.
+BioMCP is **not claimed to be a completed validated platform** here. The intended boundary is that an eventual agent can discover, configure and coordinate scientific capabilities while established scientific software performs the actual measurements.
 
-The important architectural boundary is that the **LLM would coordinate and communicate with scientific tools, while the underlying scientific software performs the actual image analysis and measurements**.
+The proposed ecosystem is:
 
-BioMCP is therefore a **future research direction at this stage**, not a claim that the complete platform already exists or has been validated.
-
-### Proposed future ecosystem
-
-The longer-term BioNuclei research programme may develop into several connected components:
-
-| Component | Long-term role | Current status |
+| Component | Intended role | Status |
 |---|---|---|
-| **BioNuclei** | Robust bioimaging research and validation foundation | Active research |
-| **BioMCP** | MCP-based interoperability between agents and bioimaging tools | Future direction |
-| **BioFM** | Domain-aware foundation models for bioimaging | Future research direction |
-| **BioWF** | Reproducible scientific workflow execution | Future research direction |
-| **BioSkills** | Reusable scientific procedures and validated tool-use knowledge | Future research direction |
+| **BioNuclei** | Robust bioimaging research and validation | Active research |
+| **BioMCP** | Agent-to-tool interoperability | Future direction |
+| **BioFM** | Domain-aware bioimaging foundation models | Future research direction |
+| **BioWF** | Reproducible workflow composition/execution | Future research direction |
+| **BioSkills** | Reusable validated scientific procedures | Future research direction |
 
-These components should only move from research direction to implemented capability when the corresponding engineering and scientific evidence exists.
+## Documentation map
 
-## Design principles
+### Users
 
-### Scientific software remains authoritative
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
+- [`docs/DATASETS.md`](docs/DATASETS.md)
 
-The agent should not replace established image-analysis algorithms. It should select, configure and coordinate them through explicit interfaces.
-
-### Measurements remain inspectable
-
-Quantitative results should originate from executable scientific operations with structured outputs and provenance.
-
-### Reproducibility is part of the architecture
-
-Dataset identity, configuration, tool versions, workflow steps and outputs should remain reconstructable.
-
-### Evidence precedes expansion
-
-BioMCP should be built on a validated scientific substrate rather than using an agent layer to conceal unresolved scientific uncertainty.
-
-## Repository structure
-
-```text
-src/        Reusable scientific Python package
-configs/    Experiment configurations
-scripts/    Reproducibility and evaluation entry points
-tests/      Unit and integration tests
-docs/       Research protocols, validation and documentation
-data/       Local dataset mount points; raw data are gitignored
-outputs/    Local experiment outputs and curated evidence
-```
-
-## Documentation
-
-### Research
+### Researchers
 
 - [`docs/EXPERIMENT_MATRIX.md`](docs/EXPERIMENT_MATRIX.md)
 - [`docs/RESEARCH_PROTOCOL.md`](docs/RESEARCH_PROTOCOL.md)
-- [`docs/DATASETS.md`](docs/DATASETS.md)
 - [`docs/VALIDATION.md`](docs/VALIDATION.md)
 - [`docs/PROGRESS.md`](docs/PROGRESS.md)
 - [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
 - [`docs/NOVELTY_AUDIT_2026-08-15.md`](docs/NOVELTY_AUDIT_2026-08-15.md)
 
-### Future BioMCP direction
+### BioMCP direction
 
 - [`docs/BIOMCP_MANIFESTO.md`](docs/BIOMCP_MANIFESTO.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - [`docs/biomcp/README.md`](docs/biomcp/README.md)
 
-### Research website
+### Website
 
 - [`docs/index.html`](docs/index.html)
+- [`docs/bionuclei.html`](docs/bionuclei.html)
 - [`docs/research.html`](docs/research.html)
 - [`docs/biomcp.html`](docs/biomcp.html)
-
-## Scientific status
-
-**Current priority: establish BioNuclei-DomainRobust as a rigorous, reproducible domain-generalization study.**
-
-The future BioMCP ecosystem will be developed only after the underlying scientific work has been sufficiently validated and the corresponding engineering interfaces can be implemented and tested.
-
-No fabricated metrics. No hidden data leakage. No unsupported novelty claims. No scientific completion marks without executable evidence.
 
 ## License
 
