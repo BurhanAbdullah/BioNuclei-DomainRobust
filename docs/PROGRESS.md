@@ -39,7 +39,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Execute corrected E4 source-only intensity-domain-randomization evaluation across all 79 target images: run `33791838274`; artifact digest `sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa`.
 - [x] Verify E4 artifact completeness, method record and no-target-training provenance.
 - [x] Independently cross-validate the matched E4-versus-E3 comparison on the identical 79-image set under the prespecified image-level analysis protocol; verification archived in `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
-- [ ] Define/freeze the final domain-robust method from observed failure mechanisms.
+- [x] Freeze the source-only photometric domain-randomization protocol for downstream testing; record `docs/METHOD_FREEZE_2026-09-04.md`.
 - [ ] Run controlled ablations.
 - [ ] Compare against strong published/conventional baselines.
 - [x] Execute the prespecified matched image-level statistical analysis; machine-readable result `outputs/e3_e4_statistics_2026-09-04.json` and verification record `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
@@ -66,6 +66,6 @@ The highest-priority instance-mask audit passed after correcting RGB/color-mask 
 
 The primary AJI mean paired change is +0.283799 with a 95% image-level bootstrap interval of [0.239086, 0.329079] and paired Wilcoxon p = 5.87e-13. The analysis supports a substantial matched improvement in AJI and several secondary region/instance metrics, while boundary F1 shows a small, statistically uncertain change (mean paired change +0.007030; 95% interval [-0.002601, 0.018104]; Holm-adjusted p 0.561).
 
-These results are not interpreted as biological generalization or superiority across biological groups. The target profile still lacks authoritative biological/acquisition-group mapping, and filenames are not promoted to biological strata.
+The downstream method protocol is now frozen to source-only photometric domain randomization with the recorded configuration and seed 42; this freeze is a protocol boundary for E5/E6/E7 and is not a final superiority claim. Controlled ablations and strong-baseline comparison remain open.
 
-The immediate next gate is formal method definition/freeze against the observed failure mechanism, followed by controlled ablations and strong-baseline comparisons. Release 1.0 readiness remains unclaimed.
+These results are not interpreted as biological generalization or superiority across biological groups. The target profile still lacks authoritative biological/acquisition-group mapping, and filenames are not promoted to biological strata. Release 1.0 readiness remains unclaimed.
