@@ -29,6 +29,8 @@ At least one strong conventional/public baseline must be evaluated under a match
 
 The baseline comparison must use the same held-out target images and corrected evaluator where technically compatible. Any evaluator incompatibility must be documented explicitly rather than silently mixing metrics.
 
+For the current executable workflow, the retained conventional comparator is the corrected BBBC039 Boundary U-Net artifact from source workflow run `33768426630`; the workflow must verify that its checkpoint, source split, target manifest, evaluator and decoder provenance are present before the baseline is considered eligible. This identifies the comparator; it does not constitute an E5 result.
+
 ## Statistical analysis
 
 Use the prespecified image-level analysis plan in `docs/STATISTICAL_ANALYSIS_PLAN.md`. Report paired per-image differences for matched E5 variants, 95% image-level bootstrap intervals, and the declared hypothesis-testing/multiplicity procedure. Do not treat pixels or instances as independent replicates.
