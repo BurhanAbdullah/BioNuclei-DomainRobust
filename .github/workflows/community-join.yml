@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   add-member:
-    if: contains(github.event.issue.labels.*.name, 'community-join')
+    if: startsWith(github.event.issue.title, '[Community Join]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,9 +18,7 @@ jobs:
       - name: Add GitHub member to registry
         env:
           ACTOR: ${{ github.event.issue.user.login }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
-          REPO: ${{ github.repository }}
         run: |
           python - <<'PY'
           import json, os
@@ -52,5 +50,6 @@ jobs:
       - name: Close join issue
         env:
           GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          gh issue close "$ISSUE_NUMBER" --comment "Welcome to BioNuclei, @${{ github.event.issue.user.login }}. Your public GitHub profile has been added to the community registry and will appear on the People page." 
+          gh issue close "$ISSUE_NUMBER" --comment "Welcome to BioNuclei, @${{ github.event.issue.user.login }}. Your public GitHub profile has been added to the community registry and will appear on the People page."
