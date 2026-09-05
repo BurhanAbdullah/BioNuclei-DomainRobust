@@ -49,15 +49,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
       - name: Install package
         run: python -m pip install -e .
-
       - name: Verify retained E4 artifact identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,7 +62,6 @@ jobs:
           set -euo pipefail
           digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}" --jq '.digest')"
           test "${digest}" = "${EXPECTED_E4_DIGEST}"
-
       - name: Download frozen E4 checkpoint
         env:
           GH_TOKEN: ${{ github.token }}
@@ -79,10 +75,8 @@ jobs:
           ckpt=torch.load('e4_artifact/outputs/e4_domain_robust/last.pt', map_location='cpu')
           yaml.safe_dump(ckpt['config'], open('e4_config.yaml','w'), sort_keys=False)
           PY
-
       - name: Acquire authoritative Aitslab-bioimaging1
         run: python scripts/download_aitslab_bioimaging1.py --output data/raw/Aitslab_bioimaging1
-
       - name: Verify publisher split counts and leakage guard
         run: |
           python - <<'PY'
@@ -96,7 +90,6 @@ jobs:
           assert not (ids['train'] & ids['test'])
           assert not (ids['development'] & ids['test'])
           PY
-
       - name: Run this preregistered E6 fraction
         run: |
           python scripts/e6_run_external_few_shot.py \
@@ -108,7 +101,6 @@ jobs:
             --epochs 20 \
             --seed 42 \
             --fraction ${{ matrix.fraction }}
-
       - name: Cross-check this fraction
         run: |
           python - <<'PY'
@@ -117,8 +109,8 @@ jobs:
           dirs=list(root.glob('*pct'))
           assert len(dirs) == 1, dirs
           run=dirs[0]
-          prov=json.loads((run/'provenance.json').read_text())
           expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}[run.name]
+          prov=json.loads((run/'provenance.json').read_text())
           assert (prov['fraction'],prov['n_adaptation_images']) == expected
           assert prov['s_biad634_used_for_adaptation'] is False
           assert prov['test_images_used_for_adaptation'] is False
@@ -129,7 +121,6 @@ jobs:
           assert digest == prov['test_metrics_sha256']
           print(f'{run.name}: PASS')
           PY
-
       - name: Upload fraction evidence
         uses: actions/upload-artifact@v4
         with:
@@ -149,14 +140,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
       - name: Download fraction evidence
         uses: actions/download-artifact@v4
         with:
-          pattern: e6-fraction-*-{{ github.run_id }}
+          pattern: e6-fraction-*-${{ github.run_id }}
           path: outputs/e6_fraction_evidence
           merge-multiple: true
-
       - name: Aggregate and cross-check E6 evidence
         run: |
           python - <<'PY'
@@ -164,7 +153,6 @@ jobs:
           root=pathlib.Path('outputs/e6_fraction_evidence')
           expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
           rows=[]
-          manifests=[]
           for label,frac,n in expected:
               run=root/label
               prov=json.loads((run/'provenance.json').read_text())
@@ -192,7 +180,6 @@ jobs:
           (out/'manifest.json').write_text(manifest.read_text())
           print('E6 aggregate artifact cross-check: PASS')
           PY
-
       - name: Upload final E6 evidence
         uses: actions/upload-artifact@v4
         with:
