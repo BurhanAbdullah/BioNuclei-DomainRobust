@@ -60,12 +60,16 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [ ] Release code, manifests, configurations and reproducibility instructions.
 - [ ] Prepare manuscript only after evidence supports the claims.
 
-## Current state — 2026-09-04
+## Current state — 2026-09-05
 
 The highest-priority instance-mask audit passed after correcting RGB/color-mask decoding semantics. The corrected BBBC039 baseline, corrected S-BIAD634 zero-shot transfer, corrected E4 execution and corrected S-BIAD634 target profile are artifact-backed. The matched E3/E4 comparison has now been independently cross-validated from the retained artifacts under the prespecified image-level statistical protocol: 79 identical image identifiers, primary endpoint AJI, 10,000 deterministic image-level bootstrap resamples with seed 42, paired Wilcoxon signed-rank testing and Holm correction for the six secondary endpoints. The machine-readable result and verification record are retained in the repository.
 
 The primary AJI mean paired change is +0.283799 with a 95% image-level bootstrap interval of [0.239086, 0.329079] and paired Wilcoxon p = 5.87e-13. The analysis supports a substantial matched improvement in AJI and several secondary region/instance metrics, while boundary F1 shows a small, statistically uncertain change (mean paired change +0.007030; 95% interval [-0.002601, 0.018104]; Holm-adjusted p 0.561).
 
 The downstream method protocol is now frozen to source-only photometric domain randomization with the recorded configuration and seed 42; this freeze is a protocol boundary for E5/E6/E7 and is not a final superiority claim. Controlled ablations and strong-baseline comparison remain open.
+
+The previous strengthened E5 run `33927261340` completed all three preregistered variants and their per-variant artifact checks, but its aggregate gate failed before comparator evaluation because artifact extraction was rooted incorrectly. The workflow fix is committed as `b31972cff9e4e32be9df201d70923177226546e2`, changing the aggregate download destination to the repository root. This progress update is intentionally triggering a fresh E5 workflow from the corrected main branch; E5 remains unaccepted until the fresh aggregate gate completes and validates all three variants plus the matched conventional comparator.
+
+E6 remains blocked until an authoritative leakage-safe adaptation pool is established; the locked 79-image S-BIAD634 zero-shot set cannot be reused for adaptation. E7 and final reproducibility/package gates remain downstream of E5/E6.
 
 These results are not interpreted as biological generalization or superiority across biological groups. The target profile still lacks authoritative biological/acquisition-group mapping, and filenames are not promoted to biological strata. Release 1.0 readiness remains unclaimed.
