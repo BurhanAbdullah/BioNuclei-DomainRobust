@@ -79,30 +79,53 @@ def _natural_key(path: Path) -> list[object]:
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", path.name)]
 
 
-def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path]]:
-    """Pair the authoritative images/annotations layout used by the dataset.
+def _files_in_named_dir(files: list[Path], dirname: str) -> list[Path]:
+    """Return image files below a named directory, case-insensitively."""
+    dirname = dirname.lower()
+    return sorted(
+        [
+            p for p in files
+            if p.suffix.lower() in IMAGE_EXTS
+            and any(part.lower() == dirname for part in p.parts[:-1])
+        ],
+        key=_natural_key,
+    )
 
-    The published Aitslab archives contain an ``images/`` directory and an
-    ``annotations/`` directory. The independent torch-em dataset adapter for
-    this same DOI uses the publisher's natural ordering to pair the two lists.
-    We reproduce that convention here, but fail closed on count or shape
-    mismatches rather than silently guessing correspondence.
+
+def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path]]:
+    """Pair the published images/annotations layout without filename guessing.
+
+    The authoritative Arvidsson/Aitslab adapter first uses the preprocessed
+    TIFF annotations when their count matches the PNG images, otherwise it
+    falls back to the publisher RGB PNG annotations and converts them. Mirror
+    that resolution here. Pairing is by the publisher's natural ordering;
+    counts and spatial dimensions are verified before any files are copied.
     """
-    image_files = sorted(
-        [p for p in files if p.suffix.lower() in IMAGE_EXTS and "images" in p.parts],
-        key=_natural_key,
-    )
-    annotation_files = sorted(
-        [p for p in files if p.suffix.lower() in IMAGE_EXTS and "annotations" in p.parts],
-        key=_natural_key,
-    )
-    if not image_files or not annotation_files:
+    image_files = _files_in_named_dir(files, "images")
+    if not image_files:
         return []
-    if len(image_files) != len(annotation_files):
-        raise RuntimeError(
-            "Publisher image/annotation counts differ: "
-            f"images={len(image_files)}, annotations={len(annotation_files)}"
+
+    annotation_dir = [
+        p for p in files
+        if any(part.lower() == "annotations" for part in p.parts[:-1])
+    ]
+    preprocessed = sorted(
+        [p for p in annotation_dir if p.suffix.lower() in {".tif", ".tiff"} and "_preprocessed" in p.stem.lower()],
+        key=_natural_key,
+    )
+    if len(preprocessed) == len(image_files):
+        annotation_files = preprocessed
+        pairing_method = "publisher_images_annotations_preprocessed_tif_natural_order"
+    else:
+        annotation_files = sorted(
+            [p for p in annotation_dir if p.suffix.lower() == ".png"],
+            key=_natural_key,
         )
+        pairing_method = "publisher_images_annotations_png_natural_order"
+
+    if len(image_files) != len(annotation_files):
+        return []
+
     pairs = []
     for image, annotation in zip(image_files, annotation_files):
         image_shape = skimage.io.imread(image).shape[:2]
@@ -113,7 +136,7 @@ def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path]]:
                 f"{image.relative_to(image.parents[0])}={image_shape}, "
                 f"{annotation.relative_to(annotation.parents[0])}={annotation_shape}"
             )
-        pairs.append((image, annotation))
+        pairs.append((image, annotation, pairing_method))
     return pairs
 
 
@@ -137,7 +160,8 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
             z.extractall(tmp)
         files = [p for p in tmp.rglob("*") if p.is_file()]
 
-        pairs = _pair_publisher_layout(files)
+        publisher_pairs = _pair_publisher_layout(files)
+        pairs: list[tuple[Path, Path, str]] = list(publisher_pairs)
         if not pairs:
             images, masks = classify(files)
             by_stem: dict[str, list[Path]] = {}
@@ -146,7 +170,7 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
             for image in images:
                 candidates = by_stem.get(image.stem, [])
                 if len(candidates) == 1:
-                    pairs.append((image, candidates[0]))
+                    pairs.append((image, candidates[0], "exact_stem"))
 
         if not pairs:
             raise RuntimeError(f"No unambiguous image/mask pairs found in {archive}")
@@ -155,7 +179,7 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
         out_i.mkdir(parents=True, exist_ok=True)
         out_m.mkdir(parents=True, exist_ok=True)
         rows = []
-        for index, (image, mask) in enumerate(pairs):
+        for index, (image, mask, pairing_method) in enumerate(pairs):
             # Normalize the paired files to a shared basename. Downstream
             # training/evaluation code resolves masks by image stem, so this
             # preserves the validated publisher pairing without relying on
@@ -170,7 +194,7 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
                 "source_image": str(image.relative_to(tmp)),
                 "source_annotation": str(mask.relative_to(tmp)),
                 "split": split,
-                "pairing_method": "publisher_images_annotations_natural_order" if "images" in image.parts and "annotations" in mask.parts else "exact_stem",
+                "pairing_method": pairing_method,
             })
         return rows
 
