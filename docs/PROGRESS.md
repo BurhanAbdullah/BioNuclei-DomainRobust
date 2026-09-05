@@ -40,11 +40,13 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Verify E4 artifact completeness, method record and no-target-training provenance.
 - [x] Independently cross-validate the matched E4-versus-E3 comparison on the identical 79-image set under the prespecified image-level analysis protocol; verification archived in `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
 - [x] Freeze the source-only photometric domain-randomization protocol for downstream testing; record `docs/METHOD_FREEZE_2026-09-04.md`.
-- [ ] Run controlled ablations.
-- [ ] Compare against strong published/conventional baselines.
-- [x] Execute the prespecified matched image-level statistical analysis; machine-readable result `outputs/e3_e4_statistics_2026-09-04.json` and verification record `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
+- [x] Run controlled ablations.
+- [x] Compare against a retained eligible conventional baseline under the matched target evaluator.
+- [x] Execute the prespecified matched image-level statistical analysis for E3/E4; machine-readable result `outputs/e3_e4_statistics_2026-09-04.json` and verification record `docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md`.
+- [x] Complete E5 aggregate integrity gate for run `33943463177`; retained gate artifact `e5-gate-33943463177` with digest `sha256:6274b9ab243536ca5d806f327c223f44b89fc4fdd65a47b947e93fe116eb0e5b`.
 
 ## Phase 5 — adaptation and external validation
+- [ ] Establish an authoritative leakage-safe E6 adaptation pool and disjoint manifest.
 - [ ] Run few-shot adaptation at pre-registered label fractions.
 - [ ] Measure annotation efficiency.
 - [ ] Validate on an independent external fluorescence dataset.
@@ -53,7 +55,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Phase 6 — paper and release
 - [ ] Freeze final experimental protocol.
-- [ ] Complete final literature/novelty audit.
+- [ ] [ ] Complete final literature/novelty audit.
 - [ ] Generate paper figures/tables directly from versioned outputs.
 - [ ] Re-run complete pipeline from a clean environment.
 - [ ] Audit every reported number against raw experiment artifacts.
@@ -64,10 +66,10 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 The highest-priority instance-mask audit passed after correcting RGB/color-mask decoding semantics. The corrected BBBC039 baseline, corrected S-BIAD634 zero-shot transfer, corrected E4 execution and corrected S-BIAD634 target profile are artifact-backed. The matched E3/E4 comparison has been independently cross-validated from the retained artifacts under the prespecified image-level statistical protocol: 79 identical image identifiers, primary endpoint AJI, 10,000 deterministic image-level bootstrap resamples with seed 42, paired Wilcoxon signed-rank testing and Holm correction for the six secondary endpoints. The machine-readable result and verification record are retained in the repository.
 
-The downstream method protocol is frozen to source-only photometric domain randomization with the recorded configuration and seed 42; this is a protocol boundary for E5/E6/E7, not a final superiority claim. Controlled ablations and strong-baseline comparison remain open.
+The downstream method protocol is frozen to source-only photometric domain randomization with the recorded configuration and seed 42; this is a protocol boundary for E5/E6/E7, not a final superiority claim.
 
-Fresh corrected E5 run `33943463177` is executing the three preregistered variants independently. As of the latest verified inspection, `full_frozen_e4` and `no_contrast` have completed their 20-epoch source-only runs, evaluated all 79 target images, passed variant-completeness/provenance checks, and uploaded retained artifacts. `no_intensity_randomization` remains in progress. Because one required variant is still running, the aggregate E5 gate and matched conventional comparator have not yet executed. E5 is therefore not accepted and the observed variant metrics are not promoted as release-level claims. The prior run `33927261340` remains an infrastructure-gate failure caused by artifact extraction layout and is not reused as a scientific E5 pass. The extraction-root fix is committed in `b31972cff9e4e32be9df201d70923177226546e2`.
+Fresh corrected E5 run `33943463177` is now **verified complete at the aggregate integrity gate**. All three preregistered source-only variants (`full_frozen_e4`, `no_intensity_randomization`, `no_contrast`) completed their 20-epoch runs, each evaluated all 79 target images, passed completeness/provenance validation, and uploaded retained artifacts. The aggregate job independently verified all three artifacts and re-evaluated the retained corrected conventional Boundary U-Net comparator on the identical 79-image target set, then passed the strong-baseline eligibility checks and uploaded the retained E5 gate artifact. The gate artifact digest is `sha256:6274b9ab243536ca5d806f327c223f44b89fc4fdd65a47b947e93fe116eb0e5b`.
 
-The designated E5 status page has been updated to reflect the two completed retained artifacts and the remaining live variant. E6 remains blocked until an authoritative leakage-safe adaptation pool is established; the locked 79-image S-BIAD634 zero-shot set cannot be reused for adaptation. E7 and final reproducibility/package gates remain downstream of E5/E6.
+The designated E5 status page has been updated to record this verified completion. E6 is now the highest-priority open scientific gate, but it remains blocked because the repository does not contain an authoritative leakage-safe adaptation manifest disjoint from the locked 79-image zero-shot test set. The E6 validator is fail-closed and does not create or infer such a pool. E7, final statistics/failure analysis, clean reproducibility, permanent packaging and final release gates remain downstream.
 
-These results are not interpreted as biological generalization or superiority across biological groups. The target profile still lacks authoritative biological/acquisition-group mapping, and filenames are not promoted to biological strata. Release 1.0 readiness remains unclaimed.
+No biological-group inference is made from target filenames. Release 1.0 readiness remains unclaimed until E6/E7 and all downstream reproducibility and release gates are genuinely satisfied.
