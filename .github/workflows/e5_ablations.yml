@@ -129,7 +129,7 @@ jobs:
         with:
           pattern: e5-variant-${{ github.run_id }}-*
           merge-multiple: true
-          path: outputs/e5
+          path: .
       - name: Verify all preregistered variants and provenance
         run: |
           python - <<'PY'
