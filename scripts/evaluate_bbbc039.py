@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate a trained boundary-aware U-Net on a verified BBBC039 partition."""
+"""Evaluate a trained boundary-aware U-Net on a verified partition."""
 from __future__ import annotations
 
 import argparse
@@ -9,10 +9,9 @@ from pathlib import Path
 import numpy as np
 import torch
 from scipy import ndimage
-import tifffile
 from skimage.io import imread
 
-from bionuclei.data import decode_instance_mask
+from bionuclei.data import decode_instance_mask, read_fluorescence_image
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
 
@@ -86,7 +85,8 @@ def main() -> None:
     names = manifest["partitions"][args.split]
     results = []
     for name in names:
-        image = np.asarray(tifffile.imread(resolve_image_path(args.data_root, name)))
+        image_path = resolve_image_path(args.data_root, name)
+        image = read_fluorescence_image(image_path)
         target = decode_instance_mask(np.asarray(imread(mask_path(args.data_root, name))))
         if image.shape != target.shape:
             raise ValueError(f"Shape mismatch for {name}: {image.shape} vs {target.shape}")
