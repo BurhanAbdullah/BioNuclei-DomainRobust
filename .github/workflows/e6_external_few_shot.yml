@@ -27,9 +27,22 @@ permissions:
   actions: read
 
 jobs:
-  e6:
+  e6_fraction:
+    name: E6 ${{ matrix.label }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: 01pct
+            fraction: 0.01
+          - label: 05pct
+            fraction: 0.05
+          - label: 10pct
+            fraction: 0.10
+          - label: 25pct
+            fraction: 0.25
     env:
       E4_ARTIFACT_ID: ${{ inputs.e4_artifact_id || '9912441468' }}
       EXPECTED_E4_DIGEST: ${{ inputs.expected_e4_digest || 'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa' }}
@@ -84,45 +97,106 @@ jobs:
           assert not (ids['development'] & ids['test'])
           PY
 
-      - name: Run all preregistered E6 fractions
+      - name: Run this preregistered E6 fraction
         run: |
           python scripts/e6_run_external_few_shot.py \
             --config e4_config.yaml \
             --dataset-root data/raw/Aitslab_bioimaging1 \
             --dataset-manifest data/raw/Aitslab_bioimaging1/manifest.json \
             --init-checkpoint e4_artifact/outputs/e4_domain_robust/last.pt \
-            --output outputs/e6_external_few_shot \
+            --output outputs/e6_external_few_shot/${{ matrix.label }} \
             --epochs 20 \
-            --seed 42
+            --seed 42 \
+            --fraction ${{ matrix.fraction }}
 
-      - name: Cross-check E6 machine-readable evidence
+      - name: Cross-check this fraction
         run: |
           python - <<'PY'
           import hashlib, json, pathlib
-          p=pathlib.Path('outputs/e6_external_few_shot')
-          r=json.loads((p/'aggregate_results.json').read_text())
-          expected=[(0.01,1),(0.05,2),(0.10,3),(0.25,8)]
-          observed=[(x['fraction'],x['n_adaptation_images']) for x in r['fractions']]
-          assert observed == expected, observed
-          for x in r['fractions']:
-              assert all(k in x['mean'] for k in ('dice','iou','aji','boundary_f1'))
-              run=p/f"{int(x['fraction']*100):02d}pct"
-              prov=json.loads((run/'provenance.json').read_text())
-              assert prov['s_biad634_used_for_adaptation'] is False
-              assert prov['test_images_used_for_adaptation'] is False
-              metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
-              assert metrics['n_images'] == 10
-              digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
-              assert digest == prov['test_metrics_sha256']
-          print('E6 artifact cross-check: PASS')
+          root=pathlib.Path('outputs/e6_external_few_shot')
+          dirs=list(root.glob('*pct'))
+          assert len(dirs) == 1, dirs
+          run=dirs[0]
+          prov=json.loads((run/'provenance.json').read_text())
+          expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}[run.name]
+          assert (prov['fraction'],prov['n_adaptation_images']) == expected
+          assert prov['s_biad634_used_for_adaptation'] is False
+          assert prov['test_images_used_for_adaptation'] is False
+          metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
+          assert metrics['n_images'] == 10
+          assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
+          digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
+          assert digest == prov['test_metrics_sha256']
+          print(f'{run.name}: PASS')
           PY
 
-      - name: Upload E6 evidence
+      - name: Upload fraction evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-fraction-${{ matrix.label }}-${{ github.run_id }}
+          path: |
+            outputs/e6_external_few_shot/${{ matrix.label }}/**
+            data/raw/Aitslab_bioimaging1/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  e6_aggregate:
+    name: E6 aggregate evidence
+    needs: e6_fraction
+    if: ${{ always() && needs.e6_fraction.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download fraction evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e6-fraction-*-{{ github.run_id }}
+          path: outputs/e6_fraction_evidence
+          merge-multiple: true
+
+      - name: Aggregate and cross-check E6 evidence
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('outputs/e6_fraction_evidence')
+          expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
+          rows=[]
+          manifests=[]
+          for label,frac,n in expected:
+              run=root/label
+              prov=json.loads((run/'provenance.json').read_text())
+              metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
+              assert prov['fraction'] == frac
+              assert prov['n_adaptation_images'] == n
+              assert metrics['n_images'] == 10
+              assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
+              assert digest == prov['test_metrics_sha256']
+              rows.append({'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'provenance':f'{label}/provenance.json'})
+          manifest=root/'manifest.json'
+          assert manifest.exists()
+          m=json.loads(manifest.read_text())
+          assert {k:len(v) for k,v in m['partitions'].items()} == {'train':30,'development':10,'test':10}
+          ids={k:{r['image_id'] for r in v} for k,v in m['partitions'].items()}
+          assert not (ids['train'] & ids['development'])
+          assert not (ids['train'] & ids['test'])
+          assert not (ids['development'] & ids['test'])
+          out=pathlib.Path('outputs/e6_external_few_shot_final')
+          out.mkdir(parents=True,exist_ok=True)
+          (out/'aggregate_results.json').write_text(json.dumps({'protocol':'E6_cross_dataset_few_shot','fractions':rows},indent=2)+'\n')
+          (out/'manifest.json').write_text(manifest.read_text())
+          print('E6 aggregate artifact cross-check: PASS')
+          PY
+
+      - name: Upload final E6 evidence
         uses: actions/upload-artifact@v4
         with:
           name: e6-external-few-shot-${{ github.run_id }}
-          path: |
-            outputs/e6_external_few_shot/**
-            data/raw/Aitslab_bioimaging1/manifest.json
+          path: outputs/e6_external_few_shot_final/**
           if-no-files-found: error
           retention-days: 30
