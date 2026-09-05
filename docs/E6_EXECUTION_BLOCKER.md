@@ -6,7 +6,7 @@ E6 cannot be declared complete from the currently retained S-BIAD634 evidence. T
 
 ## Resolution adopted
 
-To preserve the locked S-BIAD634 zero-shot experiment, E6 is now explicitly defined as **cross-dataset few-shot adaptation** using the authoritative Aitslab-bioimaging1 fluorescence dataset (Zenodo DOI `10.5281/zenodo.6657260`). Independent published sources describe 50 fluorescence images, more than 2,000 labelled nuclear objects, and a publisher-provided 30/10/10 train/development/test split. The dataset record is independent of the locked S-BIAD634 evaluation. citeturn3search0turn4search3
+To preserve the locked S-BIAD634 zero-shot experiment, E6 is now explicitly defined as **cross-dataset few-shot adaptation** using the authoritative Aitslab-bioimaging1 fluorescence dataset (Zenodo DOI `10.5281/zenodo.6657260`). Independent published sources describe 50 fluorescence images, more than 2,000 labelled nuclear objects, and a publisher-provided 30/10/10 train/development/test split.
 
 This experiment must never be described as target-domain adaptation to S-BIAD634 and must not reinterpret the locked S-BIAD634 zero-shot result.
 
