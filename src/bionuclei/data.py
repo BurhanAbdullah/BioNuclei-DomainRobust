@@ -14,8 +14,32 @@ from torch.utils.data import Dataset
 from bionuclei.masks import decode_instance_mask
 
 
+def read_fluorescence_image(path: str | Path) -> np.ndarray:
+    """Read a supported microscopy image without changing TIFF behavior.
+
+    BBBC039 uses TIFF input; Aitslab-bioimaging1 publishes normalized 8-bit
+    grayscale PNG input.  TIFFs remain on tifffile for reproducibility, while
+    non-TIFF image formats are read through skimage.  E6 is deliberately
+    fail-closed for multi-channel external images because the frozen E4 model
+    is a single-channel fluorescence model and silently collapsing channels
+    would change the preregistered scientific protocol.
+    """
+    path = Path(path)
+    if path.suffix.lower() in (".tif", ".tiff"):
+        image = np.asarray(tifffile.imread(path))
+    else:
+        image = np.asarray(imread(path))
+
+    if image.ndim == 3 and image.shape[-1] in (3, 4):
+        raise ValueError(
+            f"Expected single-channel fluorescence input; got channel-last image "
+            f"shape {image.shape} for {path}"
+        )
+    return image
+
+
 class InstanceMaskDataset(Dataset):
-    """Dataset pairing TIFF fluorescence images with PNG/TIFF instance masks."""
+    """Dataset pairing fluorescence images with PNG/TIFF instance masks."""
 
     def __init__(self, image_paths: Sequence[str | Path], mask_paths: Sequence[str | Path]) -> None:
         if len(image_paths) != len(mask_paths):
@@ -27,7 +51,7 @@ class InstanceMaskDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        image = np.asarray(tifffile.imread(self.image_paths[index]))
+        image = read_fluorescence_image(self.image_paths[index])
         mask = np.asarray(imread(self.mask_paths[index]))
         mask = decode_instance_mask(mask)
 
