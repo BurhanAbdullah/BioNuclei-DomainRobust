@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the frozen E6 cross-dataset few-shot protocol on Aitslab-bioimaging1."""
 from __future__ import annotations
-import argparse, hashlib, json, math, subprocess, sys
+import argparse, hashlib, json, math, random, subprocess, sys
 from pathlib import Path
 
 FRACTIONS=(0.01,0.05,0.10,0.25)
@@ -9,7 +9,7 @@ FRACTIONS=(0.01,0.05,0.10,0.25)
 def sha256(p: Path) -> str:
     h=hashlib.sha256()
     with p.open('rb') as f:
-        for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
+        for b in iter(lambda:f.read(1024*1024),b): h.update(b)
     return h.hexdigest()
 
 def main():
@@ -19,9 +19,10 @@ def main():
     test_ids={r['image_id'] for r in test}; train_ids={r['image_id'] for r in train}
     if train_ids & test_ids: raise RuntimeError('E6 BLOCKED: publisher train/test overlap')
     a.output.mkdir(parents=True,exist_ok=True); results=[]
+    rng=random.Random(a.seed); shuffled=list(train); rng.shuffle(shuffled)
     for frac in FRACTIONS:
-        n=max(1,math.ceil(len(train)*frac)); selected=train[:n]
-        split={'partitions':{'train':[r['image_id'] for r in selected],'validation':[r['image_id'] for r in dev],'test':[r['image_id'] for r in test]},'fraction':frac,'n_adaptation_images':n,'selection_rule':'publisher_train_order; first ceil(fraction*N); seed-fixed protocol; no test access'}
+        n=max(1,math.ceil(len(train)*frac)); selected=shuffled[:n]
+        split={'partitions':{'train':[r['image_id'] for r in selected],'validation':[r['image_id'] for r in dev],'test':[r['image_id'] for r in test]},'fraction':frac,'n_adaptation_images':n,'selection_rule':'uniform image-level sample from publisher train split; deterministic seed 42; ceil(fraction*N); no test access'}
         split_path=a.output/f'split_{int(frac*100):02d}pct.json'; split_path.write_text(json.dumps(split,indent=2)+'\n')
         run_dir=a.output/f'{int(frac*100):02d}pct'; ckpt_dir=run_dir/'checkpoint'; eval_dir=run_dir/'evaluation'
         cfg_path=run_dir/'config.yaml'; cfg_path.parent.mkdir(parents=True,exist_ok=True); cfg_path.write_text(a.config.read_text())
