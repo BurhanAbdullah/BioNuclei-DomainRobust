@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Acquire and inventory the authoritative BBBC038 stage-1 training benchmark.
+"""Acquire and inventory the authoritative BBBC038 stage-1 benchmark.
 
-Raw data are never committed. This script records the Broad download URL,
-archive SHA-256, extracted file inventory, and a deterministic manifest for
-later independent external validation. It does not alter experiment splits or
-infer biological strata.
+Raw data are never committed. The manifest records the Broad download URL,
+archive SHA-256, extracted file inventory, and deterministic image IDs for
+later independent external validation. It does not infer biological strata.
 """
 from __future__ import annotations
 
@@ -33,6 +32,17 @@ def download(url: str, destination: Path) -> None:
         shutil.copyfileobj(response, out)
 
 
+def image_id_from_path(path: str, directory: str) -> str:
+    parts = Path(path).parts
+    try:
+        index = parts.index(directory)
+    except ValueError as exc:
+        raise ValueError(f"Path does not contain /{directory}/: {path}") from exc
+    if index == 0:
+        raise ValueError(f"Cannot infer image ID from path: {path}")
+    return parts[index - 1]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=Path("data/raw/BBBC038"))
@@ -57,13 +67,20 @@ def main() -> None:
         for p in (root / "extracted").rglob("*")
         if p.is_file()
     )
-    image_files = [p for p in files if "/images/" in f"/{p}" and p.lower().endswith((".png", ".tif", ".tiff"))]
-    mask_files = [p for p in files if "/masks/" in f"/{p}" and p.lower().endswith(".png")]
+    image_files = [
+        p for p in files
+        if "/images/" in f"/{p}" and p.lower().endswith((".png", ".tif", ".tiff"))
+    ]
+    mask_files = [
+        p for p in files
+        if "/masks/" in f"/{p}" and p.lower().endswith(".png")
+    ]
 
-    image_ids = sorted({Path(p).parts[0] for p in image_files})
-    mask_image_ids = sorted({Path(p).parts[0] for p in mask_files})
+    image_ids = sorted({image_id_from_path(p, "images") for p in image_files})
+    mask_image_ids = sorted({image_id_from_path(p, "masks") for p in mask_files})
     if not image_ids:
         raise SystemExit("No stage1 image files found in the extracted archive")
+    missing_mask_dirs = sorted(set(image_ids) - set(mask_image_ids))
 
     manifest = {
         "dataset": "BBBC038v1",
@@ -76,6 +93,7 @@ def main() -> None:
         "mask_count": len(mask_files),
         "image_ids": image_ids,
         "mask_image_ids": mask_image_ids,
+        "image_ids_without_masks": missing_mask_dirs,
         "files": files,
     }
     (root / "download_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -88,6 +106,7 @@ def main() -> None:
         "subset": manifest["subset"],
         "image_count": manifest["image_count"],
         "mask_count": manifest["mask_count"],
+        "image_ids_without_masks": len(missing_mask_dirs),
         "archive_sha256": archive_hash,
         "manifest": str(root / "download_manifest.json"),
     }, indent=2))
