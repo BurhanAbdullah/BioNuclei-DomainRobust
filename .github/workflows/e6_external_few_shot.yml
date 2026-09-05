@@ -29,7 +29,7 @@ permissions:
 jobs:
   e6:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       E4_ARTIFACT_ID: ${{ inputs.e4_artifact_id || '9912441468' }}
       EXPECTED_E4_DIGEST: ${{ inputs.expected_e4_digest || 'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa' }}
