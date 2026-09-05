@@ -9,7 +9,11 @@ FRACTIONS=(0.01,0.05,0.10,0.25)
 def sha256(p: Path) -> str:
     h=hashlib.sha256()
     with p.open('rb') as f:
-        for b in iter(lambda:f.read(1024*1024),b): h.update(b)
+        while True:
+            b=f.read(1024*1024)
+            if not b:
+                break
+            h.update(b)
     return h.hexdigest()
 
 def main():
