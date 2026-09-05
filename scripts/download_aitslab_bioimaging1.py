@@ -18,6 +18,8 @@ import zipfile
 from pathlib import Path
 from urllib.request import urlopen, Request
 
+import skimage.io
+
 RECORD_API = "https://zenodo.org/api/records/6657260"
 IMAGE_EXTS = {".png", ".tif", ".tiff", ".jpg", ".jpeg"}
 
@@ -72,6 +74,49 @@ def pick_files(meta: dict) -> dict[str, dict]:
     return {s: vals[0] for s, vals in candidates.items()}
 
 
+def _natural_key(path: Path) -> list[object]:
+    """Stable natural ordering for the publisher's image/annotation folders."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", path.name)]
+
+
+def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path]]:
+    """Pair the authoritative images/annotations layout used by the dataset.
+
+    The published Aitslab archives contain an ``images/`` directory and an
+    ``annotations/`` directory. The independent torch-em dataset adapter for
+    this same DOI uses the publisher's natural ordering to pair the two lists.
+    We reproduce that convention here, but fail closed on count or shape
+    mismatches rather than silently guessing correspondence.
+    """
+    image_files = sorted(
+        [p for p in files if p.suffix.lower() in IMAGE_EXTS and "images" in p.parts],
+        key=_natural_key,
+    )
+    annotation_files = sorted(
+        [p for p in files if p.suffix.lower() in IMAGE_EXTS and "annotations" in p.parts],
+        key=_natural_key,
+    )
+    if not image_files or not annotation_files:
+        return []
+    if len(image_files) != len(annotation_files):
+        raise RuntimeError(
+            "Publisher image/annotation counts differ: "
+            f"images={len(image_files)}, annotations={len(annotation_files)}"
+        )
+    pairs = []
+    for image, annotation in zip(image_files, annotation_files):
+        image_shape = skimage.io.imread(image).shape[:2]
+        annotation_shape = skimage.io.imread(annotation).shape[:2]
+        if image_shape != annotation_shape:
+            raise RuntimeError(
+                "Publisher image/annotation shape mismatch: "
+                f"{image.relative_to(image.parents[0])}={image_shape}, "
+                f"{annotation.relative_to(annotation.parents[0])}={annotation_shape}"
+            )
+        pairs.append((image, annotation))
+    return pairs
+
+
 def classify(files: list[Path]) -> tuple[list[Path], list[Path]]:
     images, masks = [], []
     for p in files:
@@ -91,21 +136,28 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
         with zipfile.ZipFile(archive) as z:
             z.extractall(tmp)
         files = [p for p in tmp.rglob("*") if p.is_file()]
-        images, masks = classify(files)
-        by_stem: dict[str, list[Path]] = {}
-        for m in masks:
-            by_stem.setdefault(m.stem, []).append(m)
-        rows = []
+
+        pairs = _pair_publisher_layout(files)
+        if not pairs:
+            images, masks = classify(files)
+            by_stem: dict[str, list[Path]] = {}
+            for m in masks:
+                by_stem.setdefault(m.stem, []).append(m)
+            for image in images:
+                candidates = by_stem.get(image.stem, [])
+                if len(candidates) == 1:
+                    pairs.append((image, candidates[0]))
+
+        if not pairs:
+            raise RuntimeError(f"No unambiguous image/mask pairs found in {archive}")
+
         out_i, out_m = root / "images", root / "masks"
         out_i.mkdir(parents=True, exist_ok=True)
         out_m.mkdir(parents=True, exist_ok=True)
-        for image in images:
-            candidates = by_stem.get(image.stem, [])
-            if len(candidates) != 1:
-                continue
-            mask = candidates[0]
-            image_name = f"{split}__{image.name}"
-            mask_name = f"{split}__{mask.name}"
+        rows = []
+        for index, (image, mask) in enumerate(pairs):
+            image_name = f"{split}__{index:03d}__{image.name}"
+            mask_name = f"{split}__{index:03d}__{mask.name}"
             shutil.copy2(image, out_i / image_name)
             shutil.copy2(mask, out_m / mask_name)
             rows.append({
@@ -114,9 +166,8 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
                 "source_image": str(image.relative_to(tmp)),
                 "source_annotation": str(mask.relative_to(tmp)),
                 "split": split,
+                "pairing_method": "publisher_images_annotations_natural_order" if "images" in image.parts and "annotations" in mask.parts else "exact_stem",
             })
-        if not rows:
-            raise RuntimeError(f"No unambiguous image/mask pairs found in {archive}")
         return rows
 
 
