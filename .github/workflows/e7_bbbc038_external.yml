@@ -1,0 +1,74 @@
+name: E7 BBBC038 external validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      e4_artifact_id:
+        description: "Retained E4 artifact ID containing the frozen checkpoint"
+        required: true
+        default: "9912441468"
+      expected_e4_digest:
+        description: "Expected SHA-256 digest of the E4 artifact"
+        required: true
+        default: "sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  external-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: Verify retained E4 artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ inputs.e4_artifact_id }}
+          EXPECTED_DIGEST: ${{ inputs.expected_e4_digest }}
+        run: |
+          set -euo pipefail
+          digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq '.digest')"
+          echo "Artifact digest: ${digest}"
+          test "${digest}" = "${EXPECTED_DIGEST}"
+
+      - name: Download retained E4 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ inputs.e4_artifact_id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > e4.zip
+          unzip -q e4.zip -d e4_artifact
+          test -f e4_artifact/outputs/e4_domain_robust/last.pt
+
+      - name: Acquire authoritative BBBC038 stage-1 data
+        run: python scripts/download_bbbc038.py --data-root data/raw/BBBC038
+
+      - name: Run frozen external evaluation
+        run: |
+          python scripts/evaluate_bbbc038.py \
+            --checkpoint e4_artifact/outputs/e4_domain_robust/last.pt \
+            --data-root data/raw/BBBC038/extracted \
+            --output outputs/e7_bbbc038
+
+      - name: Upload E7 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: e7-bbbc038-${{ github.run_id }}
+          path: |
+            outputs/e7_bbbc038/metrics.json
+            data/raw/BBBC038/download_manifest.json
+          if-no-files-found: error
+          retention-days: 30
