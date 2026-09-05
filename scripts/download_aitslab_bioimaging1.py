@@ -156,8 +156,12 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
         out_m.mkdir(parents=True, exist_ok=True)
         rows = []
         for index, (image, mask) in enumerate(pairs):
-            image_name = f"{split}__{index:03d}__{image.name}"
-            mask_name = f"{split}__{index:03d}__{mask.name}"
+            # Normalize the paired files to a shared basename. Downstream
+            # training/evaluation code resolves masks by image stem, so this
+            # preserves the validated publisher pairing without relying on
+            # unrelated source filenames having identical stems.
+            image_name = f"{split}__{index:03d}__{image.stem}{image.suffix.lower()}"
+            mask_name = image_name
             shutil.copy2(image, out_i / image_name)
             shutil.copy2(mask, out_m / mask_name)
             rows.append({
