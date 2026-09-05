@@ -46,8 +46,11 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Complete E5 aggregate integrity gate for run `33943463177`; retained gate artifact `e5-gate-33943463177` with digest `sha256:6274b9ab243536ca5d806f327c223f44b89fc4fdd65a47b947e93fe116eb0e5b`.
 
 ## Phase 5 — adaptation and external validation
-- [ ] Establish an authoritative leakage-safe E6 adaptation pool and disjoint manifest.
-- [ ] Run few-shot adaptation at pre-registered label fractions.
+- [x] Establish an explicit, scientifically honest E6 cross-dataset protocol using authoritative Aitslab-bioimaging1; preserve the locked S-BIAD634 zero-shot set as untouched.
+- [x] Implement authoritative Aitslab train/development/test acquisition and normalization.
+- [x] Implement frozen-E4 initialization and deterministic 1%, 5%, 10%, 25% E6 runner with provenance.
+- [x] Add a fail-closed E6 GitHub Actions workflow that verifies the retained E4 artifact before execution.
+- [ ] Execute few-shot adaptation at pre-registered label fractions.
 - [ ] Measure annotation efficiency.
 - [ ] Validate on an independent external fluorescence dataset.
 - [ ] Evaluate robustness to acquisition/intensity/noise shifts.
@@ -68,8 +71,8 @@ The highest-priority instance-mask audit passed after correcting RGB/color-mask 
 
 The downstream method protocol is frozen to source-only photometric domain randomization with the recorded configuration and seed 42; this is a protocol boundary for E5/E6/E7, not a final superiority claim.
 
-Fresh corrected E5 run `33943463177` is now **verified complete at the aggregate integrity gate**. All three preregistered source-only variants (`full_frozen_e4`, `no_intensity_randomization`, `no_contrast`) completed their 20-epoch runs, each evaluated all 79 target images, passed completeness/provenance validation, and uploaded retained artifacts. The aggregate job independently verified all three artifacts and re-evaluated the retained corrected conventional Boundary U-Net comparator on the identical 79-image target set, then passed the strong-baseline eligibility checks and uploaded the retained E5 gate artifact. The gate artifact digest is `sha256:6274b9ab243536ca5d806f327c223f44b89fc4fdd65a47b947e93fe116eb0e5b`.
+Fresh corrected E5 run `33943463177` is verified complete at the aggregate integrity gate. All three preregistered source-only variants completed their 20-epoch runs, each evaluated all 79 target images, passed completeness/provenance validation, and uploaded retained artifacts. The aggregate job independently verified all three artifacts and re-evaluated the retained corrected conventional Boundary U-Net comparator on the identical 79-image target set, then passed the strong-baseline eligibility checks and uploaded the retained E5 gate artifact.
 
-The designated E5 status page and main BioNuclei status page have been updated to record this verified completion. E6 is now the highest-priority open scientific gate, but it remains blocked because the repository does not contain an authoritative leakage-safe adaptation manifest disjoint from the locked 79-image zero-shot test set. The E6 validator is fail-closed and does not create or infer such a pool. E7, final statistics/failure analysis, clean reproducibility, permanent packaging and final release gates remain downstream.
+E6 is now **execution-ready but not scientifically complete**. Because the locked S-BIAD634 zero-shot set contains all 79 expert-annotated images, E6 has been explicitly reframed as cross-dataset few-shot adaptation on the authoritative Aitslab-bioimaging1 dataset rather than target-test adaptation. The repository now contains the acquisition/normalization script, frozen-E4 initialization support, deterministic 1/5/10/25% runner, provenance generation, and a manual GitHub Actions workflow with E4 artifact digest verification. The workflow has not been executed in this run because the available repository integration cannot dispatch `workflow_dispatch`; therefore no E6 metric is claimed.
 
-No biological-group inference is made from target filenames. Release 1.0 readiness remains unclaimed until E6/E7 and all downstream reproducibility and release gates are genuinely satisfied.
+E7 remains independent and execution-ready through `.github/workflows/e7_bbbc038_external.yml`. Its retained E4 artifact is artifact ID `9912441468` with digest `sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa`. E7 has not been executed in this run. No biological-group inference is made from target filenames. Release readiness remains unclaimed until E6/E7 and all downstream reproducibility, statistical, packaging and release gates are genuinely satisfied.
