@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Acquire and normalize the authoritative Aitslab-bioimaging1 dataset.
 
-The source is the published Zenodo record 10.5281/zenodo.6657260.  The script
+The source is the published Zenodo record 10.5281/zenodo.6657260. The script
 never invents a split: it requires the three publisher-provided train,
 development and test archives and fails closed if any archive or image/mask
 pairing is ambiguous.
@@ -21,6 +21,7 @@ from urllib.request import urlopen, Request
 RECORD_API = "https://zenodo.org/api/records/6657260"
 IMAGE_EXTS = {".png", ".tif", ".tiff", ".jpg", ".jpeg"}
 
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -28,23 +29,48 @@ def sha256(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
 def get_json(url: str) -> dict:
     with urlopen(Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})) as r:
         return json.load(r)
 
+
+def _split_match(name: str, split: str) -> bool:
+    """Match publisher archive naming variants without guessing a new split."""
+    stem = Path(name).stem.lower()
+    aliases = {
+        "train": ("train", "training"),
+        "development": ("development", "dev"),
+        "test": ("test", "testing"),
+    }[split]
+    return any(re.search(rf"(?:^|[_-]){re.escape(token)}(?:[_-]|$)", stem) for token in aliases)
+
+
 def pick_files(meta: dict) -> dict[str, dict]:
-    found: dict[str, dict] = {}
+    """Resolve the three publisher split archives from the Zenodo file list."""
+    candidates: dict[str, list[dict]] = {s: [] for s in ("train", "development", "test")}
     for f in meta.get("files", []):
-        name = f["key"] if "key" in f else f.get("filename", "")
-        low = Path(name).name.lower()
-        for split in ("train", "development", "test"):
-            if re.search(rf"(?:^|[_-]){split}(?:[_-]|\.|$)", low):
-                if low.endswith(".zip"):
-                    found[split] = f
-    missing = [s for s in ("train", "development", "test") if s not in found]
+        name = f.get("key") or f.get("filename") or ""
+        if not name.lower().endswith(".zip"):
+            continue
+        for split in candidates:
+            if _split_match(Path(name).name, split):
+                candidates[split].append(f)
+
+    missing = [s for s, vals in candidates.items() if not vals]
     if missing:
-        raise RuntimeError(f"Aitslab record does not expose required split archives: {missing}")
-    return found
+        available = [Path(f.get("key") or f.get("filename") or "").name for f in meta.get("files", [])]
+        raise RuntimeError(
+            "Aitslab record does not expose required split archives: "
+            f"{missing}; available files={available}"
+        )
+
+    ambiguous = {s: [Path(f.get("key") or f.get("filename") or "").name for f in vals]
+                 for s, vals in candidates.items() if len(vals) != 1}
+    if ambiguous:
+        raise RuntimeError(f"Ambiguous publisher split archives: {ambiguous}")
+    return {s: vals[0] for s, vals in candidates.items()}
+
 
 def classify(files: list[Path]) -> tuple[list[Path], list[Path]]:
     images, masks = [], []
@@ -58,6 +84,7 @@ def classify(files: list[Path]) -> tuple[list[Path], list[Path]]:
             images.append(p)
     return images, masks
 
+
 def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -70,7 +97,8 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
             by_stem.setdefault(m.stem, []).append(m)
         rows = []
         out_i, out_m = root / "images", root / "masks"
-        out_i.mkdir(parents=True, exist_ok=True); out_m.mkdir(parents=True, exist_ok=True)
+        out_i.mkdir(parents=True, exist_ok=True)
+        out_m.mkdir(parents=True, exist_ok=True)
         for image in images:
             candidates = by_stem.get(image.stem, [])
             if len(candidates) != 1:
@@ -91,6 +119,7 @@ def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
             raise RuntimeError(f"No unambiguous image/mask pairs found in {archive}")
         return rows
 
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", type=Path, required=True)
@@ -98,7 +127,13 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     meta = get_json(RECORD_API)
     files = pick_files(meta)
-    manifest = {"dataset": "Aitslab_bioimaging1", "doi": "10.5281/zenodo.6657260", "record_id": 6657260, "partitions": {}, "archives": {}}
+    manifest = {
+        "dataset": "Aitslab_bioimaging1",
+        "doi": "10.5281/zenodo.6657260",
+        "record_id": 6657260,
+        "partitions": {},
+        "archives": {},
+    }
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         for split in ("train", "development", "test"):
@@ -110,11 +145,20 @@ def main() -> None:
                 raise RuntimeError(f"No download URL for {split} archive")
             with urlopen(Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})) as r, archive.open("wb") as out:
                 shutil.copyfileobj(r, out)
-            manifest["archives"][split] = {"name": name, "md5": f.get("checksum"), "sha256": sha256(archive)}
+            manifest["archives"][split] = {
+                "name": name,
+                "md5": f.get("checksum"),
+                "sha256": sha256(archive),
+            }
             rows = normalize_archive(archive, split, args.output)
             manifest["partitions"][split] = rows
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"dataset": manifest["dataset"], "counts": {k: len(v) for k,v in manifest["partitions"].items()}, "manifest_sha256": sha256(args.output / "manifest.json")}, indent=2))
+    print(json.dumps({
+        "dataset": manifest["dataset"],
+        "counts": {k: len(v) for k, v in manifest["partitions"].items()},
+        "manifest_sha256": sha256(args.output / "manifest.json"),
+    }, indent=2))
+
 
 if __name__ == "__main__":
     main()
