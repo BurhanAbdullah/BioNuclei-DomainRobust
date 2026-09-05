@@ -55,7 +55,7 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 
 ## Phase 6 — paper and release
 - [ ] Freeze final experimental protocol.
-- [ ] [ ] Complete final literature/novelty audit.
+- [ ] Complete final literature/novelty audit.
 - [ ] Generate paper figures/tables directly from versioned outputs.
 - [ ] Re-run complete pipeline from a clean environment.
 - [ ] Audit every reported number against raw experiment artifacts.
@@ -70,6 +70,6 @@ The downstream method protocol is frozen to source-only photometric domain rando
 
 Fresh corrected E5 run `33943463177` is now **verified complete at the aggregate integrity gate**. All three preregistered source-only variants (`full_frozen_e4`, `no_intensity_randomization`, `no_contrast`) completed their 20-epoch runs, each evaluated all 79 target images, passed completeness/provenance validation, and uploaded retained artifacts. The aggregate job independently verified all three artifacts and re-evaluated the retained corrected conventional Boundary U-Net comparator on the identical 79-image target set, then passed the strong-baseline eligibility checks and uploaded the retained E5 gate artifact. The gate artifact digest is `sha256:6274b9ab243536ca5d806f327c223f44b89fc4fdd65a47b947e93fe116eb0e5b`.
 
-The designated E5 status page has been updated to record this verified completion. E6 is now the highest-priority open scientific gate, but it remains blocked because the repository does not contain an authoritative leakage-safe adaptation manifest disjoint from the locked 79-image zero-shot test set. The E6 validator is fail-closed and does not create or infer such a pool. E7, final statistics/failure analysis, clean reproducibility, permanent packaging and final release gates remain downstream.
+The designated E5 status page and main BioNuclei status page have been updated to record this verified completion. E6 is now the highest-priority open scientific gate, but it remains blocked because the repository does not contain an authoritative leakage-safe adaptation manifest disjoint from the locked 79-image zero-shot test set. The E6 validator is fail-closed and does not create or infer such a pool. E7, final statistics/failure analysis, clean reproducibility, permanent packaging and final release gates remain downstream.
 
 No biological-group inference is made from target filenames. Release 1.0 readiness remains unclaimed until E6/E7 and all downstream reproducibility and release gates are genuinely satisfied.
