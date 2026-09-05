@@ -1,6 +1,16 @@
 name: E6 external fluorescence few-shot adaptation
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e6_external_few_shot.yml"
+      - "scripts/e6_run_external_few_shot.py"
+      - "scripts/download_aitslab_bioimaging1.py"
+      - "scripts/train_domain_robust.py"
+      - "scripts/evaluate_bbbc039.py"
+      - "src/bionuclei/**"
+      - "pyproject.toml"
   workflow_dispatch:
     inputs:
       e4_artifact_id:
@@ -20,6 +30,9 @@ jobs:
   e6:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      E4_ARTIFACT_ID: ${{ inputs.e4_artifact_id || '9912441468' }}
+      EXPECTED_E4_DIGEST: ${{ inputs.expected_e4_digest || 'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -35,20 +48,17 @@ jobs:
       - name: Verify retained E4 artifact identity
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ inputs.e4_artifact_id }}
-          EXPECTED_DIGEST: ${{ inputs.expected_e4_digest }}
         run: |
           set -euo pipefail
-          digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq '.digest')"
-          test "${digest}" = "${EXPECTED_DIGEST}"
+          digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}" --jq '.digest')"
+          test "${digest}" = "${EXPECTED_E4_DIGEST}"
 
       - name: Download frozen E4 checkpoint
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ inputs.e4_artifact_id }}
         run: |
           set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > e4.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4.zip
           unzip -q e4.zip -d e4_artifact
           test -f e4_artifact/outputs/e4_domain_robust/last.pt
           python - <<'PY'
@@ -60,7 +70,7 @@ jobs:
       - name: Acquire authoritative Aitslab-bioimaging1
         run: python scripts/download_aitslab_bioimaging1.py --output data/raw/Aitslab_bioimaging1
 
-      - name: Verify publisher split counts
+      - name: Verify publisher split counts and leakage guard
         run: |
           python - <<'PY'
           import json
@@ -68,6 +78,10 @@ jobs:
           counts={k:len(v) for k,v in m['partitions'].items()}
           print(counts)
           assert counts == {'train':30,'development':10,'test':10}, counts
+          ids={k:{r['image_id'] for r in v} for k,v in m['partitions'].items()}
+          assert not (ids['train'] & ids['development'])
+          assert not (ids['train'] & ids['test'])
+          assert not (ids['development'] & ids['test'])
           PY
 
       - name: Run all preregistered E6 fractions
@@ -84,12 +98,22 @@ jobs:
       - name: Cross-check E6 machine-readable evidence
         run: |
           python - <<'PY'
-          import json, pathlib
+          import hashlib, json, pathlib
           p=pathlib.Path('outputs/e6_external_few_shot')
           r=json.loads((p/'aggregate_results.json').read_text())
-          assert [x['fraction'] for x in r['fractions']] == [0.01,0.05,0.10,0.25]
-          assert all(x['n_adaptation_images'] in (1,2,3,8) for x in r['fractions'])
-          assert all(all(k in x['mean'] for k in ('dice','iou','aji','boundary_f1')) for x in r['fractions'])
+          expected=[(0.01,1),(0.05,2),(0.10,3),(0.25,8)]
+          observed=[(x['fraction'],x['n_adaptation_images']) for x in r['fractions']]
+          assert observed == expected, observed
+          for x in r['fractions']:
+              assert all(k in x['mean'] for k in ('dice','iou','aji','boundary_f1'))
+              run=p/f"{int(x['fraction']*100):02d}pct"
+              prov=json.loads((run/'provenance.json').read_text())
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
+              assert metrics['n_images'] == 10
+              digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
+              assert digest == prov['test_metrics_sha256']
           print('E6 artifact cross-check: PASS')
           PY
 
