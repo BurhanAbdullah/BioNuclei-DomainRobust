@@ -92,7 +92,7 @@ def _files_in_named_dir(files: list[Path], dirname: str) -> list[Path]:
     )
 
 
-def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path]]:
+def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path, str]]:
     """Pair the published images/annotations layout without filename guessing.
 
     The authoritative Arvidsson/Aitslab adapter first uses the preprocessed
@@ -126,15 +126,14 @@ def _pair_publisher_layout(files: list[Path]) -> list[tuple[Path, Path]]:
     if len(image_files) != len(annotation_files):
         return []
 
-    pairs = []
+    pairs: list[tuple[Path, Path, str]] = []
     for image, annotation in zip(image_files, annotation_files):
         image_shape = skimage.io.imread(image).shape[:2]
         annotation_shape = skimage.io.imread(annotation).shape[:2]
         if image_shape != annotation_shape:
             raise RuntimeError(
                 "Publisher image/annotation shape mismatch: "
-                f"{image.relative_to(image.parents[0])}={image_shape}, "
-                f"{annotation.relative_to(annotation.parents[0])}={annotation_shape}"
+                f"{image}={image_shape}, {annotation}={annotation_shape}"
             )
         pairs.append((image, annotation, pairing_method))
     return pairs
@@ -153,12 +152,41 @@ def classify(files: list[Path]) -> tuple[list[Path], list[Path]]:
     return images, masks
 
 
+def _safe_extract(zip_path: Path, destination: Path) -> None:
+    """Extract a zip while rejecting path traversal entries."""
+    destination = destination.resolve()
+    with zipfile.ZipFile(zip_path) as z:
+        for member in z.infolist():
+            target = (destination / member.filename).resolve()
+            if target != destination and destination not in target.parents:
+                raise RuntimeError(f"Unsafe archive member path: {member.filename}")
+        z.extractall(destination)
+
+
+def _extract_nested_archives(root: Path, max_depth: int = 3) -> None:
+    """Recursively unpack nested publisher zips so images/annotations are visible."""
+    seen: set[Path] = set()
+    for _depth in range(max_depth):
+        nested = sorted(root.rglob("*.zip"), key=_natural_key)
+        pending = [p for p in nested if p.resolve() not in seen]
+        if not pending:
+            return
+        for nested_zip in pending:
+            seen.add(nested_zip.resolve())
+            target = nested_zip.with_suffix("")
+            target.mkdir(parents=True, exist_ok=True)
+            _safe_extract(nested_zip, target)
+    remaining = [p for p in root.rglob("*.zip") if p.resolve() not in seen]
+    if remaining:
+        raise RuntimeError(f"Nested archive depth exceeds {max_depth}: {[str(p) for p in remaining]}")
+
+
 def normalize_archive(archive: Path, split: str, root: Path) -> list[dict]:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        with zipfile.ZipFile(archive) as z:
-            z.extractall(tmp)
-        files = [p for p in tmp.rglob("*") if p.is_file()]
+        _safe_extract(archive, tmp)
+        _extract_nested_archives(tmp)
+        files = [p for p in tmp.rglob("*") if p.is_file() and p.suffix.lower() != ".zip"]
 
         publisher_pairs = _pair_publisher_layout(files)
         pairs: list[tuple[Path, Path, str]] = list(publisher_pairs)
