@@ -1,6 +1,8 @@
 name: E6 external fluorescence few-shot adaptation
 
 # Critical-path validation trigger: execute the corrected nested evidence-path checks.
+# This workflow intentionally remains fail-closed: no E6 metric is promoted unless all
+# four preregistered fractions execute and their machine-readable evidence passes.
 
 on:
   push:
