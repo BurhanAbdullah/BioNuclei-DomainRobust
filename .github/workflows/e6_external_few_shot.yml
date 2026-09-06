@@ -1,5 +1,7 @@
 name: E6 external fluorescence few-shot adaptation
 
+# Critical-path validation trigger: execute the corrected nested evidence-path checks.
+
 on:
   push:
     branches: [main]
