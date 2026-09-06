@@ -106,10 +106,11 @@ jobs:
           python - <<'PY'
           import hashlib, json, pathlib
           root=pathlib.Path('outputs/e6_external_few_shot')
-          dirs=list(root.glob('*pct'))
-          assert len(dirs) == 1, dirs
-          run=dirs[0]
-          expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}[run.name]
+          run=root/'${{ matrix.label }}'
+          candidates=[run, run/'${{ matrix.label }}']
+          run=next((p for p in candidates if (p/'provenance.json').is_file()), None)
+          assert run is not None, candidates
+          expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}['${{ matrix.label }}']
           prov=json.loads((run/'provenance.json').read_text())
           assert (prov['fraction'],prov['n_adaptation_images']) == expected
           assert prov['s_biad634_used_for_adaptation'] is False
@@ -119,7 +120,7 @@ jobs:
           assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
           digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
           assert digest == prov['test_metrics_sha256']
-          print(f'{run.name}: PASS')
+          print(f'${{ matrix.label }}: PASS')
           PY
       - name: Upload fraction evidence
         uses: actions/upload-artifact@v4
@@ -154,7 +155,9 @@ jobs:
           expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
           rows=[]
           for label,frac,n in expected:
-              run=root/label
+              candidates=[root/label, root/label/label]
+              run=next((p for p in candidates if (p/'provenance.json').is_file()), None)
+              assert run is not None, candidates
               prov=json.loads((run/'provenance.json').read_text())
               metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
               assert prov['fraction'] == frac
@@ -165,7 +168,7 @@ jobs:
               assert prov['test_images_used_for_adaptation'] is False
               digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
               assert digest == prov['test_metrics_sha256']
-              rows.append({'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'provenance':f'{label}/provenance.json'})
+              rows.append({'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'provenance':str(run/'provenance.json')})
           manifest=root/'manifest.json'
           assert manifest.exists()
           m=json.loads(manifest.read_text())
