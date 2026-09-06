@@ -1,6 +1,6 @@
 # E6 execution blocker
 
-**Status: EXECUTION-READY — not yet scientifically complete (2026-09-05)**
+**Status: EXECUTION-READY — not yet scientifically complete (2026-09-06)**
 
 E6 cannot be declared complete from the currently retained S-BIAD634 evidence. The locked zero-shot evaluation contains all 79 expert-annotated S-BIAD634 image/ground-truth pairs, so those images remain permanently excluded from adaptation.
 
@@ -13,15 +13,17 @@ This experiment must never be described as target-domain adaptation to S-BIAD634
 ## Implemented execution path
 
 - `scripts/download_aitslab_bioimaging1.py` acquires the publisher-provided train/development/test archives from Zenodo and fails closed on missing archives or ambiguous image/annotation pairing.
-- `scripts/train_domain_robust.py` now accepts `--init-checkpoint`, preserving the existing default source-training behavior while enabling frozen-E4 initialization.
+- `scripts/train_domain_robust.py` accepts `--init-checkpoint`, preserving the existing default source-training behavior while enabling frozen-E4 initialization.
 - `scripts/e6_run_external_few_shot.py` runs the preregistered 1%, 5%, 10%, and 25% fractions with deterministic seed 42, image-level sampling, publisher test isolation, and machine-readable provenance.
 - `.github/workflows/e6_external_few_shot.yml` verifies the retained E4 artifact digest before running E6 and cross-checks the resulting machine-readable evidence.
 
 The published split is 30 train / 10 development / 10 test images. Fractions are converted to an image budget by `ceil(fraction × 30)`, with a minimum of one image, yielding 1, 2, 3 and 8 adaptation images. The development split remains isolated and the 10-image test split is never used for adaptation.
 
-## Current blocker
+## Current execution state
 
-The repository integration available for this automation run can create and inspect GitHub Actions workflows but cannot dispatch a `workflow_dispatch` run. Therefore the new E6 workflow is **execution-ready but not executed in this run**. No E6 metric is claimed.
+The latest BioNuclei main commit inspected on 2026-09-06 is `913ab2344d6b9e3a03f118c1658cccacaa64f134` (`ci(E6): trigger validation after evidence-path fix`). GitHub currently exposes **no workflow run and no commit-status checks for this commit** through the available repository integration. Therefore this run has no new E6 execution evidence to validate.
+
+The available integration can inspect and retry existing GitHub Actions jobs, but it cannot dispatch a new `workflow_dispatch` execution when no run exists. Consequently the corrected E6 workflow remains **execution-ready but not executed/verified in this run**. No E6 metric is claimed.
 
 ## Integrity rule
 
