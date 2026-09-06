@@ -6,7 +6,7 @@ E6 cannot be declared complete from the currently retained S-BIAD634 evidence. T
 
 ## Resolution adopted
 
-To preserve the locked S-BIAD634 zero-shot experiment, E6 is now explicitly defined as **cross-dataset few-shot adaptation** using the authoritative Aitslab-bioimaging1 fluorescence dataset (Zenodo DOI `10.5281/zenodo.6657260`). Independent published sources describe 50 fluorescence images, more than 2,000 labelled nuclear objects, and a publisher-provided 30/10/10 train/development/test split.
+To preserve the locked S-BIAD634 zero-shot experiment, E6 is explicitly defined as **cross-dataset few-shot adaptation** using the authoritative Aitslab-bioimaging1 fluorescence dataset (Zenodo DOI `10.5281/zenodo.6657260`). Independent published sources describe 50 fluorescence images, more than 2,000 labelled nuclear objects, and a publisher-provided 30/10/10 train/development/test split.
 
 This experiment must never be described as target-domain adaptation to S-BIAD634 and must not reinterpret the locked S-BIAD634 zero-shot result.
 
@@ -21,9 +21,9 @@ The published split is 30 train / 10 development / 10 test images. Fractions are
 
 ## Current execution state
 
-The latest BioNuclei main commit inspected on 2026-09-06 is `913ab2344d6b9e3a03f118c1658cccacaa64f134` (`ci(E6): trigger validation after evidence-path fix`). GitHub currently exposes **no workflow run and no commit-status checks for this commit** through the available repository integration. Therefore this run has no new E6 execution evidence to validate.
+The latest E6 push-triggered run is GitHub Actions run `34027678815` on commit `2b0689347f24c5097ec09f0c1cc4b5c8e9d0c27b`. The 1%, 5%, and 10% fractions completed successfully, including their fraction-level cross-checks and evidence uploads. The 25% fraction reached the actual preregistered training step but was cancelled; its cross-check and evidence upload were therefore skipped. The fail-closed aggregate was consequently skipped.
 
-The available integration can inspect and retry existing GitHub Actions jobs, but it cannot dispatch a new `workflow_dispatch` execution when no run exists. Consequently the corrected E6 workflow remains **execution-ready but not executed/verified in this run**. No E6 metric is claimed.
+No E6 aggregate metric is claimed. The failed 25% job (`101471454904`) has been explicitly rerun. Its rerun must complete the actual training step and produce independently verifiable machine-readable evidence before E6 can advance.
 
 ## Integrity rule
 
