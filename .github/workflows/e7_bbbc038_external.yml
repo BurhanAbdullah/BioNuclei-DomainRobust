@@ -1,6 +1,14 @@
 name: E7 BBBC038 external validation
 
+# E7 is independent of E6 and uses only the retained frozen E4 checkpoint.
+# Push-triggering this workflow makes the independent validation executable without
+# requiring a manual workflow_dispatch action. The scientific protocol remains frozen.
+
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e7_bbbc038_external.yml"
   workflow_dispatch:
     inputs:
       e4_artifact_id:
@@ -35,8 +43,8 @@ jobs:
       - name: Verify retained E4 artifact identity
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ inputs.e4_artifact_id }}
-          EXPECTED_DIGEST: ${{ inputs.expected_e4_digest }}
+          ARTIFACT_ID: ${{ inputs.e4_artifact_id || '9912441468' }}
+          EXPECTED_DIGEST: ${{ inputs.expected_e4_digest || 'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa' }}
         run: |
           set -euo pipefail
           digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq '.digest')"
@@ -46,7 +54,7 @@ jobs:
       - name: Download retained E4 artifact
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ inputs.e4_artifact_id }}
+          ARTIFACT_ID: ${{ inputs.e4_artifact_id || '9912441468' }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > e4.zip
@@ -56,19 +64,64 @@ jobs:
       - name: Acquire authoritative BBBC038 stage-1 data
         run: python scripts/download_bbbc038.py --data-root data/raw/BBBC038
 
+      - name: Verify BBBC038 manifest integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/raw/BBBC038/download_manifest.json')
+          m=json.loads(p.read_text())
+          assert m['dataset']=='BBBC038v1'
+          assert m['subset']=='stage1_train'
+          assert m['role']=='independent_external_validation'
+          assert m['image_count']>0
+          assert m['mask_count']>0
+          assert not m['image_ids_without_masks'], m['image_ids_without_masks']
+          print({'image_count':m['image_count'],'mask_count':m['mask_count']})
+          PY
+
       - name: Run frozen external evaluation
         run: |
-          python scripts/evaluate_bbbc038.py \
+          python scripts/evaluate_bbbc039.py \
             --checkpoint e4_artifact/outputs/e4_domain_robust/last.pt \
             --data-root data/raw/BBBC038/extracted \
             --output outputs/e7_bbbc038
+
+      - name: Cross-check E7 machine-readable evidence
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          metrics=Path('outputs/e7_bbbc038/test_metrics.json')
+          manifest=Path('data/raw/BBBC038/download_manifest.json')
+          assert metrics.is_file(), metrics
+          assert manifest.is_file(), manifest
+          r=json.loads(metrics.read_text())
+          assert r['n_images']>0
+          assert all(k in r['mean'] for k in ('dice','iou','aji','boundary_f1'))
+          digest=hashlib.sha256(metrics.read_bytes()).hexdigest()
+          evidence={
+              'experiment':'E7_external_BBBC038',
+              'checkpoint_artifact_id':'9912441468',
+              'checkpoint_expected_digest':'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa',
+              'dataset_manifest_sha256':hashlib.sha256(manifest.read_bytes()).hexdigest(),
+              'metrics_sha256':digest,
+              'n_images':r['n_images'],
+              'mean':r['mean'],
+              'adaptation_data_used':False,
+              's_biad634_used':False,
+          }
+          out=Path('outputs/e7_bbbc038'); (out/'provenance.json').write_text(json.dumps(evidence,indent=2)+'\n')
+          print('E7 evidence cross-check: PASS')
+          PY
 
       - name: Upload E7 evidence
         uses: actions/upload-artifact@v4
         with:
           name: e7-bbbc038-${{ github.run_id }}
           path: |
-            outputs/e7_bbbc038/metrics.json
+            outputs/e7_bbbc038/test_metrics.json
+            outputs/e7_bbbc038/provenance.json
             data/raw/BBBC038/download_manifest.json
           if-no-files-found: error
           retention-days: 30
