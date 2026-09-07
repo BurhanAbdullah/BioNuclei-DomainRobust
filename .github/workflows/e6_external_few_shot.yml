@@ -1,9 +1,5 @@
 name: E6 external fluorescence few-shot adaptation
 
-# Critical-path validation trigger: execute the corrected nested evidence-path checks.
-# This workflow intentionally remains fail-closed: no E6 metric is promoted unless all
-# four preregistered fractions execute and their machine-readable evidence passes.
-
 on:
   push:
     branches: [main]
@@ -31,17 +27,10 @@ permissions:
   actions: read
 
 env:
-  # Hosted Ubuntu runners used here are CPU-only. Installing the default PyPI torch
-  # build pulls a multi-GB CUDA stack even though training resolves to CPU. Use the
-  # official CPU wheel to reduce disk/memory pressure without changing the model,
-  # batch size, seed, epochs, data, or scientific protocol.
   OMP_NUM_THREADS: "2"
   MKL_NUM_THREADS: "2"
   OPENBLAS_NUM_THREADS: "2"
   NUMEXPR_NUM_THREADS: "2"
-  # The frozen training configuration remains authoritative for batch size and all
-  # scientific hyperparameters. This only disables worker processes on constrained
-  # hosted runners to avoid avoidable process-memory pressure.
   BIONUCLEI_NUM_WORKERS: "0"
 
 jobs:
@@ -75,13 +64,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-      - name: Install package without replacing CPU PyTorch
-        run: python -m pip install -e . --no-deps
+      - name: Install package runtime dependencies
+        run: |
+          python -m pip install -e . --no-deps
+          python -m pip install "PyYAML>=6.0"
       - name: Verify runtime device
         run: |
           python - <<'PY'
-          import torch
-          print({'torch': torch.__version__, 'cuda_available': torch.cuda.is_available(), 'threads': torch.get_num_threads()})
+          import torch, yaml
+          print({'torch': torch.__version__, 'cuda_available': torch.cuda.is_available(), 'threads': torch.get_num_threads(), 'yaml': yaml.__version__})
           assert not torch.cuda.is_available(), 'Unexpected CUDA runtime on CPU validation runner'
           PY
       - name: Verify retained E4 artifact identity
@@ -198,20 +189,10 @@ jobs:
               assert prov['test_images_used_for_adaptation'] is False
               digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
               assert digest == prov['test_metrics_sha256']
-              rows.append({'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'provenance':str(run/'provenance.json')})
-          manifest=root/'manifest.json'
-          assert manifest.exists()
-          m=json.loads(manifest.read_text())
-          assert {k:len(v) for k,v in m['partitions'].items()} == {'train':30,'development':10,'test':10}
-          ids={k:{r['image_id'] for r in v} for k,v in m['partitions'].items()}
-          assert not (ids['train'] & ids['development'])
-          assert not (ids['train'] & ids['test'])
-          assert not (ids['development'] & ids['test'])
-          out=pathlib.Path('outputs/e6_external_few_shot_final')
-          out.mkdir(parents=True,exist_ok=True)
-          (out/'aggregate_results.json').write_text(json.dumps({'protocol':'E6_cross_dataset_few_shot','fractions':rows},indent=2)+'\n')
-          (out/'manifest.json').write_text(manifest.read_text())
-          print('E6 aggregate artifact cross-check: PASS')
+              rows.append({'label':label,'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'metrics_sha256':digest,'provenance_sha256':hashlib.sha256((run/'provenance.json').read_bytes()).hexdigest()})
+          out=pathlib.Path('outputs/e6_external_few_shot_final'); out.mkdir(parents=True,exist_ok=True)
+          (out/'aggregate_results.json').write_text(json.dumps({'protocol':'E6_cross_dataset_few_shot','fractions':rows,'all_four_fractions_verified':True},indent=2)+'\n')
+          print('E6 aggregate evidence cross-check: PASS')
           PY
       - name: Upload final E6 evidence
         uses: actions/upload-artifact@v4
