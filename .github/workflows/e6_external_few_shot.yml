@@ -1,5 +1,7 @@
 name: E6 external fluorescence few-shot adaptation
 
+# E6 is fail-closed: all four preregistered fractions must independently
+# execute and produce provenance-verified evidence before aggregation.
 on:
   push:
     branches: [main]
@@ -40,6 +42,9 @@ jobs:
     timeout-minutes: 240
     strategy:
       fail-fast: false
+      # Serialize the four identical-protocol training jobs. This changes only
+      # scheduling and prevents the 25% job from competing for hosted resources.
+      max-parallel: 1
       matrix:
         include:
           - label: 01pct
@@ -110,6 +115,7 @@ jobs:
           python - <<'PY'
           import torch, yaml
           ckpt=torch.load('e4_artifact/outputs/e4_domain_robust/last.pt', map_location='cpu')
+          assert 'config' in ckpt and 'model' in ckpt
           yaml.safe_dump(ckpt['config'], open('e4_config.yaml','w'), sort_keys=False)
           PY
       - name: Acquire authoritative Aitslab-bioimaging1
@@ -120,7 +126,6 @@ jobs:
           import json
           m=json.load(open('data/raw/Aitslab_bioimaging1/manifest.json'))
           counts={k:len(v) for k,v in m['partitions'].items()}
-          print(counts)
           assert counts == {'train':30,'development':10,'test':10}, counts
           ids={k:{r['image_id'] for r in v} for k,v in m['partitions'].items()}
           assert not (ids['train'] & ids['development'])
@@ -146,11 +151,11 @@ jobs:
           python - <<'PY'
           import hashlib, json, pathlib
           root=pathlib.Path('outputs/e6_external_few_shot')
-          run=root/'${{ matrix.label }}'
-          candidates=[run, run/'${{ matrix.label }}']
+          label='${{ matrix.label }}'
+          candidates=[root/label, root/label/label, root]
           run=next((p for p in candidates if (p/'provenance.json').is_file()), None)
           assert run is not None, candidates
-          expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}['${{ matrix.label }}']
+          expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}[label]
           prov=json.loads((run/'provenance.json').read_text())
           assert (prov['fraction'],prov['n_adaptation_images']) == expected
           assert (prov['seed'],prov['epochs']) == (42,20)
@@ -164,7 +169,7 @@ jobs:
           assert digest == prov['test_metrics_sha256']
           assert prov['dataset_archive_sha256']
           assert prov['train_command'] and prov['evaluation_command']
-          print(f'${{ matrix.label }}: PASS')
+          print(f'{label}: PASS')
           PY
       - name: Upload fraction evidence
         if: ${{ always() }}
@@ -200,9 +205,9 @@ jobs:
           expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
           rows=[]
           for label,frac,n in expected:
-              candidates=[root/label, root/label/label]
-              run=next((p for p in candidates if (p/'provenance.json').is_file()), None)
-              assert run is not None, candidates
+              candidates=[root/label, root/label/label, root]
+              run=next((p for p in candidates if (p/'provenance.json').is_file() and json.loads((p/'provenance.json').read_text()).get('fraction')==frac), None)
+              assert run is not None, f'missing {label}'
               prov=json.loads((run/'provenance.json').read_text())
               metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
               assert prov['fraction'] == frac
