@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Train the Boundary U-Net robustness model, optionally fine-tuning a frozen E4 checkpoint."""
 from __future__ import annotations
-import argparse,json,random
+import argparse,json,os,random
 from pathlib import Path
 import numpy as np, torch, yaml
 from torch.utils.data import DataLoader
@@ -43,7 +43,10 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument('--config',type=Path,required=True); p.add_argument('--manifest',type=Path,required=True); p.add_argument('--data-root',type=Path,required=True); p.add_argument('--output',type=Path,required=True); p.add_argument('--epochs',type=int,default=None); p.add_argument('--init-checkpoint',type=Path,default=None); a=p.parse_args()
     c=yaml.safe_load(a.config.read_text()); seed_everything(int(c['seed'])); m=json.loads(a.manifest.read_text()); names=m['partitions']['train']
     root=a.data_root; images=[resolve(root,n,'image') for n in names]; masks=[resolve(root,n,'mask') for n in names]
-    loader=DataLoader(InstanceMaskDataset(images,masks),batch_size=int(c['training']['batch_size']),shuffle=True,num_workers=int(c['training']['num_workers']),collate_fn=collate)
+    configured_workers=int(c['training']['num_workers'])
+    workers=int(os.environ.get('BIONUCLEI_NUM_WORKERS',configured_workers))
+    if workers < 0: raise ValueError('BIONUCLEI_NUM_WORKERS must be >= 0')
+    loader=DataLoader(InstanceMaskDataset(images,masks),batch_size=int(c['training']['batch_size']),shuffle=True,num_workers=workers,collate_fn=collate)
     device=resolve_device(c['training']['device'])
     model=BoundaryUNet(in_channels=int(c['model']['in_channels']),out_channels=int(c['model']['out_channels']),base_channels=int(c['model']['base_channels'])).to(device)
     if a.init_checkpoint:
