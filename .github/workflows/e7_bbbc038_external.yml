@@ -124,7 +124,7 @@ jobs:
       - name: Cross-check E7 machine-readable evidence
         run: |
           python - <<'PY'
-          import hashlib, json
+          import hashlib, json, os
           from pathlib import Path
           metrics=Path('outputs/e7_bbbc038/metrics.json')
           manifest=Path('data/raw/BBBC038/download_manifest.json')
@@ -134,13 +134,13 @@ jobs:
           source=json.loads(manifest.read_text())
           assert r['n_images']==source['image_count']
           assert all(k in r['mean'] for k in ('dice','iou','aji','boundary_f1'))
-          assert r['preprocessing']['color_to_grayscale'] == 'ITU-R BT.601 luminance coefficients 0.299/0.587/0.114 for RGB inputs'
+          assert r['preprocessing']['input_color_to_grayscale'] == 'ITU-R BT.601 luminance coefficients 0.299/0.587/0.114 for RGB inputs'
           assert r['tuning'] == 'none; protocol is evaluation-only'
           digest=hashlib.sha256(metrics.read_bytes()).hexdigest()
           evidence={
               'experiment':'E7_external_BBBC038',
-              'checkpoint_artifact_id':str(__import__('os').environ['E4_ARTIFACT_ID']),
-              'checkpoint_expected_digest':__import__('os').environ['EXPECTED_E4_DIGEST'],
+              'checkpoint_artifact_id':str(os.environ['E4_ARTIFACT_ID']),
+              'checkpoint_expected_digest':os.environ['EXPECTED_E4_DIGEST'],
               'dataset_manifest_sha256':hashlib.sha256(manifest.read_bytes()).hexdigest(),
               'metrics_sha256':digest,
               'n_images':r['n_images'],
