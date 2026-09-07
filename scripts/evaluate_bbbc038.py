@@ -63,9 +63,16 @@ def decode_bbbc038_instances(sample_dir: Path, shape: tuple[int, int]) -> np.nda
 
 
 def model_predict_with_padding(model: BoundaryUNet, image: np.ndarray) -> tuple[np.ndarray, tuple[int, int, int, int]]:
-    """Predict without discarding pixels; reflect-pad to the model's 8-pixel stride."""
+    """Predict without discarding pixels; normalize on original pixels, then pad."""
     gray = to_grayscale(image)
     h, w = gray.shape
+    # Match the established normalization convention using only original
+    # image pixels; padding must never influence the percentile statistic.
+    scale = np.percentile(gray, 99.5)
+    if not np.isfinite(scale) or scale <= 0:
+        scale = 1.0
+    normalized = np.clip(gray / float(scale), 0.0, 1.0)
+
     pad_h = (-h) % MODEL_DIVISIBILITY
     pad_w = (-w) % MODEL_DIVISIBILITY
     top = pad_h // 2
@@ -73,11 +80,10 @@ def model_predict_with_padding(model: BoundaryUNet, image: np.ndarray) -> tuple[
     left = pad_w // 2
     right = pad_w - left
     if pad_h or pad_w:
-        padded = np.pad(gray, ((top, bottom), (left, right)), mode="reflect")
+        padded = np.pad(normalized, ((top, bottom), (left, right)), mode="reflect")
     else:
-        padded = gray
-    scale = np.percentile(padded, 99.5)
-    padded = np.clip(padded / max(float(scale), 1.0), 0.0, 1.0)
+        padded = normalized
+
     with torch.inference_mode():
         logits = model(torch.from_numpy(padded[None, None]).float())
     classes = logits.argmax(dim=1).cpu().numpy()[0]
@@ -150,7 +156,7 @@ def main() -> None:
         "checkpoint_seed": checkpoint.get("seed"),
         "preprocessing": {
             "input_color_to_grayscale": "ITU-R BT.601 luminance coefficients 0.299/0.587/0.114 for RGB inputs",
-            "normalization": "99.5th percentile with lower bound 1.0, then clip to [0,1]",
+            "normalization": "99.5th percentile computed on original unpadded pixels with lower bound 1.0, then clip to [0,1]",
             "model_input_shape_handling": "reflect-pad each spatial dimension to a multiple of 8 for the three 2x pooling stages; crop predictions back to the original image shape; no image pixels discarded",
             "instance_postprocessing": "8-connected components of non-background model prediction",
         },
