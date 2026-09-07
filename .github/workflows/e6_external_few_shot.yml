@@ -30,6 +30,16 @@ permissions:
   contents: read
   actions: read
 
+env:
+  # Hosted Ubuntu runners used here are CPU-only. Installing the default PyPI torch
+  # build pulls a multi-GB CUDA stack even though training resolves to CPU. Use the
+  # official CPU wheel to reduce disk/memory pressure without changing the model,
+  # batch size, seed, epochs, data, or scientific protocol.
+  OMP_NUM_THREADS: "2"
+  MKL_NUM_THREADS: "2"
+  OPENBLAS_NUM_THREADS: "2"
+  NUMEXPR_NUM_THREADS: "2"
+
 jobs:
   e6_fraction:
     name: E6 ${{ matrix.label }}
@@ -57,8 +67,19 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Install package
-        run: python -m pip install -e .
+      - name: Install CPU PyTorch runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+      - name: Install package without replacing CPU PyTorch
+        run: python -m pip install -e . --no-deps
+      - name: Verify runtime device
+        run: |
+          python - <<'PY'
+          import torch
+          print({'torch': torch.__version__, 'cuda_available': torch.cuda.is_available(), 'threads': torch.get_num_threads()})
+          assert not torch.cuda.is_available(), 'Unexpected CUDA runtime on CPU validation runner'
+          PY
       - name: Verify retained E4 artifact identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,13 +148,14 @@ jobs:
           print(f'${{ matrix.label }}: PASS')
           PY
       - name: Upload fraction evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: e6-fraction-${{ matrix.label }}-${{ github.run_id }}
           path: |
             outputs/e6_external_few_shot/${{ matrix.label }}/**
             data/raw/Aitslab_bioimaging1/manifest.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
 
   e6_aggregate:
