@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate a Boundary U-Net checkpoint on a manifest-defined image/mask split.
-
-This evaluator is dataset-agnostic: the manifest supplies image identifiers and
-split membership, while the shared loader/decoder defines the locked
-single-channel fluorescence preprocessing and RGB/grayscale instance-mask
-handling. It performs evaluation only and never tunes on the requested split.
-"""
+"""Evaluate a Boundary U-Net checkpoint on a manifest-defined image/mask split."""
 from __future__ import annotations
 
 import argparse
@@ -16,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from scipy import ndimage
+from skimage.io import imread
 
 from bionuclei.data import decode_instance_mask, read_fluorescence_image
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
@@ -42,9 +37,7 @@ def resolve(root: Path, image_name: str, kind: str) -> Path:
         if p.is_file() and p.name == target and p.suffix.lower() in exts
     )
     if len(candidates) != 1:
-        raise RuntimeError(
-            f"Expected exactly one {kind} for manifest entry {image_name}; found {candidates}"
-        )
+        raise RuntimeError(f"Expected exactly one {kind} for {image_name}; found {candidates}")
     return candidates[0]
 
 
@@ -87,7 +80,7 @@ def main() -> None:
         image_path = resolve(args.data_root, name, "image")
         mask_path = resolve(args.data_root, name, "mask")
         image = read_fluorescence_image(image_path)
-        target = decode_instance_mask(np.asarray(__import__("skimage.io", fromlist=["imread"]).imread(mask_path)))
+        target = decode_instance_mask(np.asarray(imread(mask_path)))
         if image.ndim != 2:
             raise ValueError(f"Expected single-channel fluorescence image for {name}; got {image.shape}")
         if image.shape != target.shape:
