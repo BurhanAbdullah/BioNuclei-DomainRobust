@@ -97,6 +97,32 @@ jobs:
           })
           assert not torch.cuda.is_available(), 'Unexpected CUDA runtime on CPU validation runner'
           PY
+      - name: Provision temporary swap for 25% only
+        if: ${{ matrix.label == '25pct' }}
+        run: |
+          set -euo pipefail
+          if ! swapon --show | grep -q '/swapfile'; then
+            sudo fallocate -l 8G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
+          swapon --show
+          free -h
+      - name: Start 25% memory and process diagnostics
+        if: ${{ matrix.label == '25pct' }}
+        run: |
+          set -euo pipefail
+          (
+            while true; do
+              printf '\n=== %s ===\n' "$(date -Is)"
+              free -h
+              awk '/MemAvailable|SwapFree|SwapTotal/ {print}' /proc/meminfo
+              ps -eo pid,ppid,rss,vsz,stat,etime,cmd --sort=-rss | head -n 12
+              sleep 2
+            done
+          ) > e6_25pct_memory_watch.log 2>&1 &
+          echo $! > e6_25pct_memory_watch.pid
       - name: Verify retained E4 artifact identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -146,6 +172,19 @@ jobs:
             --epochs 20 \
             --seed 42 \
             --fraction ${{ matrix.fraction }}
+      - name: Stop diagnostics and capture runner state
+        if: ${{ always() && matrix.label == '25pct' }}
+        run: |
+          set +e
+          test -f e6_25pct_memory_watch.pid && kill "$(cat e6_25pct_memory_watch.pid)" || true
+          echo '=== memory watcher tail ==='
+          tail -n 100 e6_25pct_memory_watch.log 2>/dev/null || true
+          echo '=== disk ==='
+          df -h || true
+          echo '=== processes ==='
+          ps -ef || true
+          echo '=== kernel OOM diagnostics ==='
+          sudo dmesg -T 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process' | tail -n 50 || true
       - name: Cross-check this fraction
         run: |
           python - <<'PY'
@@ -171,7 +210,7 @@ jobs:
           assert prov['train_command'] and prov['evaluation_command']
           print(f'{label}: PASS')
           PY
-      - name: Upload fraction evidence
+      - name: Upload fraction evidence and diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
@@ -179,6 +218,7 @@ jobs:
           path: |
             outputs/e6_external_few_shot/${{ matrix.label }}/**
             data/raw/Aitslab_bioimaging1/manifest.json
+            e6_25pct_memory_watch.log
           if-no-files-found: ignore
           retention-days: 30
 
