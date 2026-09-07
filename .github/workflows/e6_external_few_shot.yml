@@ -8,7 +8,7 @@ on:
       - "scripts/e6_run_external_few_shot.py"
       - "scripts/download_aitslab_bioimaging1.py"
       - "scripts/train_domain_robust.py"
-      - "scripts/evaluate_bbbc039.py"
+      - "scripts/evaluate_instance_manifest.py"
       - "src/bionuclei/**"
       - "pyproject.toml"
   workflow_dispatch:
@@ -66,8 +66,6 @@ jobs:
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
       - name: Install package runtime dependencies
         run: |
-          # Install the local package without dependencies so pip cannot replace
-          # the explicitly selected CPU-only PyTorch runtime with CUDA wheels.
           python -m pip install -e . --no-deps
           python -m pip install \
             "numpy>=1.24" \
@@ -128,6 +126,9 @@ jobs:
           assert not (ids['train'] & ids['development'])
           assert not (ids['train'] & ids['test'])
           assert not (ids['development'] & ids['test'])
+          for split, rows in m['partitions'].items():
+              assert len({r['image_id'] for r in rows}) == len(rows), split
+          assert all(v.get('sha256') for v in m['archives'].values())
           PY
       - name: Run this preregistered E6 fraction
         run: |
@@ -152,13 +153,17 @@ jobs:
           expected={'01pct':(0.01,1),'05pct':(0.05,2),'10pct':(0.10,3),'25pct':(0.25,8)}['${{ matrix.label }}']
           prov=json.loads((run/'provenance.json').read_text())
           assert (prov['fraction'],prov['n_adaptation_images']) == expected
+          assert (prov['seed'],prov['epochs']) == (42,20)
           assert prov['s_biad634_used_for_adaptation'] is False
           assert prov['test_images_used_for_adaptation'] is False
+          assert prov['development_images_used_for_training_or_selection'] is False
           metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
           assert metrics['n_images'] == 10
           assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
           digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
           assert digest == prov['test_metrics_sha256']
+          assert prov['dataset_archive_sha256']
+          assert prov['train_command'] and prov['evaluation_command']
           print(f'${{ matrix.label }}: PASS')
           PY
       - name: Upload fraction evidence
@@ -202,10 +207,12 @@ jobs:
               metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
               assert prov['fraction'] == frac
               assert prov['n_adaptation_images'] == n
+              assert (prov['seed'],prov['epochs']) == (42,20)
               assert metrics['n_images'] == 10
               assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
               assert prov['s_biad634_used_for_adaptation'] is False
               assert prov['test_images_used_for_adaptation'] is False
+              assert prov['development_images_used_for_training_or_selection'] is False
               digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
               assert digest == prov['test_metrics_sha256']
               rows.append({'label':label,'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'metrics_sha256':digest,'provenance_sha256':hashlib.sha256((run/'provenance.json').read_bytes()).hexdigest()})
