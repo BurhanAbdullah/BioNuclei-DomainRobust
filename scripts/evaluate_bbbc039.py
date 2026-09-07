@@ -32,14 +32,17 @@ def boundary_band(mask: np.ndarray) -> np.ndarray:
 
 
 def resolve_image_path(root: Path, image_name: str) -> Path:
-    """Resolve a metadata filename anywhere under the downloaded image archive."""
+    """Resolve a manifest filename anywhere under the extracted BBBC038 tree."""
     exact = root / "images" / image_name
     if exact.exists():
         return exact
-    stem = Path(image_name).stem
+    target = Path(image_name).name
     candidates = sorted(
-        p for p in (root / "images").rglob("*")
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS and p.stem == stem
+        p for p in root.rglob("*")
+        if p.is_file()
+        and p.parent.name == "images"
+        and p.name == target
+        and p.suffix.lower() in IMAGE_EXTENSIONS
     )
     if len(candidates) == 1:
         return candidates[0]
@@ -49,11 +52,14 @@ def resolve_image_path(root: Path, image_name: str) -> Path:
 
 
 def mask_path(root: Path, image_name: str) -> Path:
-    """Resolve a mask anywhere under the downloaded mask archive."""
-    stem = Path(image_name).stem
+    """Resolve the mask paired to a manifest image anywhere under the extracted tree."""
+    target = Path(image_name).name
     candidates = sorted(
-        p for p in (root / "masks").rglob("*")
-        if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff") and p.stem == stem
+        p for p in root.rglob("*")
+        if p.is_file()
+        and p.parent.name == "masks"
+        and p.stem == Path(target).stem
+        and p.suffix.lower() in (".png", ".tif", ".tiff")
     )
     if len(candidates) == 1:
         return candidates[0]
