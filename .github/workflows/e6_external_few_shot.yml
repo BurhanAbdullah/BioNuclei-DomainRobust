@@ -39,6 +39,10 @@ env:
   MKL_NUM_THREADS: "2"
   OPENBLAS_NUM_THREADS: "2"
   NUMEXPR_NUM_THREADS: "2"
+  # The frozen training configuration remains authoritative for batch size and all
+  # scientific hyperparameters. This only disables worker processes on constrained
+  # hosted runners to avoid avoidable process-memory pressure.
+  BIONUCLEI_NUM_WORKERS: "0"
 
 jobs:
   e6_fraction:
