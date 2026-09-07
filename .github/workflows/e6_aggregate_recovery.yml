@@ -1,0 +1,94 @@
+name: E6 aggregate recovery
+
+# Reconstruct the E6 aggregate from the four independently uploaded fraction
+# artifacts. This remains fail-closed and never invents a missing fraction.
+
+on:
+  workflow_run:
+    workflows: ["E6 external fluorescence few-shot adaptation"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install jq/unzip prerequisites
+        run: |
+          command -v jq
+          command -v unzip
+
+      - name: Download and verify four E6 fraction artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p recovery
+          base="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          gh api "${base}/actions/runs/${RUN_ID}/artifacts?per_page=100" > recovery/artifacts.json
+
+          for label in 01pct 05pct 10pct 25pct; do
+            artifact_id="$(jq -r --arg n "e6-fraction-${label}-${RUN_ID}" '.artifacts[] | select(.name == $n and .expired == false) | .id' recovery/artifacts.json | tail -n1)"
+            test -n "${artifact_id}" && test "${artifact_id}" != "null"
+            echo "${label} artifact id=${artifact_id}"
+            gh api "${base}/actions/artifacts/${artifact_id}/zip" > "recovery/${label}.zip"
+            mkdir -p "recovery/${label}"
+            unzip -q "recovery/${label}.zip" -d "recovery/${label}"
+          done
+
+      - name: Cross-check and aggregate E6 evidence
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+
+          root = Path('recovery')
+          expected = [('01pct', 0.01, 1), ('05pct', 0.05, 2), ('10pct', 0.10, 3), ('25pct', 0.25, 8)]
+          rows = []
+          for label, frac, n in expected:
+              matches = sorted(root.joinpath(label).rglob('provenance.json'))
+              assert matches, f'missing provenance for {label}'
+              prov = json.loads(matches[0].read_text())
+              mpaths = sorted(root.joinpath(label).rglob('test_metrics.json'))
+              assert mpaths, f'missing test_metrics for {label}'
+              metrics = json.loads(mpaths[0].read_text())
+              assert prov['fraction'] == frac
+              assert prov['n_adaptation_images'] == n
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              assert metrics['n_images'] == 10
+              assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
+              digest = hashlib.sha256(mpaths[0].read_bytes()).hexdigest()
+              assert digest == prov['test_metrics_sha256']
+              rows.append({'label': label, 'fraction': frac, 'n_adaptation_images': n, 'mean': metrics['mean'], 'metrics_sha256': digest, 'provenance_sha256': hashlib.sha256(matches[0].read_bytes()).hexdigest()})
+
+          out = root / 'final'
+          out.mkdir(parents=True, exist_ok=True)
+          aggregate = {
+              'experiment': 'E6_cross_dataset_few_shot',
+              'source_workflow_run_id': int('${{ github.event.workflow_run.id }}'),
+              'fractions': rows,
+              'all_four_fractions_verified': True,
+              'adaptation_target_leakage_guard_passed': True,
+          }
+          (out/'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + '\n')
+          print('E6 aggregate evidence cross-check: PASS')
+          PY
+
+      - name: Upload recovered E6 aggregate
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-external-few-shot-recovered-${{ github.event.workflow_run.id }}
+          path: recovery/final/aggregate_results.json
+          if-no-files-found: error
+          retention-days: 30
