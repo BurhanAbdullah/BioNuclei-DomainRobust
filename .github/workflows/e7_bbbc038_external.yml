@@ -93,7 +93,7 @@ jobs:
               candidates=[p for p in files if '/images/' in f'/{p}' and Path(p).stem == image_id]
               if len(candidates) != 1:
                   raise RuntimeError(f'Expected exactly one image for {image_id}, found {candidates[:5]}')
-              selected.append(candidates[0])
+              selected.append(Path(candidates[0]).name)
           manifest={'dataset':'BBBC038v1','role':'independent_external_validation','partitions':{'test':selected}}
           Path('e7_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
           assert len(selected)==source['image_count']
