@@ -16,7 +16,7 @@ on:
         required: true
         default: "9912441468"
       expected_e4_digest:
-        description: "Expected SHA-256 digest of the E4 artifact"
+        description: "Expected SHA-256 digest of the retained E4 artifact"
         required: true
         default: "sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa"
 
