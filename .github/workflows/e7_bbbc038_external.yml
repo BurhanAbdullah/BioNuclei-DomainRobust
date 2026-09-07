@@ -1,14 +1,14 @@
 name: E7 BBBC038 external validation
 
 # E7 is independent of E6 and uses only the retained frozen E4 checkpoint.
-# Push-triggering this workflow makes the independent validation executable without
-# requiring a manual workflow_dispatch action. The scientific protocol remains frozen.
+# The workflow_run trigger ensures the independent validation executes after the
+# repository CI completes, while preserving the frozen scientific protocol.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
     branches: [main]
-    paths:
-      - ".github/workflows/e7_bbbc038_external.yml"
   workflow_dispatch:
     inputs:
       e4_artifact_id:
@@ -26,6 +26,7 @@ permissions:
 
 jobs:
   external-validation:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
