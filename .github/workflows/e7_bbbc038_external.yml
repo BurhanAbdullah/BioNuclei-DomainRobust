@@ -80,11 +80,33 @@ jobs:
           print({'image_count':m['image_count'],'mask_count':m['mask_count']})
           PY
 
+      - name: Build evaluator manifest from verified BBBC038 inventory
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('data/raw/BBBC038/download_manifest.json').read_text())
+          files = source['files']
+          ids = source['image_ids']
+          selected=[]
+          for image_id in ids:
+              candidates=[p for p in files if '/images/' in f'/{p}' and Path(p).stem == image_id]
+              if len(candidates) != 1:
+                  raise RuntimeError(f'Expected exactly one image for {image_id}, found {candidates[:5]}')
+              selected.append(candidates[0])
+          manifest={'dataset':'BBBC038v1','role':'independent_external_validation','partitions':{'test':selected}}
+          Path('e7_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          assert len(selected)==source['image_count']
+          print({'test_images':len(selected)})
+          PY
+
       - name: Run frozen external evaluation
         run: |
           python scripts/evaluate_bbbc039.py \
             --checkpoint e4_artifact/outputs/e4_domain_robust/last.pt \
+            --manifest e7_manifest.json \
             --data-root data/raw/BBBC038/extracted \
+            --split test \
             --output outputs/e7_bbbc038
 
       - name: Cross-check E7 machine-readable evidence
@@ -94,10 +116,15 @@ jobs:
           from pathlib import Path
           metrics=Path('outputs/e7_bbbc038/test_metrics.json')
           manifest=Path('data/raw/BBBC038/download_manifest.json')
+          evaluator_manifest=Path('e7_manifest.json')
           assert metrics.is_file(), metrics
           assert manifest.is_file(), manifest
+          assert evaluator_manifest.is_file(), evaluator_manifest
           r=json.loads(metrics.read_text())
-          assert r['n_images']>0
+          source=json.loads(manifest.read_text())
+          em=json.loads(evaluator_manifest.read_text())
+          assert r['n_images']==source['image_count']
+          assert len(em['partitions']['test'])==source['image_count']
           assert all(k in r['mean'] for k in ('dice','iou','aji','boundary_f1'))
           digest=hashlib.sha256(metrics.read_bytes()).hexdigest()
           evidence={
@@ -105,6 +132,7 @@ jobs:
               'checkpoint_artifact_id':'9912441468',
               'checkpoint_expected_digest':'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa',
               'dataset_manifest_sha256':hashlib.sha256(manifest.read_bytes()).hexdigest(),
+              'evaluator_manifest_sha256':hashlib.sha256(evaluator_manifest.read_bytes()).hexdigest(),
               'metrics_sha256':digest,
               'n_images':r['n_images'],
               'mean':r['mean'],
@@ -123,5 +151,6 @@ jobs:
             outputs/e7_bbbc038/test_metrics.json
             outputs/e7_bbbc038/provenance.json
             data/raw/BBBC038/download_manifest.json
+            e7_manifest.json
           if-no-files-found: error
           retention-days: 30
