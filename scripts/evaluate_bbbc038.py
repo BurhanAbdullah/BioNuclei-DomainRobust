@@ -23,6 +23,7 @@ from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_scor
 from bionuclei.models import BoundaryUNet
 
 IMAGE_EXTENSIONS = {".png", ".tif", ".tiff"}
+MODEL_DIVISIBILITY = 8
 
 
 def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -61,15 +62,29 @@ def decode_bbbc038_instances(sample_dir: Path, shape: tuple[int, int]) -> np.nda
     return labels
 
 
-def predict_instances(model: BoundaryUNet, image: np.ndarray) -> np.ndarray:
-    x = to_grayscale(image)
-    scale = np.percentile(x, 99.5)
-    x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
+def model_predict_with_padding(model: BoundaryUNet, image: np.ndarray) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    """Predict without discarding pixels; reflect-pad to the model's 8-pixel stride."""
+    gray = to_grayscale(image)
+    h, w = gray.shape
+    pad_h = (-h) % MODEL_DIVISIBILITY
+    pad_w = (-w) % MODEL_DIVISIBILITY
+    top = pad_h // 2
+    bottom = pad_h - top
+    left = pad_w // 2
+    right = pad_w - left
+    if pad_h or pad_w:
+        padded = np.pad(gray, ((top, bottom), (left, right)), mode="reflect")
+    else:
+        padded = gray
+    scale = np.percentile(padded, 99.5)
+    padded = np.clip(padded / max(float(scale), 1.0), 0.0, 1.0)
     with torch.inference_mode():
-        logits = model(torch.from_numpy(x[None, None]).float())
+        logits = model(torch.from_numpy(padded[None, None]).float())
     classes = logits.argmax(dim=1).cpu().numpy()[0]
+    if (top, bottom, left, right) != (0, 0, 0, 0):
+        classes = classes[top:top + h, left:left + w]
     instances, _ = ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))
-    return instances.astype(np.int32)
+    return instances.astype(np.int32), (top, bottom, left, right)
 
 
 def boundary_band(mask: np.ndarray) -> np.ndarray:
@@ -103,6 +118,7 @@ def main() -> None:
         raise SystemExit(f"No BBBC038 image/mask sample directories found below {root}")
 
     records = []
+    padding_records = []
     for image_dir in sample_dirs:
         image_candidates = sorted(p for p in image_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
         if len(image_candidates) != 1:
@@ -111,7 +127,8 @@ def main() -> None:
         image = np.asarray(imread(image_path))
         gray = to_grayscale(image)
         target = decode_bbbc038_instances(image_dir.parent, gray.shape)
-        pred = predict_instances(model, image)
+        pred, padding = model_predict_with_padding(model, image)
+        padding_records.append({"image_id": image_dir.parent.name, "padding_top_bottom_left_right": list(padding)})
         records.append({
             "image_id": image_dir.parent.name,
             "image": str(image_path.relative_to(root)),
@@ -132,10 +149,12 @@ def main() -> None:
         "checkpoint_sha256": sha256(args.checkpoint),
         "checkpoint_seed": checkpoint.get("seed"),
         "preprocessing": {
-            "color_to_grayscale": "ITU-R BT.601 luminance coefficients 0.299/0.587/0.114 for RGB inputs",
+            "input_color_to_grayscale": "ITU-R BT.601 luminance coefficients 0.299/0.587/0.114 for RGB inputs",
             "normalization": "99.5th percentile with lower bound 1.0, then clip to [0,1]",
+            "model_input_shape_handling": "reflect-pad each spatial dimension to a multiple of 8 for the three 2x pooling stages; crop predictions back to the original image shape; no image pixels discarded",
             "instance_postprocessing": "8-connected components of non-background model prediction",
         },
+        "model_input_padding": padding_records,
         "tuning": "none; protocol is evaluation-only",
         "mean": {name: float(np.mean([r[name] for r in records])) for name in metric_names},
         "per_image": records,
