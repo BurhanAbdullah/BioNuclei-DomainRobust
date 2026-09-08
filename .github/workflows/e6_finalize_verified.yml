@@ -1,0 +1,125 @@
+name: E6 finalize verified evidence
+
+# Finalizes E6 after the dedicated 25% recovery succeeds. This workflow never
+# retrains and never substitutes a fraction. It downloads the latest retained
+# artifact for each preregistered fraction and verifies the immutable dataset,
+# config, frozen-E4 initialization, split, seed, epoch budget, leakage flags,
+# and test-metric digests before publishing an aggregate evidence artifact.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e6_finalize_verified.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  finalize:
+    name: E6 verified aggregate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download latest retained E6 artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p fractions
+          for label in 01pct 05pct 10pct; do
+            artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" --jq '[.artifacts[] | select(.expired == false) | select(.name | startswith("e6-fraction-'"${label}"'-"))] | sort_by(.created_at) | last | .id')"
+            test -n "$artifact_id" && test "$artifact_id" != "null"
+            echo "$label artifact=$artifact_id"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${label}.zip"
+            unzip -q "${label}.zip" -d "fractions/${label}"
+          done
+
+          artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" --jq '[.artifacts[] | select(.expired == false) | select(.name | startswith("e6-25pct-recovery-"))] | sort_by(.created_at) | last | .id')"
+          test -n "$artifact_id" && test "$artifact_id" != "null"
+          echo "25pct artifact=$artifact_id"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > 25pct.zip
+          unzip -q 25pct.zip -d fractions/25pct
+
+      - name: Validate and aggregate E6 evidence
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+
+          root = Path('fractions')
+          expected = [('01pct', 0.01, 1), ('05pct', 0.05, 2), ('10pct', 0.10, 3), ('25pct', 0.25, 8)]
+          rows = []
+          common = None
+
+          for label, frac, n in expected:
+              matches = list(root.joinpath(label).rglob('provenance.json'))
+              assert len(matches) == 1, (label, matches)
+              prov_path = matches[0]
+              prov = json.loads(prov_path.read_text())
+              metrics_path = prov_path.parent / 'evaluation' / 'test_metrics.json'
+              assert metrics_path.is_file(), metrics_path
+              metrics = json.loads(metrics_path.read_text())
+
+              assert (prov['fraction'], prov['n_adaptation_images']) == (frac, n), label
+              assert (prov['seed'], prov['epochs']) == (42, 20), label
+              assert prov['s_biad634_used_for_adaptation'] is False, label
+              assert prov['test_images_used_for_adaptation'] is False, label
+              assert prov['development_images_used_for_training_or_selection'] is False, label
+              assert metrics['n_images'] == 10, label
+              assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1')), label
+              metric_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+              assert metric_sha == prov['test_metrics_sha256'], label
+
+              immutable = {
+                  'dataset_manifest_sha256': prov['dataset_manifest_sha256'],
+                  'dataset_archive_sha256': prov['dataset_archive_sha256'],
+                  'config_sha256': prov['config_sha256'],
+                  'init_checkpoint_sha256': prov['init_checkpoint_sha256'],
+              }
+              if common is None:
+                  common = immutable
+              else:
+                  assert immutable == common, f'{label}: immutable provenance mismatch'
+
+              rows.append({
+                  'label': label,
+                  'fraction': frac,
+                  'n_adaptation_images': n,
+                  'mean': metrics['mean'],
+                  'test_metrics_sha256': metric_sha,
+                  'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest(),
+                  'activation_checkpointing': bool(prov.get('activation_checkpointing', False)),
+              })
+
+          out = Path('e6_verified')
+          out.mkdir(exist_ok=True)
+          aggregate = {
+              'protocol': 'E6_cross_dataset_few_shot',
+              'all_four_fractions_verified': True,
+              'immutable_provenance_common': common,
+              'fractions': rows,
+              'acceptance_note': 'All four preregistered fractions have independently retained, provenance-verified evidence. The 25pct memory-only activation-checkpoint path preserves protocol hyperparameters and batch composition and records its execution mode explicitly.',
+          }
+          (out / 'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + '\n')
+          print('E6 verified aggregate: PASS')
+          for row in rows:
+              print(row['label'], row['mean'])
+          PY
+
+      - name: Upload final E6 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-external-few-shot-final-${{ github.run_id }}
+          path: e6_verified/**
+          if-no-files-found: error
+          retention-days: 90
