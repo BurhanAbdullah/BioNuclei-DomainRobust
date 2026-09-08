@@ -1,0 +1,300 @@
+name: E6 25pct recovery
+
+# Dedicated recovery path for the only repeatedly failing E6 fraction.
+# Scientific settings remain frozen: fraction=0.25, n=8, seed=42, epochs=20.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e6_25pct_recovery.yml"
+      - "scripts/e6_run_external_few_shot.py"
+      - "scripts/train_domain_robust.py"
+      - "scripts/download_aitslab_bioimaging1.py"
+      - "scripts/evaluate_instance_manifest.py"
+      - "src/bionuclei/**"
+      - "pyproject.toml"
+      - "configs/domain_robust.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  OMP_NUM_THREADS: "2"
+  MKL_NUM_THREADS: "2"
+  OPENBLAS_NUM_THREADS: "2"
+  NUMEXPR_NUM_THREADS: "2"
+  BIONUCLEI_NUM_WORKERS: "0"
+  BIONUCLEI_ACTIVATION_CHECKPOINT: "1"
+  E4_ARTIFACT_ID: "9912441468"
+  EXPECTED_E4_DIGEST: "sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa"
+
+jobs:
+  e6_25pct:
+    name: E6 25pct recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+      - name: Install package runtime dependencies
+        run: |
+          python -m pip install -e . --no-deps
+          python -m pip install \
+            "numpy>=1.24" \
+            "scipy>=1.10" \
+            "pandas>=2.0" \
+            "scikit-image>=0.21" \
+            "scikit-learn>=1.3" \
+            "tifffile>=2023.7.10" \
+            "pyyaml>=6.0" \
+            "tqdm>=4.66"
+
+      - name: Verify runtime
+        run: |
+          python - <<'PY'
+          import pandas, scipy, sklearn, skimage, tifffile, torch, yaml
+          print({
+              'torch': torch.__version__, 'cuda_available': torch.cuda.is_available(),
+              'pandas': pandas.__version__, 'scipy': scipy.__version__,
+              'sklearn': sklearn.__version__, 'skimage': skimage.__version__,
+              'tifffile': tifffile.__version__, 'yaml': yaml.__version__,
+          })
+          assert not torch.cuda.is_available()
+          PY
+
+      - name: Provision swap
+        run: |
+          set -euo pipefail
+          if ! swapon --show | grep -q '/swapfile'; then
+            sudo fallocate -l 8G /swapfile || sudo fallocate -l 6G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
+          swapon --show
+          free -h
+
+      - name: Start diagnostics
+        run: |
+          set -euo pipefail
+          (
+            while true; do
+              printf '\n=== %s ===\n' "$(date -Is)"
+              free -h
+              awk '/MemAvailable|SwapFree|SwapTotal/ {print}' /proc/meminfo
+              ps -eo pid,ppid,rss,vsz,stat,etime,cmd --sort=-rss | head -n 12
+              sleep 2
+            done
+          ) > e6_25pct_memory_watch.log 2>&1 &
+          echo $! > e6_25pct_memory_watch.pid
+
+      - name: Verify retained E4 artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}" --jq '.digest')"
+          test "${digest}" = "${EXPECTED_E4_DIGEST}"
+
+      - name: Download frozen E4 checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4.zip
+          unzip -q e4.zip -d e4_artifact
+          test -f e4_artifact/outputs/e4_domain_robust/last.pt
+          python - <<'PY'
+          import torch, yaml
+          ckpt=torch.load('e4_artifact/outputs/e4_domain_robust/last.pt', map_location='cpu')
+          assert 'config' in ckpt and 'model' in ckpt
+          yaml.safe_dump(ckpt['config'], open('e4_config.yaml','w'), sort_keys=False)
+          PY
+
+      - name: Acquire authoritative Aitslab-bioimaging1
+        run: python scripts/download_aitslab_bioimaging1.py --output data/raw/Aitslab_bioimaging1
+
+      - name: Verify publisher split counts and leakage guard
+        run: |
+          python - <<'PY'
+          import json
+          m=json.load(open('data/raw/Aitslab_bioimaging1/manifest.json'))
+          counts={k:len(v) for k,v in m['partitions'].items()}
+          assert counts == {'train':30,'development':10,'test':10}, counts
+          ids={k:{r['image_id'] for r in v} for k,v in m['partitions'].items()}
+          assert not (ids['train'] & ids['development'])
+          assert not (ids['train'] & ids['test'])
+          assert not (ids['development'] & ids['test'])
+          assert all(v.get('sha256') for v in m['archives'].values())
+          PY
+
+      - name: Run frozen E6 25pct
+        run: |
+          python scripts/e6_run_external_few_shot.py \
+            --config e4_config.yaml \
+            --dataset-root data/raw/Aitslab_bioimaging1 \
+            --dataset-manifest data/raw/Aitslab_bioimaging1/manifest.json \
+            --init-checkpoint e4_artifact/outputs/e4_domain_robust/last.pt \
+            --output outputs/e6_external_few_shot/25pct \
+            --epochs 20 \
+            --seed 42 \
+            --fraction 0.25
+
+      - name: Stop diagnostics and verify 25pct evidence
+        if: ${{ always() }}
+        run: |
+          set +e
+          test -f e6_25pct_memory_watch.pid && kill "$(cat e6_25pct_memory_watch.pid)" || true
+          echo '=== memory watcher tail ==='
+          tail -n 200 e6_25pct_memory_watch.log 2>/dev/null || true
+          echo '=== disk ==='
+          df -h || true
+          echo '=== kernel OOM diagnostics ==='
+          sudo dmesg -T 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process' | tail -n 100 || true
+          echo '=== 25pct checkpoint ==='
+          ls -lah outputs/e6_external_few_shot/25pct/25pct/checkpoint 2>/dev/null || true
+
+      - name: Cross-check 25pct evidence
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+          run=pathlib.Path('outputs/e6_external_few_shot/25pct/25pct')
+          assert (run/'provenance.json').is_file(), run
+          prov=json.loads((run/'provenance.json').read_text())
+          assert (prov['fraction'], prov['n_adaptation_images']) == (0.25, 8)
+          assert (prov['seed'], prov['epochs']) == (42, 20)
+          assert prov['s_biad634_used_for_adaptation'] is False
+          assert prov['test_images_used_for_adaptation'] is False
+          assert prov['development_images_used_for_training_or_selection'] is False
+          assert prov['activation_checkpointing'] is True
+          metrics=run/'evaluation'/'test_metrics.json'
+          obj=json.loads(metrics.read_text())
+          assert obj['n_images'] == 10
+          assert all(k in obj['mean'] for k in ('dice','iou','aji','boundary_f1'))
+          assert hashlib.sha256(metrics.read_bytes()).hexdigest() == prov['test_metrics_sha256']
+          print('E6 25pct: PASS')
+          PY
+
+      - name: Upload 25pct evidence and diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-25pct-recovery-${{ github.run_id }}
+          path: |
+            outputs/e6_external_few_shot/25pct/**
+            data/raw/Aitslab_bioimaging1/manifest.json
+            e6_25pct_memory_watch.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  aggregate:
+    name: E6 aggregate from verified fractions
+    needs: e6_25pct
+    if: ${{ needs.e6_25pct.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install jq and download current 25pct evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            --jq '.artifacts[] | select(.name=="e6-25pct-recovery-'"${GITHUB_RUN_ID}"'") | .id' > current_25_id.txt
+          test -s current_25_id.txt
+          id="$(cat current_25_id.txt)"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > current_25.zip
+          mkdir -p fractions/25pct
+          unzip -q current_25.zip -d fractions/25pct
+
+      - name: Find matching original E6 fraction run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/350968127/runs?branch=main&head_sha=${GITHUB_SHA}&per_page=20")"
+            run_id="$(printf '%s' "$run_json" | jq -r '.workflow_runs[] | select(.head_sha=="'"${GITHUB_SHA}"'") | select(.id != '"${GITHUB_RUN_ID}"') | .id' | head -n 1)"
+            if [ -n "$run_id" ]; then
+              state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+              if [ "$state" = "completed" ]; then
+                echo "$run_id" > source_run_id.txt
+                break
+              fi
+            fi
+            sleep 30
+          done
+          test -s source_run_id.txt
+          echo "Using E6 source run $(cat source_run_id.txt) from commit ${GITHUB_SHA}"
+
+      - name: Download and validate 01/05/10 artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(cat source_run_id.txt)"
+          for label in 01pct 05pct 10pct; do
+            artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" --jq '.artifacts[] | select(.name=="e6-fraction-'"${label}"'-'"'"${run_id}"'") | .id' | head -n 1)"
+            test -n "$artifact_id" || { echo "Missing $label artifact"; exit 1; }
+            mkdir -p "fractions/${label}"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "fractions/${label}.zip"
+            unzip -q "fractions/${label}.zip" -d "fractions/${label}"
+          done
+
+      - name: Aggregate only provenance-verified fractions
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('fractions')
+          expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
+          rows=[]
+          for label, frac, n in expected:
+              matches=list(root.joinpath(label).rglob('provenance.json'))
+              assert len(matches)==1, (label, matches)
+              prov=json.loads(matches[0].read_text())
+              assert (prov['fraction'], prov['n_adaptation_images']) == (frac,n)
+              assert (prov['seed'],prov['epochs']) == (42,20)
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              assert prov['development_images_used_for_training_or_selection'] is False
+              metrics_path=matches[0].parent/'evaluation'/'test_metrics.json'
+              assert metrics_path.is_file()
+              metrics=json.loads(metrics_path.read_text())
+              assert metrics['n_images']==10
+              assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
+              digest=hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+              assert digest==prov['test_metrics_sha256']
+              rows.append({'label':label,'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'metrics_sha256':digest,'provenance_sha256':hashlib.sha256(matches[0].read_bytes()).hexdigest(),'activation_checkpointing':prov.get('activation_checkpointing',False)})
+          out=pathlib.Path('e6_aggregate'); out.mkdir(exist_ok=True)
+          (out/'aggregate_results.json').write_text(json.dumps({'protocol':'E6_cross_dataset_few_shot','all_four_fractions_verified':True,'source_run_id':pathlib.Path('source_run_id.txt').read_text().strip(),'recovery_run_id':'${{ github.run_id }}','fractions':rows},indent=2)+'\n')
+          print('E6 aggregate: PASS')
+          PY
+
+      - name: Upload final E6 aggregate
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-external-few-shot-final-${{ github.run_id }}
+          path: e6_aggregate/**
+          if-no-files-found: error
+          retention-days: 30
