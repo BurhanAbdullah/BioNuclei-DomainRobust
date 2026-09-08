@@ -42,10 +42,7 @@ jobs:
               0.25: ('25pct', 8),
           }
 
-          # actions/download-artifact with merge-multiple:false preserves each
-          # artifact under its artifact-name directory, while the artifact ZIPs
-          # themselves retain repository-relative paths. Discover provenance
-          # recursively rather than assuming a fixed extraction depth.
+          # Discover evidence recursively because download-artifact extraction depth can vary.
           provenance_files = sorted(root.rglob('provenance.json'))
           assert provenance_files, f'no provenance.json found below {root}'
           found = {}
@@ -58,16 +55,10 @@ jobs:
                   continue
               if frac in expected:
                   if frac in found:
-                      raise AssertionError(
-                          f'duplicate evidence for fraction {frac}: '
-                          f'{prov_path} and {found[frac]}'
-                      )
+                      raise AssertionError(f'duplicate evidence for fraction {frac}: {prov_path} and {found[frac]}')
                   found[frac] = prov_path
 
-          assert set(found) == set(expected), (
-              f'missing fractions: {sorted(set(expected)-set(found))}; '
-              f'found={sorted(found)}; provenance={provenance_files}'
-          )
+          assert set(found) == set(expected), f'missing fractions: {sorted(set(expected)-set(found))}; found={sorted(found)}; provenance={provenance_files}'
 
           rows = []
           for frac, (label, n) in sorted(expected.items()):
@@ -90,23 +81,11 @@ jobs:
               assert digest == prov['test_metrics_sha256']
               assert prov['dataset_archive_sha256']
               assert prov['train_command'] and prov['evaluation_command']
-              rows.append({
-                  'label': label,
-                  'fraction': frac,
-                  'n_adaptation_images': n,
-                  'mean': metrics['mean'],
-                  'metrics_sha256': digest,
-                  'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest(),
-              })
+              rows.append({'label': label, 'fraction': frac, 'n_adaptation_images': n, 'mean': metrics['mean'], 'metrics_sha256': digest, 'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest()})
 
           out = pathlib.Path('outputs/e6_external_few_shot_final')
           out.mkdir(parents=True, exist_ok=True)
-          result = {
-              'protocol': 'E6_cross_dataset_few_shot',
-              'source_run_id': 34208190019,
-              'fractions': rows,
-              'all_four_fractions_verified': True,
-          }
+          result = {'protocol': 'E6_cross_dataset_few_shot', 'source_run_id': 34208190019, 'fractions': rows, 'all_four_fractions_verified': True}
           (out / 'aggregate_results.json').write_text(json.dumps(result, indent=2) + '\n')
           print('E6 aggregate evidence cross-check: PASS')
           PY
@@ -118,3 +97,5 @@ jobs:
           path: outputs/e6_external_few_shot_final/**
           if-no-files-found: error
           retention-days: 30
+
+# Safe retrigger after validating the four source artifacts.
