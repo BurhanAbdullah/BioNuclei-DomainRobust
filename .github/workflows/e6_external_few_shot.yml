@@ -34,6 +34,9 @@ env:
   OPENBLAS_NUM_THREADS: "2"
   NUMEXPR_NUM_THREADS: "2"
   BIONUCLEI_NUM_WORKERS: "0"
+  # All four E6 fractions must use exactly the same execution semantics.
+  # This memory-saving path preserves BatchNorm running buffers and RNG state.
+  BIONUCLEI_ACTIVATION_CHECKPOINT: "1"
 
 jobs:
   e6_fraction:
