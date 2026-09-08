@@ -41,16 +41,34 @@ jobs:
               0.10: ('10pct', 3),
               0.25: ('25pct', 8),
           }
+
+          # actions/download-artifact with merge-multiple:false preserves each
+          # artifact under its artifact-name directory, while the artifact ZIPs
+          # themselves retain repository-relative paths. Discover provenance
+          # recursively rather than assuming a fixed extraction depth.
+          provenance_files = sorted(root.rglob('provenance.json'))
+          assert provenance_files, f'no provenance.json found below {root}'
           found = {}
-          for prov_path in root.glob('**/provenance.json'):
+          for prov_path in provenance_files:
               prov = json.loads(prov_path.read_text())
-              frac = float(prov.get('fraction'))
+              raw_frac = prov.get('fraction')
+              try:
+                  frac = float(raw_frac)
+              except (TypeError, ValueError):
+                  continue
               if frac in expected:
                   if frac in found:
-                      raise AssertionError(f'duplicate evidence for fraction {frac}: {prov_path} and {found[frac]}')
+                      raise AssertionError(
+                          f'duplicate evidence for fraction {frac}: '
+                          f'{prov_path} and {found[frac]}'
+                      )
                   found[frac] = prov_path
 
-          assert set(found) == set(expected), f'missing fractions: {set(expected)-set(found)}'
+          assert set(found) == set(expected), (
+              f'missing fractions: {sorted(set(expected)-set(found))}; '
+              f'found={sorted(found)}; provenance={provenance_files}'
+          )
+
           rows = []
           for frac, (label, n) in sorted(expected.items()):
               prov_path = found[frac]
@@ -59,14 +77,15 @@ jobs:
               assert metrics_path.is_file(), metrics_path
               prov = json.loads(prov_path.read_text())
               metrics = json.loads(metrics_path.read_text())
-              assert prov['fraction'] == frac
-              assert prov['n_adaptation_images'] == n
-              assert (prov['seed'], prov['epochs']) == (42, 20)
+              assert float(prov['fraction']) == frac
+              assert int(prov['n_adaptation_images']) == n
+              assert (int(prov['seed']), int(prov['epochs'])) == (42, 20)
               assert metrics['n_images'] == 10
               assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1'))
               assert prov['s_biad634_used_for_adaptation'] is False
               assert prov['test_images_used_for_adaptation'] is False
               assert prov['development_images_used_for_training_or_selection'] is False
+              assert prov.get('activation_checkpointing') is True
               digest = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
               assert digest == prov['test_metrics_sha256']
               assert prov['dataset_archive_sha256']
