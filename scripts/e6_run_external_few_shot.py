@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import random
 import subprocess
 import sys
@@ -63,6 +64,7 @@ def main() -> None:
     rng.shuffle(shuffled)
     fractions = (a.fraction,) if a.fraction is not None else FRACTIONS
     results = []
+    activation_checkpoint = os.environ.get("BIONUCLEI_ACTIVATION_CHECKPOINT", "0") == "1"
 
     for frac in fractions:
         n = max(1, math.ceil(len(train) * frac))
@@ -108,6 +110,8 @@ def main() -> None:
             "n_test_images": len(test),
             "seed": SEED,
             "epochs": EPOCHS,
+            "activation_checkpointing": activation_checkpoint,
+            "activation_checkpointing_note": "memory-only execution path; BatchNorm running buffers are restored after checkpoint recomputation; protocol hyperparameters and batch composition are unchanged",
             "dataset_manifest_sha256": sha256(a.dataset_manifest),
             "dataset_archive_sha256": {k: v["sha256"] for k, v in meta["archives"].items()},
             "split_manifest_sha256": sha256(split_path),
@@ -131,5 +135,4 @@ def main() -> None:
     print(json.dumps(results, indent=2))
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
