@@ -1,0 +1,101 @@
+name: E6 aggregate repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e6_aggregate_repair.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  aggregate:
+    name: Rebuild E6 aggregate from verified fraction artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download exact verified fraction artifacts
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 10048904584,10049300074,10055510835,10051231349
+          path: outputs/e6_fraction_evidence
+          merge-multiple: false
+          repository: BurhanAbdullah/BioNuclei-DomainRobust
+          run-id: 34208190019
+
+      - name: Aggregate and cross-check E6 evidence
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+
+          root = pathlib.Path('outputs/e6_fraction_evidence')
+          expected = {
+              0.01: ('01pct', 1),
+              0.05: ('05pct', 2),
+              0.10: ('10pct', 3),
+              0.25: ('25pct', 8),
+          }
+          found = {}
+          for prov_path in root.glob('**/provenance.json'):
+              prov = json.loads(prov_path.read_text())
+              frac = float(prov.get('fraction'))
+              if frac in expected:
+                  if frac in found:
+                      raise AssertionError(f'duplicate evidence for fraction {frac}: {prov_path} and {found[frac]}')
+                  found[frac] = prov_path
+
+          assert set(found) == set(expected), f'missing fractions: {set(expected)-set(found)}'
+          rows = []
+          for frac, (label, n) in sorted(expected.items()):
+              prov_path = found[frac]
+              run = prov_path.parent
+              metrics_path = run / 'evaluation' / 'test_metrics.json'
+              assert metrics_path.is_file(), metrics_path
+              prov = json.loads(prov_path.read_text())
+              metrics = json.loads(metrics_path.read_text())
+              assert prov['fraction'] == frac
+              assert prov['n_adaptation_images'] == n
+              assert (prov['seed'], prov['epochs']) == (42, 20)
+              assert metrics['n_images'] == 10
+              assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1'))
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              assert prov['development_images_used_for_training_or_selection'] is False
+              digest = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+              assert digest == prov['test_metrics_sha256']
+              assert prov['dataset_archive_sha256']
+              assert prov['train_command'] and prov['evaluation_command']
+              rows.append({
+                  'label': label,
+                  'fraction': frac,
+                  'n_adaptation_images': n,
+                  'mean': metrics['mean'],
+                  'metrics_sha256': digest,
+                  'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest(),
+              })
+
+          out = pathlib.Path('outputs/e6_external_few_shot_final')
+          out.mkdir(parents=True, exist_ok=True)
+          result = {
+              'protocol': 'E6_cross_dataset_few_shot',
+              'source_run_id': 34208190019,
+              'fractions': rows,
+              'all_four_fractions_verified': True,
+          }
+          (out / 'aggregate_results.json').write_text(json.dumps(result, indent=2) + '\n')
+          print('E6 aggregate evidence cross-check: PASS')
+          PY
+
+      - name: Upload repaired final E6 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-external-few-shot-repaired-${{ github.run_id }}
+          path: outputs/e6_external_few_shot_final/**
+          if-no-files-found: error
+          retention-days: 30
