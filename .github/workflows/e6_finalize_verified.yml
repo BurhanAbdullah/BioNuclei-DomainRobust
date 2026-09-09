@@ -3,8 +3,7 @@ name: E6 finalize verified evidence
 # Finalizes E6 without retraining. It is deliberately pinned to the four
 # standardized fraction artifacts from run 34208190019 so the official
 # aggregate cannot accidentally consume the earlier 25% recovery artifact.
-# This no-op comment update intentionally retriggers finalization so downstream
-# workflow_run analysis can consume the already-retained verified artifacts.
+# This harmless update retriggers the verified E6 -> uncertainty -> clean-env chain.
 on:
   push:
     branches: [main]
