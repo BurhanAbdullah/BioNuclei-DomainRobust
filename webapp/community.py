@@ -20,7 +20,9 @@ import numpy as np
 import pandas as pd
 import tifffile
 
+from bionuclei.adaptive_agent import build_plan, to_dict
 from bionuclei.inference import predict
+from bionuclei.report import build_report
 from .app import _checkpoint
 
 JOB_ROOT = Path(os.getenv("BIONUCLEI_JOB_DIR", "/tmp/bionuclei-community-jobs")).expanduser()
@@ -228,11 +230,19 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
     root = _job_dir(job_id)
     output = root / "results"
     try:
-        _set_job(job_id, status="running")
+        _set_job(job_id, status="planning")
         checkpoint = _checkpoint()
         raw = image_path.read_bytes()
         input_sha256 = hashlib.sha256(raw).hexdigest()
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
+
+        plan = build_plan(inference_input, analysis_modules)
+        (output).mkdir(parents=True, exist_ok=True)
+        (output / "adaptive_plan.json").write_text(json.dumps(to_dict(plan), indent=2) + "\n")
+        if plan.status == "BLOCKED":
+            raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
+
+        _set_job(job_id, status="running")
         result = predict(inference_input, checkpoint, output, device="cpu")
         report_summary = _extended_reports(inference_input, output, analysis_modules)
         result.update({
@@ -243,9 +253,17 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             "source_filename": original_name,
             "input_metadata": input_metadata,
             "reports": report_summary,
+            "adaptive_plan": to_dict(plan),
+            "model": {
+                "architecture": "Boundary U-Net",
+                "prediction_target": ["background", "nuclear interior", "nuclear boundary"],
+                "training_reference": "BBBC039v1",
+                "weights_updated_during_analysis": False,
+            },
         })
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
         (output / "community_input.json").write_text(json.dumps({"source_filename": original_name, "source_sha256": input_sha256, **input_metadata}, indent=2) + "\n")
+        build_report(result, output)
         metadata = {"original_filename": original_name, "algorithm_profile": algorithm_profile, "analysis_modules": sorted(analysis_modules), "checkpoint_configured": True, "input_metadata": input_metadata}
         if research_consent:
             _save_research_copy(job_id, image_path, input_sha256, metadata)
@@ -302,7 +320,7 @@ def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
 
 
 def get_file(job_id: str, user_id: str, filename: str) -> Path:
-    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json", "community_input.json", "nuclei_analysis.csv", "nuclei_report.json", "morphology_report.json", "intensity_report.json"}
+    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json", "community_input.json", "nuclei_analysis.csv", "nuclei_report.json", "morphology_report.json", "intensity_report.json", "adaptive_plan.json", "analysis_report.json", "analysis_report.html"}
     if filename not in allowed:
         raise ValueError("File is not a downloadable BioNuclei result")
     row = _get_job(job_id, user_id)
