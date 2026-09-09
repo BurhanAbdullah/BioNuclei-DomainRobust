@@ -1,0 +1,10 @@
+{
+  "command": "predict",
+  "input": "/path/to/my_fluorescence_image.tif",
+  "checkpoint": "/path/to/model.pt",
+  "device": "cpu",
+  "package": "bionuclei-domainrobust",
+  "python": "3.12.x",
+  "timestamp_utc": "2026-09-09T00:00:00+00:00",
+  "notes": "Illustrative provenance schema only; not a benchmark provenance record."
+}
