@@ -1,10 +1,12 @@
 """BioMCP server exposing deterministic BioNuclei operations.
 
 The MCP layer orchestrates validated scientific Python functions; it is not a
-measurement engine. Every mutating/computational tool returns structured output
-and the underlying BioNuclei functions write their normal artifacts.
+measurement engine. Every computational tool returns structured output and the
+underlying BioNuclei functions write their normal artifacts.
 
-The MCP SDK is an optional dependency. Install with ``pip install -e '.[mcp]'``.
+The MCP SDK is optional. Install with ``pip install -e '.[mcp]'``.
+The module-level ``mcp`` object is provided when the optional SDK is installed,
+so MCP hosts/Inspector can load this file directly.
 """
 from __future__ import annotations
 
@@ -12,21 +14,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import tifffile
+from scipy import ndimage
+
 try:
     from mcp.server import MCPServer
-except ImportError as exc:  # pragma: no cover - exercised only without optional dep
+except ImportError as exc:  # pragma: no cover
     MCPServer = None  # type: ignore[assignment,misc]
     _IMPORT_ERROR = exc
 else:
     _IMPORT_ERROR = None
 
+from .data import decode_instance_mask
 from .inference import evaluate, predict
 from .metrics import aji_score, boundary_f1, dice_coefficient, iou_score
-from .data import decode_instance_mask
-import numpy as np
-import tifffile
-from scipy import ndimage
-
 
 SERVER_NAME = "BioMCP-BioNuclei"
 
@@ -41,10 +43,11 @@ def _require_sdk() -> Any:
 
 
 def build_server() -> Any:
+    """Construct a fresh MCP server with the BioNuclei tool/resource registry."""
     Server = _require_sdk()
-    mcp = Server(SERVER_NAME)
+    server = Server(SERVER_NAME)
 
-    @mcp.tool()
+    @server.tool()
     def inspect_image(input_path: str) -> dict[str, Any]:
         """Inspect a 2-D fluorescence TIFF without running a model."""
         path = Path(input_path).expanduser().resolve()
@@ -63,21 +66,21 @@ def build_server() -> Any:
             "p99_5": float(np.percentile(image, 99.5)),
         }
 
-    @mcp.tool()
+    @server.tool()
     def predict_image(input_path: str, checkpoint: str, output_dir: str, device: str = "cpu") -> dict[str, Any]:
-        """Run deterministic BioNuclei inference and return the result bundle."""
+        """Run deterministic BioNuclei inference and return its structured result bundle."""
         if device not in {"cpu", "cuda"}:
             raise ValueError("device must be 'cpu' or 'cuda'")
         return predict(Path(input_path), Path(checkpoint), Path(output_dir), device)
 
-    @mcp.tool()
+    @server.tool()
     def evaluate_image(input_path: str, ground_truth: str, checkpoint: str, output_dir: str, device: str = "cpu") -> dict[str, Any]:
-        """Run deterministic BioNuclei inference plus Dice, IoU and Boundary-F1."""
+        """Run BioNuclei inference plus Dice, IoU and Boundary-F1."""
         if device not in {"cpu", "cuda"}:
             raise ValueError("device must be 'cpu' or 'cuda'")
         return evaluate(Path(input_path), Path(ground_truth), Path(checkpoint), Path(output_dir), device)
 
-    @mcp.tool()
+    @server.tool()
     def compute_instance_metrics(prediction_mask: str, ground_truth_mask: str) -> dict[str, float]:
         """Compute Dice, IoU, AJI and Boundary-F1 from integer instance masks."""
         pred = np.asarray(tifffile.imread(Path(prediction_mask).expanduser()))
@@ -93,7 +96,7 @@ def build_server() -> Any:
             "boundary_f1": boundary_f1(pred_boundary, target_boundary),
         }
 
-    @mcp.tool()
+    @server.tool()
     def read_provenance(provenance_path: str) -> dict[str, Any]:
         """Read a machine-readable BioNuclei provenance record."""
         path = Path(provenance_path).expanduser().resolve()
@@ -101,7 +104,7 @@ def build_server() -> Any:
             raise FileNotFoundError(path)
         return json.loads(path.read_text())
 
-    @mcp.tool()
+    @server.tool()
     def load_result_summary(results_path: str) -> dict[str, Any]:
         """Read a structured BioNuclei results.json file."""
         path = Path(results_path).expanduser().resolve()
@@ -109,24 +112,29 @@ def build_server() -> Any:
             raise FileNotFoundError(path)
         return json.loads(path.read_text())
 
-    @mcp.resource("bionuclei://protocol")
+    @server.resource("bionuclei://protocol")
     def protocol_resource() -> str:
-        """Expose the local scientific protocol as a read-only MCP resource."""
+        """Expose the research protocol as a read-only resource."""
         path = Path("docs/RESEARCH_PROTOCOL.md")
-        return path.read_text() if path.is_file() else "Research protocol is not available in this working tree."
+        return path.read_text() if path.is_file() else "Research protocol is unavailable in this working tree."
 
-    @mcp.resource("bionuclei://datasets")
+    @server.resource("bionuclei://datasets")
     def datasets_resource() -> str:
         """Expose dataset roles and provenance guidance as a read-only resource."""
         path = Path("docs/DATASETS.md")
-        return path.read_text() if path.is_file() else "Dataset documentation is not available in this working tree."
+        return path.read_text() if path.is_file() else "Dataset documentation is unavailable in this working tree."
 
-    return mcp
+    return server
+
+
+# MCP hosts commonly load a module-level object. Keep it optional so the base
+# BioNuclei package remains installable without the MCP dependency.
+mcp = build_server() if MCPServer is not None else None
 
 
 def main() -> None:
-    server = build_server()
-    server.run()
+    """Run the MCP server over stdio by default."""
+    build_server().run()
 
 
 if __name__ == "__main__":
