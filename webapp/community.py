@@ -1,8 +1,7 @@
 """Public community-analysis job service for BioNuclei.
 
 This module orchestrates the existing deterministic BioNuclei inference/measurement
-code. It deliberately does not invent scientific metrics or train models in the
-request handler. User-image retention is opt-in and separately namespaced.
+code. User-image retention is explicit opt-in and separately namespaced.
 """
 from __future__ import annotations
 
@@ -11,7 +10,6 @@ import json
 import os
 import shutil
 import sqlite3
-import tempfile
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -27,7 +25,6 @@ JOB_ROOT.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 DEFAULT_RESULT_RETENTION_HOURS = int(os.getenv("BIONUCLEI_RESULT_RETENTION_HOURS", "24"))
 DEFAULT_RESEARCH_RETENTION_DAYS = int(os.getenv("BIONUCLEI_RESEARCH_RETENTION_DAYS", "90"))
-
 DB_LOCK = threading.Lock()
 
 
@@ -101,6 +98,18 @@ def _save_research_copy(job_id: str, input_path: Path, input_sha256: str, metada
     }, indent=2) + "\n")
 
 
+def delete_research_copy(job_id: str) -> bool:
+    destination = JOB_ROOT / "research_contributions" / job_id
+    row = _get_job(job_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    if not destination.exists():
+        return False
+    shutil.rmtree(destination, ignore_errors=True)
+    _set_job(job_id, retained_copy=0, research_consent=0)
+    return True
+
+
 def _run(job_id: str, image_path: Path, original_name: str, research_consent: bool, algorithm_profile: str) -> None:
     root = _job_dir(job_id)
     output = root / "results"
@@ -110,9 +119,11 @@ def _run(job_id: str, image_path: Path, original_name: str, research_consent: bo
         raw = image_path.read_bytes()
         input_sha256 = hashlib.sha256(raw).hexdigest()
         result = predict(image_path, checkpoint, output, device="cpu")
-        result["analysis_profile"] = algorithm_profile
-        result["scientific_execution"] = True
-        result["input_sha256"] = input_sha256
+        result.update({
+            "analysis_profile": algorithm_profile,
+            "scientific_execution": True,
+            "input_sha256": input_sha256,
+        })
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
         metadata = {
             "original_filename": original_name,
@@ -121,7 +132,7 @@ def _run(job_id: str, image_path: Path, original_name: str, research_consent: bo
         }
         if research_consent:
             _save_research_copy(job_id, image_path, input_sha256, metadata)
-        archive = _archive(job_id)
+        _archive(job_id)
         expiry = _now() + timedelta(days=DEFAULT_RESEARCH_RETENTION_DAYS if research_consent else 1)
         _set_job(
             job_id,
@@ -132,7 +143,7 @@ def _run(job_id: str, image_path: Path, original_name: str, research_consent: bo
             result_json=json.dumps(result),
             retained_copy=int(research_consent),
         )
-    except Exception as exc:  # noqa: BLE001 - job state must record any worker failure
+    except Exception as exc:  # noqa: BLE001 - worker must preserve failure state
         _set_job(job_id, status="failed", error=f"{type(exc).__name__}: {exc}")
     finally:
         image_path.unlink(missing_ok=True)
@@ -141,10 +152,8 @@ def _run(job_id: str, image_path: Path, original_name: str, research_consent: bo
 def create_job(data: bytes, original_name: str, research_consent: bool, algorithm_profile: str) -> str:
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
-    if algorithm_profile not in {"auto", "nucleus-segmentation", "morphology-ready"}:
+    if algorithm_profile not in {"auto", "nucleus-segmentation"}:
         raise ValueError("Unsupported analysis profile")
-    if not research_consent and os.getenv("BIONUCLEI_REQUIRE_RESEARCH_CONSENT", "true").lower() == "true":
-        pass
     job_id = uuid.uuid4().hex
     root = _job_dir(job_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -157,8 +166,7 @@ def create_job(data: bytes, original_name: str, research_consent: bool, algorith
             (job_id, "queued", _now().isoformat(), _now().isoformat(), expires.isoformat(), original_name, 0, int(research_consent), algorithm_profile),
         )
         conn.commit()
-    thread = threading.Thread(target=_run, args=(job_id, input_path, original_name, research_consent, algorithm_profile), daemon=True)
-    thread.start()
+    threading.Thread(target=_run, args=(job_id, input_path, original_name, research_consent, algorithm_profile), daemon=True).start()
     return job_id
 
 
@@ -174,12 +182,12 @@ def serialize(row: sqlite3.Row) -> dict[str, object]:
         "input_sha256": row["input_sha256"],
         "research_consent": bool(row["research_consent"]),
         "retained_copy": bool(row["retained_copy"]),
-        "analysis_profile": row["algorithm_profile"],
+        "algorithm_profile": row["algorithm_profile"],
         "result": result,
         "error": row["error"],
         "downloads": {
-            "zip": f"/community/jobs/{row['id']}/download",
-            "results": f"/community/jobs/{row['id']}/files/results.json",
+            "zip": f"/jobs/{row['id']}/download",
+            "results": f"/jobs/{row['id']}/files/results.json",
         } if row["status"] == "completed" else {},
     }
 
