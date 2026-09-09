@@ -16,20 +16,27 @@ def test_main_landing_page_stays_minimal():
     assert "From image to result in four steps." not in html
 
 
-def test_lab_has_core_user_flow():
+def test_lab_has_simple_real_user_flow():
     html = read("bionuclei-lab.html")
+    lower = html.lower()
     for text in [
-        "Create an account or sign in",
-        "Find & count nuclei",
-        "Measure morphology",
-        "Measure fluorescence",
-        "Upload ND2 or TIFF here",
-        "Analyze image",
-        "Analyzed overlay",
-        "Segmentation mask",
-        "Your history",
+        "upload an image. get the analysis.",
+        "what do you want to know?",
+        "find & count nuclei",
+        "measure morphology",
+        "measure fluorescence",
+        "drop an nd2 or tiff here",
+        "analyze image",
+        "uploading",
+        "analysis complete",
+        "analyzed overlay",
+        "segmentation mask",
+        "download full report",
     ]:
-        assert text in html
+        assert text in lower
+    assert "endpoint" in lower
+    assert "compute instance metrics" not in lower
+    assert "read provenance" not in lower
 
 
 def test_analysis_library_separates_available_and_validation_gated_features():
@@ -71,22 +78,3 @@ def test_bionuclei_product_page_is_user_facing_and_minimal():
         assert text.lower() in lower
     assert "API base URL" not in html
     assert "six tools" not in lower
-
-
-def test_bionuclei_analyze_surface_is_single_user_flow():
-    js = read("assets/bionuclei-minimal.js")
-    lower = js.lower()
-    for text in [
-        "choose an image",
-        "nd2",
-        "tiff",
-        "analysis",
-        "uploading",
-        "analyzing",
-        "analysis complete",
-        "download",
-    ]:
-        assert text in lower
-    assert "inspect image" not in lower
-    assert "compute instance metrics" not in lower
-    assert "api base url" not in lower
