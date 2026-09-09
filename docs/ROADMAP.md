@@ -1,6 +1,25 @@
 # BioMCP Roadmap
 
-This roadmap turns the BioMCP manifesto into an executable research programme. The repository should advance from a validated BioNuclei scientific substrate to a reusable agent-accessible bioimaging ecosystem.
+This roadmap turns the BioMCP manifesto into an executable research programme. BioNuclei is the validated scientific substrate; BioMCP is the interoperability layer that lets humans and agents invoke deterministic scientific operations without replacing them with language-model reasoning.
+
+## Current state — Stage 1 in implementation
+
+The repository now contains an executable BioMCP MCP server (`src/bionuclei/mcp_server.py`), an HTTP adapter (`webapp/app.py`), a browser console (`docs/use.html`) and CI smoke tests for the MCP/web surface.
+
+The implemented public tool surface currently includes:
+
+1. `inspect_image` — image shape, dtype and intensity statistics;
+2. `predict_image` — deterministic BioNuclei inference and result bundle;
+3. `evaluate_image` — inference plus package-level evaluation metrics;
+4. `compute_instance_metrics` — Dice, IoU, AJI and Boundary-F1 from instance masks;
+5. `read_provenance` — machine-readable execution provenance;
+6. `load_result_summary` — structured result inspection.
+
+The MCP server exposes the research protocol and dataset documentation as read-only resources. A FastAPI deployment can expose the same computational tools over HTTPS for the browser console and other clients.
+
+The remaining research-only capabilities—authoritative dataset acquisition, registered E6/E7 experiments, domain-shift diagnostics, release-gate workflows and benchmark validation—remain controlled repository workflows. They are intentionally not exposed as arbitrary public execution endpoints.
+
+**Stage 1 exit condition:** every registered operation is callable without an LLM, has explicit input/output/error semantics, and returns or references enough structured evidence to audit the operation. The current six-tool MVP is implemented; security, deployment and broader tool-family validation remain open until verified.
 
 ## Stage 0 — Scientific foundation
 
@@ -9,7 +28,7 @@ This roadmap turns the BioMCP manifesto into an executable research programme. T
 - maintain leakage-controlled BioNuclei experiments;
 - freeze dataset roles and evaluation rules before final claims;
 - preserve manifests, configurations, checkpoints and artifacts;
-- complete the planned robustness, ablation, adaptation and external-validation gates;
+- complete robustness, ablation, adaptation and external-validation gates;
 - document failure modes and limitations.
 
 **Exit condition:** scientific operations used by future tools are independently reproducible and auditable.
@@ -18,19 +37,16 @@ This roadmap turns the BioMCP manifesto into an executable research programme. T
 
 **Purpose:** turn existing BioNuclei capabilities into explicit machine-readable operations.
 
-Initial tool families:
+Next expansions beyond the current MVP:
 
-1. dataset discovery and verification;
-2. image inspection and preprocessing;
-3. model loading and inference;
-4. segmentation metrics;
-5. domain-shift diagnostics;
-6. provenance and artifact inspection;
-7. experiment execution and validation.
+- dataset discovery and verification contracts;
+- richer image inspection/preprocessing operations;
+- model registry and checkpoint identity;
+- domain-shift diagnostic tools;
+- provenance/artifact search and verification;
+- controlled experiment-validation adapters.
 
-Each tool requires input/output schemas, validation, error semantics and provenance requirements.
-
-**Exit condition:** a human can execute every registered operation without an LLM, and the resulting artifact is sufficient to audit the operation.
+Each tool requires input/output schemas, validation, error semantics, security constraints and provenance requirements.
 
 ## Stage 2 — BioWF
 
@@ -49,36 +65,17 @@ Each tool requires input/output schemas, validation, error semantics and provena
 
 **Purpose:** encode scientific procedures around the tools.
 
-Examples include:
+Examples include microscopy quality control, segmentation evaluation, domain-shift diagnosis, baseline comparison, statistical reporting, provenance validation and failure triage.
 
-- microscopy quality control;
-- segmentation evaluation protocol;
-- domain-shift diagnosis;
-- baseline comparison;
-- statistical reporting;
-- provenance validation;
-- failure triage.
-
-Skills must state prerequisites and interpretation boundaries. They should guide tool use, not replace computation.
-
-**Exit condition:** common bioimaging tasks have reusable, testable procedures with explicit validation requirements.
+Skills must state prerequisites and interpretation boundaries. They guide tool use; they do not replace computation.
 
 ## Stage 4 — Agent integration
 
 **Purpose:** allow an AI agent to use BioMCP safely.
 
-The agent should:
+The agent should inspect tools, plan a task, request only valid operations, pass structured arguments, observe tool outputs, recover from explicit failures, maintain provenance and produce evidence-linked explanations.
 
-- inspect available tools;
-- plan a task;
-- request only valid operations;
-- pass structured arguments;
-- observe tool outputs;
-- recover from explicit failures;
-- maintain provenance;
-- produce evidence-linked explanations.
-
-**Exit condition:** benchmarked agent execution meets pre-registered reliability thresholds on both valid and invalid scientific tasks.
+**Exit condition:** benchmarked agent execution meets preregistered reliability thresholds on valid and invalid scientific tasks.
 
 ## Stage 5 — BioFM integration
 
@@ -90,19 +87,17 @@ The agent should:
 - evaluate robustness across datasets;
 - preserve model/checkpoint identity in outputs.
 
-**Exit condition:** models can be swapped or compared without changing the surrounding workflow contract.
-
 ## Stage 6 — Broader bioimaging ecosystem
 
 After the core system is validated, expand toward additional open tools and datasets for visualization, segmentation, tracking, quantification, spatial analysis and multimodal imaging.
 
-Integration should be evidence-driven: each connector needs a tested contract, provenance behaviour and failure semantics.
+Each connector needs a tested contract, provenance behaviour, security boundary and failure semantics.
 
 ## Stage 7 — Scientific memory
 
 A later direction is persistent scientific memory: reusable records of validated workflows, datasets, models, prior analyses, failures and evidence.
 
-Memory should never become an unverified source of scientific truth. Stored knowledge must retain provenance and validation state.
+Stored knowledge must retain provenance and validation state and must never become an unverified source of scientific truth.
 
 ## Cross-cutting release gates
 
@@ -119,4 +114,4 @@ No stage is considered complete merely because a demo works. Each stage should s
 
 ## Identity
 
-The repository remains named **BioNuclei-DomainRobust** during this transition. Renaming is intentionally deferred until the BioMCP implementation has enough substance to justify the broader identity.
+The repository remains named **BioNuclei-DomainRobust** during this transition. A broader BioMCP identity should only be adopted when the implementation, deployment and validation are substantive enough to justify it.
