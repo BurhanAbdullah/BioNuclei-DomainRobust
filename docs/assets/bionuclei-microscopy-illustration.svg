@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic fluorescence microscopy illustration for BioNuclei</title>
+  <desc id="desc">A dark fluorescence-style field containing bright nuclei and magenta instance boundaries. This is a synthetic illustration, not benchmark data.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="75%"><stop offset="0" stop-color="#1b2c39"/><stop offset="0.55" stop-color="#0e1821"/><stop offset="1" stop-color="#081018"/></radialGradient>
+    <radialGradient id="n1"><stop offset="0" stop-color="#f4fbff" stop-opacity="0.98"/><stop offset="0.28" stop-color="#9bd9f0" stop-opacity="0.95"/><stop offset="0.72" stop-color="#527c99" stop-opacity="0.72"/><stop offset="1" stop-color="#2a4354" stop-opacity="0"/></radialGradient>
+    <radialGradient id="n2"><stop offset="0" stop-color="#fff5fb" stop-opacity="0.98"/><stop offset="0.3" stop-color="#e3a9cd" stop-opacity="0.92"/><stop offset="0.72" stop-color="#7d4f73" stop-opacity="0.64"/><stop offset="1" stop-color="#351f33" stop-opacity="0"/></radialGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="13"/></filter>
+    <filter id="glow"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1400" height="820" fill="url(#bg)"/>
+  <g opacity="0.28" filter="url(#blur)" fill="#79a5bd">
+    <ellipse cx="160" cy="170" rx="120" ry="86"/><ellipse cx="430" cy="320" rx="150" ry="90"/><ellipse cx="820" cy="160" rx="150" ry="105"/><ellipse cx="1170" cy="260" rx="170" ry="110"/><ellipse cx="1030" cy="610" rx="155" ry="105"/>
+  </g>
+  <g stroke="#d61c72" stroke-width="4" fill="none" opacity="0.9">
+    <ellipse cx="185" cy="145" rx="76" ry="58"/><ellipse cx="392" cy="205" rx="62" ry="82"/><ellipse cx="595" cy="152" rx="88" ry="62"/><ellipse cx="816" cy="258" rx="71" ry="96"/><ellipse cx="1088" cy="177" rx="92" ry="68"/><ellipse cx="1237" cy="358" rx="70" ry="53"/><ellipse cx="264" cy="440" rx="96" ry="72"/><ellipse cx="505" cy="408" rx="70" ry="92"/><ellipse cx="716" cy="505" rx="105" ry="72"/><ellipse cx="1002" cy="434" rx="78" ry="99"/><ellipse cx="1182" cy="585" rx="98" ry="75"/><ellipse cx="360" cy="680" rx="80" ry="55"/><ellipse cx="645" cy="693" rx="68" ry="86"/><ellipse cx="910" cy="702" rx="92" ry="62"/>
+  </g>
+  <g opacity="0.95" filter="url(#glow)">
+    <ellipse cx="185" cy="145" rx="58" ry="44" fill="url(#n1)"/><ellipse cx="392" cy="205" rx="45" ry="61" fill="url(#n2)"/><ellipse cx="595" cy="152" rx="67" ry="46" fill="url(#n1)"/><ellipse cx="816" cy="258" rx="52" ry="72" fill="url(#n2)"/><ellipse cx="1088" cy="177" rx="69" ry="50" fill="url(#n1)"/><ellipse cx="1237" cy="358" rx="53" ry="39" fill="url(#n2)"/><ellipse cx="264" cy="440" rx="72" ry="55" fill="url(#n1)"/><ellipse cx="505" cy="408" rx="52" ry="70" fill="url(#n2)"/><ellipse cx="716" cy="505" rx="79" ry="54" fill="url(#n1)"/><ellipse cx="1002" cy="434" rx="59" ry="77" fill="url(#n2)"/><ellipse cx="1182" cy="585" rx="73" ry="55" fill="url(#n1)"/><ellipse cx="360" cy="680" rx="59" ry="41" fill="url(#n2)"/><ellipse cx="645" cy="693" rx="51" ry="65" fill="url(#n1)"/><ellipse cx="910" cy="702" rx="68" ry="46" fill="url(#n2)"/>
+  </g>
+  <g fill="#ffffff" opacity="0.55">
+    <circle cx="150" cy="335" r="3"/><circle cx="336" cy="92" r="4"/><circle cx="548" cy="286" r="3"/><circle cx="760" cy="90" r="4"/><circle cx="967" cy="302" r="3"/><circle cx="1310" cy="185" r="4"/><circle cx="1260" cy="500" r="3"/><circle cx="177" cy="610" r="4"/><circle cx="555" cy="590" r="3"/><circle cx="850" cy="620" r="4"/>
+  </g>
+  <rect x="42" y="42" width="270" height="54" rx="27" fill="#09131c" fill-opacity="0.88" stroke="#d9e3ea" stroke-opacity="0.24"/>
+  <text x="75" y="77" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="700">SYNTHETIC ILLUSTRATION</text>
+  <rect x="1030" y="730" width="320" height="46" rx="23" fill="#09131c" fill-opacity="0.88" stroke="#d61c72" stroke-opacity="0.55"/>
+  <circle cx="1062" cy="753" r="7" fill="#d61c72"/><text x="1083" y="761" fill="#f3d8e6" font-family="Inter,Arial,sans-serif" font-size="18">instance boundary concept</text>
+</svg>
