@@ -1,107 +1,21 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Use BioNuclei | Interactive Bioimaging Tool</title>
-<meta name="description" content="Use BioNuclei to inspect fluorescence images, run segmentation, evaluate predictions, compute metrics and inspect provenance.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0; url=bionuclei-lab.html">
+<title>BioNuclei Lab</title>
+<meta name="description" content="Open the BioNuclei image-analysis lab.">
+<link rel="canonical" href="bionuclei-lab.html">
 <style>
-:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#14202b;background:#f6f8fb}body{margin:0}main{max-width:1180px;margin:0 auto;padding:38px 22px 90px}.hero{padding:40px;border-radius:24px;background:#12202b;color:white}.eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:12px;opacity:.72}.hero h1{font-size:clamp(38px,7vw,68px);line-height:1;margin:10px 0 14px}.hero p{max-width:800px;font-size:18px;line-height:1.6;opacity:.9}.panel{margin-top:22px;padding:24px;border:1px solid #dde4ea;border-radius:18px;background:white;box-shadow:0 8px 30px rgba(20,32,43,.06)}h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.field{display:flex;flex-direction:column;gap:7px}.field label{font-weight:700;font-size:13px}.field input,.field textarea,.field select{border:1px solid #cfd8e0;border-radius:10px;padding:11px 12px;font:inherit;background:white}.buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.btn{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:pointer;background:#14202b;color:#fff}.btn.alt{background:#eef2f5;color:#14202b}.status{padding:10px 12px;border-radius:10px;background:#eef2f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-word}.result{white-space:pre-wrap;background:#0b1117;color:#e6edf3;border-radius:12px;padding:16px;min-height:120px;overflow:auto}.tool{border:1px solid #e0e6eb;border-radius:14px;padding:16px}.tool strong{display:block;margin-bottom:7px}.muted{color:#61707d}.warning{border-left:4px solid #d08a00;padding:12px 14px;background:#fff7e5;border-radius:8px}.ok{border-left:4px solid #198754;padding:12px 14px;background:#edf9f1;border-radius:8px}.small{font-size:13px;line-height:1.55}.nav{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}.nav a{color:#14202b;font-weight:700;text-decoration:none}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f9fb;color:#1e1e1e;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{max-width:560px;margin:24px;padding:32px;background:#fff;border:1px solid #d7d2cb;border-radius:16px;text-align:center}.card h1{margin:0 0 10px;font-size:32px}.card p{color:#667580;line-height:1.6}.card a{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:8px;background:#a51c30;color:#fff;text-decoration:none;font-weight:700}
 </style>
 </head>
 <body>
-<main>
-<div class="nav"><a href="index.html">Home</a><a href="bionuclei.html">BioNuclei</a><a href="results.html">Verified results</a><a href="../README.md">README</a><a href="USER_GUIDE.md">User guide</a></div>
-<section class="hero">
-<div class="eyebrow">BioNuclei • Interactive use</div>
-<h1>Use BioNuclei.</h1>
-<p>Inspect a fluorescence image, run nuclear instance segmentation, evaluate against ground truth, compute instance metrics, and inspect the resulting provenance. Scientific computation remains in the BioNuclei Python package.</p>
-</section>
-
-<section class="panel ok">
-<strong>What this page is.</strong>
-<p class="small">This is the BioNuclei user interface. BioMCP is a separate optional interoperability layer. BioFM, BioWF and BioSkills are separate product/research directions and are not required to use BioNuclei.</p>
-</section>
-
-<section class="panel">
-<h2>Connect to a BioNuclei Web API</h2>
-<div class="grid">
-<div class="field"><label for="api">API base URL</label><input id="api" placeholder="https://your-bionuclei-api.example.com" autocomplete="url"></div>
-<div class="field"><label for="device">Inference device</label><select id="device"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></div>
-</div>
-<div class="buttons"><button class="btn" onclick="loadTools()">Check endpoint</button><span class="status" id="health">Not connected</span></div>
-<p class="small muted">The GitHub Pages site is static. Live PyTorch inference requires a separately deployed HTTPS backend. The repository includes <code>webapp/app.py</code> and <code>webapp/render.yaml</code> as deployment recipes.</p>
-</section>
-
-<section class="panel">
-<h2>Available BioNuclei operations</h2>
-<div class="grid" id="tools">
-<div class="tool"><strong>1 · Inspect image</strong><span class="muted">Dimensions, dtype and intensity statistics.</span></div>
-<div class="tool"><strong>2 · Predict</strong><span class="muted">Run the Boundary U-Net and return a structured prediction bundle.</span></div>
-<div class="tool"><strong>3 · Evaluate</strong><span class="muted">Run prediction plus Dice, IoU and Boundary-F1 against ground truth.</span></div>
-<div class="tool"><strong>4 · Compute instance metrics</strong><span class="muted">Compute Dice, IoU, AJI and Boundary-F1 directly from masks.</span></div>
-<div class="tool"><strong>5 · Read provenance</strong><span class="muted">Inspect machine-readable execution metadata.</span></div>
-<div class="tool"><strong>6 · Read result summary</strong><span class="muted">Inspect a structured <code>results.json</code> bundle.</span></div>
-</div>
-</section>
-
-<section class="panel">
-<h2>1 — Inspect an image</h2>
-<input type="file" id="inspectFile" accept=".tif,.tiff">
-<div class="buttons"><button class="btn" onclick="inspectImage()">Inspect image</button></div>
-<pre class="result" id="inspectResult"></pre>
-</section>
-
-<section class="panel">
-<h2>2 — Predict</h2>
-<input type="file" id="predictFile" accept=".tif,.tiff">
-<div class="buttons"><button class="btn" onclick="predictImage()">Run prediction</button></div>
-<pre class="result" id="predictResult"></pre>
-</section>
-
-<section class="panel">
-<h2>3 — Evaluate</h2>
-<div class="grid"><div class="field"><label>Fluorescence image</label><input type="file" id="evalImage" accept=".tif,.tiff"></div><div class="field"><label>Ground-truth mask</label><input type="file" id="evalGt" accept=".tif,.tiff,.png"></div></div>
-<div class="buttons"><button class="btn" onclick="evaluateImage()">Run evaluation</button></div>
-<pre class="result" id="evalResult"></pre>
-</section>
-
-<section class="panel">
-<h2>4 — Compute metrics</h2>
-<div class="grid"><div class="field"><label>Prediction instance mask</label><input type="file" id="predMask" accept=".tif,.tiff"></div><div class="field"><label>Ground-truth instance mask</label><input type="file" id="gtMask" accept=".tif,.tiff,.png"></div></div>
-<div class="buttons"><button class="btn" onclick="computeMetrics()">Compute metrics</button></div>
-<pre class="result" id="metricsResult"></pre>
-</section>
-
-<section class="panel">
-<h2>5 — Inspect provenance</h2>
-<input type="file" id="provFile" accept=".json">
-<div class="buttons"><button class="btn" onclick="readProvenance()">Read provenance</button></div>
-<pre class="result" id="provResult"></pre>
-</section>
-
-<section class="panel">
-<h2>6 — Read result summary</h2>
-<input type="file" id="resultFile" accept=".json">
-<div class="buttons"><button class="btn" onclick="readResultSummary()">Read results.json</button></div>
-<pre class="result" id="resultSummary"></pre>
-</section>
-
-<section class="panel warning">
-<strong>Scientific boundary</strong>
-<p class="small">The browser interface does not invent metrics, select benchmark test sets, change experiment protocols, upload arbitrary checkpoints, or execute arbitrary shell commands. Registered E6/E7 experiments and release validation remain controlled scientific workflows.</p>
-</section>
+<main class="card">
+<h1>BioNuclei Lab</h1>
+<p>The old developer console has been retired. Use the BioNuclei Lab for the normal image-analysis workflow.</p>
+<a href="bionuclei-lab.html">Open BioNuclei Lab →</a>
 </main>
-<script>
-const el=id=>document.getElementById(id); const base=()=>el('api').value.replace(/\/$/,'');
-async function call(path, options={}){const b=base(); if(!b) throw new Error('Enter an API base URL first'); const r=await fetch(b+path,options); const text=await r.text(); let data; try{data=JSON.parse(text)}catch{data={raw:text}} if(!r.ok) throw new Error(JSON.stringify(data)); return data;}
-async function loadTools(){try{const [h,t]=await Promise.all([call('/health'),call('/tools')]); el('health').textContent=JSON.stringify(h); el('tools').insertAdjacentHTML('afterbegin','<div class="tool"><strong>Connected</strong><span class="muted">'+t.tools.length+' implemented operations reported by the endpoint.</span></div>')}catch(e){el('health').textContent='ERROR: '+e.message}}
-function form(files, extra={}){const f=new FormData(); Object.entries(files).forEach(([k,v])=>f.append(k,v)); Object.entries(extra).forEach(([k,v])=>f.append(k,v)); return f}
-async function inspectImage(){try{const f=el('inspectFile').files[0]; if(!f) throw new Error('Choose an image'); el('inspectResult').textContent=JSON.stringify(await call('/inspect',{method:'POST',body:form({image:f})}),null,2)}catch(e){el('inspectResult').textContent='ERROR: '+e.message}}
-async function predictImage(){try{const f=el('predictFile').files[0]; if(!f) throw new Error('Choose an image'); el('predictResult').textContent=JSON.stringify(await call('/predict',{method:'POST',body:form({image:f},{device:el('device').value})}),null,2)}catch(e){el('predictResult').textContent='ERROR: '+e.message}}
-async function evaluateImage(){try{const i=el('evalImage').files[0], g=el('evalGt').files[0]; if(!i||!g) throw new Error('Choose both files'); el('evalResult').textContent=JSON.stringify(await call('/evaluate',{method:'POST',body:form({image:i,ground_truth:g},{device:el('device').value})}),null,2)}catch(e){el('evalResult').textContent='ERROR: '+e.message}}
-async function computeMetrics(){try{const p=el('predMask').files[0], g=el('gtMask').files[0]; if(!p||!g) throw new Error('Choose both masks'); el('metricsResult').textContent=JSON.stringify(await call('/metrics',{method:'POST',body:form({prediction:p,ground_truth:g})}),null,2)}catch(e){el('metricsResult').textContent='ERROR: '+e.message}}
-async function readProvenance(){try{const p=el('provFile').files[0]; if(!p) throw new Error('Choose a provenance JSON'); el('provResult').textContent=JSON.stringify(await call('/provenance',{method:'POST',body:form({provenance:p})}),null,2)}catch(e){el('provResult').textContent='ERROR: '+e.message}}
-async function readResultSummary(){try{const p=el('resultFile').files[0]; if(!p) throw new Error('Choose a results.json file'); el('resultSummary').textContent=JSON.stringify(await call('/result-summary',{method:'POST',body:form({results:p})}),null,2)}catch(e){el('resultSummary').textContent='ERROR: '+e.message}}
-</script>
 </body>
 </html>
