@@ -1,0 +1,126 @@
+name: Clean-environment reproduction
+
+# Reproduces the software/tests and regenerates the released descriptive
+# uncertainty/failure analysis from immutable retained E6/E7 evidence.
+on:
+  workflow_run:
+    workflows: ["E6 E7 uncertainty and failure analysis"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  reproduce:
+    name: Fresh environment reproduction
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up clean Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install project from pyproject
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Verify clean environment
+        run: |
+          python - <<'PY'
+          import json, platform, sys
+          import numpy, scipy, pandas, skimage, sklearn, tifffile, torch, torchvision, yaml, tqdm
+          print(json.dumps({
+              "python": sys.version,
+              "platform": platform.platform(),
+              "numpy": numpy.__version__,
+              "scipy": scipy.__version__,
+              "pandas": pandas.__version__,
+              "skimage": skimage.__version__,
+              "sklearn": sklearn.__version__,
+              "tifffile": tifffile.__version__,
+              "torch": torch.__version__,
+              "torchvision": torchvision.__version__,
+              "cuda_available": torch.cuda.is_available(),
+              "yaml": yaml.__version__,
+              "tqdm": tqdm.__version__,
+          }, indent=2))
+          assert not torch.cuda.is_available()
+          PY
+
+      - name: Run full test suite
+        run: pytest -q
+
+      - name: Compile research scripts
+        run: python -m compileall -q scripts src
+
+      - name: Download retained E6/E7 analysis evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10048904584/zip" > e6_01.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10049300074/zip" > e6_05.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10055510835/zip" > e6_10.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10051231349/zip" > e6_25.zip
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10088666629/zip" > e7.zip
+          unzip -q e6_01.zip -d evidence/e6_01
+          unzip -q e6_05.zip -d evidence/e6_05
+          unzip -q e6_10.zip -d evidence/e6_10
+          unzip -q e6_25.zip -d evidence/e6_25
+          unzip -q e7.zip -d evidence/e7
+
+      - name: Regenerate uncertainty/failure analysis
+        run: |
+          python scripts/analyze_e6_e7_uncertainty.py \
+            --e6 01pct evidence/e6_01/outputs/e6_external_few_shot/01pct/01pct/evaluation/test_metrics.json \
+            --e6 05pct evidence/e6_05/outputs/e6_external_few_shot/05pct/05pct/evaluation/test_metrics.json \
+            --e6 10pct evidence/e6_10/outputs/e6_external_few_shot/10pct/10pct/evaluation/test_metrics.json \
+            --e6 25pct evidence/e6_25/outputs/e6_external_few_shot/25pct/25pct/evaluation/test_metrics.json \
+            --e7 evidence/e7/outputs/e7_bbbc038/metrics.json \
+            --metadata <(printf '%s\n' '{"e6_source_run_id":34208190019,"e7_source_run_id":34311290928}') \
+            --out reproduced/e6_e7_uncertainty_failure_analysis.json \
+            --seed 42 \
+            --bootstrap-resamples 10000
+
+      - name: Cross-check regenerated artifact against retained analysis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10088937486/zip" > retained-analysis.zip
+          unzip -q retained-analysis.zip -d retained-analysis
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          reproduced=json.loads(Path('reproduced/e6_e7_uncertainty_failure_analysis.json').read_text())
+          retained=json.loads(Path('retained-analysis/e6_e7_uncertainty_failure_analysis.json').read_text())
+          assert reproduced['seed']==retained['seed']==42
+          assert reproduced['bootstrap_resamples']==retained['bootstrap_resamples']==10000
+          for label in ('01pct','05pct','10pct','25pct'):
+              for metric in ('dice','iou','aji','boundary_f1'):
+                  a=reproduced['e6'][label][metric]
+                  b=retained['e6'][label][metric]
+                  assert a['mean']==b['mean'] and a['median']==b['median'] and a['n']==b['n'], (label,metric,a,b)
+          for metric in ('dice','iou','aji','boundary_f1'):
+              a=reproduced['e7']['metrics'][metric]
+              b=retained['e7']['metrics'][metric]
+              assert a['mean']==b['mean'] and a['median']==b['median'] and a['n']==b['n'], metric
+          print('clean-environment evidence reproduction: PASS')
+          PY
+
+      - name: Upload clean reproduction evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-environment-reproduction-${{ github.run_id }}
+          path: reproduced/e6_e7_uncertainty_failure_analysis.json
+          if-no-files-found: error
+          retention-days: 90
