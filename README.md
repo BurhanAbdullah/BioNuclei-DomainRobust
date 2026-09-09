@@ -4,7 +4,7 @@
 
 BioNuclei-DomainRobust studies whether nuclear instance segmentation remains reliable when fluorescence microscopy data move beyond the domain used for model development. It combines executable image-analysis software, controlled experiments, dataset provenance, statistical evaluation, failure analysis and reproducibility checks.
 
-> **Scientific status:** active research. The software is locally testable, but the benchmark study is not declared scientifically complete until all scientific, reporting and reproducibility gates pass. Current instance-level evaluation is being audited before benchmark claims are finalized.
+> **Scientific status:** active research. E6 few-shot adaptation, E7 independent BBBC038 validation, E6/E7 uncertainty/failure analysis, and clean-environment reproduction are now backed by retained CI artifacts. The benchmark is **not declared scientifically complete or Release 1.0-ready**: the permanent checkpoint/package and remaining reporting/final-audit gates are still open.
 
 ## Quick start
 
@@ -102,6 +102,12 @@ Few-shot adaptation
         |
         v
 Independent external validation
+        |
+        v
+Uncertainty / failure analysis
+        |
+        v
+Clean-environment reproduction
 ```
 
 The order is intentional. The robustness intervention should be justified by measured failure mechanisms rather than selected only because an architecture appears promising.
@@ -146,15 +152,19 @@ Instance mask          Per-instance measurements
 
 ## Experiment phases
 
-| Phase | Purpose | Required evidence |
+| Phase | Purpose | Verified status |
 |---|---|---|
-| **E1** | Source-domain BBBC039 baseline | Declared split, reproducible training and held-out evaluation |
-| **E2** | Zero-shot target transfer | Frozen source model; no target fine-tuning |
-| **E3** | Domain-shift diagnosis | Quantitative mechanism/failure analysis |
-| **E4** | Robustness intervention | Complete target evaluation and provenance |
-| **E5** | Ablations and strong baselines | Controlled component and baseline comparisons |
-| **E6** | Few-shot adaptation | Predefined 1%, 5%, 10%, 25% protocol |
-| **E7** | Independent validation | External dataset after protocol freeze |
+| **E1** | Source-domain BBBC039 baseline | Verified baseline artifact retained |
+| **E2** | Zero-shot target transfer | Verified |
+| **E3** | Domain-shift diagnosis | Verified execution/profile; biological group claims remain restricted |
+| **E4** | Robustness intervention | Verified |
+| **E5** | Ablations and strong baselines | Verified aggregate integrity gate |
+| **E6** | Few-shot adaptation | **Verified aggregate** from finalizer run `34312833206`; standardized fractions from source run `34208190019` |
+| **E7** | Independent validation | **Verified PASS**, run `34312920549` on independent BBBC038 |
+| **Uncertainty/failure** | Image-level uncertainty and failure analysis | **Verified PASS**, run `34312853905`, artifact `10088988731` |
+| **Clean environment** | Clean-environment reproduction | **Verified PASS**, run `34312877852` |
+| **Permanent package** | Versioned checkpoint/release asset | **Open**; no GitHub Release currently exists |
+| **Final audit/reporting** | Complete scientific/reproducibility closure | **Open** |
 
 A phase is not considered scientifically complete merely because its code executes successfully. The evidence, protocol and reporting gates must also pass.
 
@@ -188,13 +198,15 @@ The project maintains failed-run records and anomalies instead of silently repla
 
 A green CI workflow demonstrates that the software workflow executed. It does **not** by itself establish scientific superiority.
 
-## Current release gate
+## Current verified release gate
 
-The final release checklist deliberately separates engineering readiness from scientific-result readiness. Current outstanding gates include the complete final experiment record, clean-environment reproduction, domain-shift diagnosis, method freeze, ablations, strong baselines, few-shot adaptation, independent validation, statistical/failure analysis, traceable reporting, literature audit and final reproducibility review.
+As of **2026-09-09**, the latest repository commit is `2dba10e614bc5efc9bc4de66994c7c920d6667cb`. The verified E6 finalizer run `34312833206` produced the machine-readable aggregate artifact `e6-external-few-shot-final-34312833206` (artifact `10088980217`, digest `sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34`). Its aggregate is explicitly pinned to the four standardized E6 fraction artifacts from source run `34208190019` and records immutable dataset/config/checkpoint provenance, seed 42, 20 epochs, activation checkpointing and fail-closed leakage checks.
 
-The current instance-level AJI evaluation is also being audited because an anomalous result must be resolved before it can support a scientific claim. Until the audit and any required reruns are complete, those values are treated as investigation evidence rather than publishable conclusions.
+E7 independent BBBC038 validation passed in run `34312920549`. The E6/E7 uncertainty and failure analysis passed in run `34312853905`, retaining 10,000 bootstrap resamples and image-level failure evidence in artifact `10088988731` (digest `sha256:0cbef10c50d7c254a38bf2c865d20dcac4c420010171af70a44e0e266c85d6a7`). Clean-environment reproduction passed in run `34312877852`.
 
-See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) for the authoritative gate list.
+**Open gates:** permanent checkpoint/package/release asset; complete final experiment-manifest/reporting closure; final literature/novelty audit; full traceability of every reported table/figure/number; and final scientific/reproducibility audit. No Release 1.0 or biological-superiority claim is made until those gates pass.
+
+See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) and [`docs/PROGRESS.md`](docs/PROGRESS.md) for the authoritative gate records.
 
 ## Installation and development
 
