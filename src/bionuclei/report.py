@@ -16,12 +16,13 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
     status = plan.get("status", "UNKNOWN")
     model = payload.get("model", {})
     files = sorted(p.name for p in output_dir.iterdir() if p.is_file())
+    report_files = sorted(set(files) | {"analysis_report.json", "analysis_report.html"})
 
     def esc(value: Any) -> str:
         return html.escape(str(value))
 
     warning_html = "".join(f"<li>{esc(w)}</li>" for w in warnings) or "<li>No input-quality warnings were triggered by the configured checks.</li>"
-    file_html = "".join(f"<li><code>{esc(name)}</code></li>" for name in files)
+    file_html = "".join(f"<li><code>{esc(name)}</code></li>" for name in report_files)
     report_json = output_dir / "analysis_report.json"
     report_html = output_dir / "analysis_report.html"
 
@@ -31,7 +32,7 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
         "adaptive_plan": plan,
         "model": model,
         "results": payload,
-        "generated_files": files,
+        "generated_files": report_files,
         "scientific_interpretation": {
             "model_training": "The uploaded image is used for inference; this analysis does not update model weights.",
             "accuracy_metrics": "Dice/IoU/Boundary-F1/AJI are only valid when an appropriate ground-truth evaluation protocol is supplied.",
