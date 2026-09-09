@@ -16,6 +16,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import numpy as np
+import tifffile
+
 from bionuclei.inference import predict
 from .app import _checkpoint
 
@@ -86,7 +89,7 @@ def _archive(job_id: str) -> Path:
 def _save_research_copy(job_id: str, input_path: Path, input_sha256: str, metadata: dict) -> None:
     destination = JOB_ROOT / "research_contributions" / job_id
     destination.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(input_path, destination / "input.tif")
+    shutil.copy2(input_path, destination / "input" + input_path.suffix if False else destination / f"input{input_path.suffix}")
     (destination / "contribution.json").write_text(json.dumps({
         "job_id": job_id,
         "input_sha256": input_sha256,
@@ -110,7 +113,72 @@ def delete_research_copy(job_id: str) -> bool:
     return True
 
 
-def _run(job_id: str, image_path: Path, original_name: str, research_consent: bool, algorithm_profile: str) -> None:
+def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> dict[str, object]:
+    """Read a Nikon ND2 and deterministically extract one 2-D YX plane."""
+    try:
+        import nd2
+    except ImportError as exc:  # pragma: no cover - exercised in deployment if dependency missing
+        raise RuntimeError("ND2 support requires the optional 'nd2' package") from exc
+
+    with nd2.ND2File(source) as ndfile:
+        sizes = dict(ndfile.sizes)
+        shape = tuple(ndfile.shape)
+        axes = list(sizes.keys())
+        if "Y" not in sizes or "X" not in sizes:
+            raise ValueError(f"ND2 file has no Y/X image plane: sizes={sizes}")
+
+        requested = {
+            "C": channel,
+            "T": time,
+            "Z": z,
+            "P": field,
+            "S": 0,
+            "V": field,
+        }
+        indexers: list[int | slice] = []
+        selected: dict[str, int] = {}
+        for axis in axes:
+            if axis in {"Y", "X"}:
+                indexers.append(slice(None))
+                continue
+            size = int(sizes[axis])
+            if size < 1:
+                raise ValueError(f"ND2 axis {axis} has invalid size {size}")
+            value = int(requested.get(axis, 0))
+            if value < 0 or value >= size:
+                raise ValueError(f"ND2 axis {axis} index {value} outside [0, {size - 1}]")
+            indexers.append(value)
+            selected[axis] = value
+
+        arr = np.asarray(ndfile.asarray())
+        plane = arr[tuple(indexers)]
+        plane = np.squeeze(plane)
+        if plane.ndim != 2:
+            raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
+        tifffile.imwrite(destination, plane)
+        return {
+            "input_format": "ND2",
+            "reader": "nd2",
+            "reader_version": getattr(nd2, "__version__", "unknown"),
+            "source_shape": list(shape),
+            "source_sizes": sizes,
+            "source_axes": axes,
+            "selected_indices": selected,
+            "selected_plane_shape": list(plane.shape),
+            "conversion": "ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline",
+        }
+
+
+def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
+    suffix = image_path.suffix.lower()
+    if suffix != ".nd2":
+        return image_path, {"input_format": "TIFF", "conversion": None}
+    destination = root / "input_plane.tif"
+    metadata = _nd2_to_tiff(image_path, destination, channel=channel, time=time, z=z, field=field)
+    return destination, metadata
+
+
+def _run(job_id: str, image_path: Path, original_name: str, research_consent: bool, algorithm_profile: str, *, channel: int, time: int, z: int, field: int) -> None:
     root = _job_dir(job_id)
     output = root / "results"
     try:
@@ -118,17 +186,26 @@ def _run(job_id: str, image_path: Path, original_name: str, research_consent: bo
         checkpoint = _checkpoint()
         raw = image_path.read_bytes()
         input_sha256 = hashlib.sha256(raw).hexdigest()
-        result = predict(image_path, checkpoint, output, device="cpu")
+        inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
+        result = predict(inference_input, checkpoint, output, device="cpu")
         result.update({
             "analysis_profile": algorithm_profile,
             "scientific_execution": True,
             "input_sha256": input_sha256,
+            "source_filename": original_name,
+            "input_metadata": input_metadata,
         })
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
+        (output / "community_input.json").write_text(json.dumps({
+            "source_filename": original_name,
+            "source_sha256": input_sha256,
+            **input_metadata,
+        }, indent=2) + "\n")
         metadata = {
             "original_filename": original_name,
             "algorithm_profile": algorithm_profile,
             "checkpoint_configured": True,
+            "input_metadata": input_metadata,
         }
         if research_consent:
             _save_research_copy(job_id, image_path, input_sha256, metadata)
@@ -147,17 +224,21 @@ def _run(job_id: str, image_path: Path, original_name: str, research_consent: bo
         _set_job(job_id, status="failed", error=f"{type(exc).__name__}: {exc}")
     finally:
         image_path.unlink(missing_ok=True)
+        (root / "input_plane.tif").unlink(missing_ok=True)
 
 
-def create_job(data: bytes, original_name: str, research_consent: bool, algorithm_profile: str) -> str:
+def create_job(data: bytes, original_name: str, research_consent: bool, algorithm_profile: str, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
     if algorithm_profile not in {"auto", "nucleus-segmentation"}:
         raise ValueError("Unsupported analysis profile")
+    suffix = ".nd2" if original_name.lower().endswith(".nd2") else ".tif"
+    if channel < 0 or time < 0 or z < 0 or field < 0:
+        raise ValueError("ND2 indices must be non-negative")
     job_id = uuid.uuid4().hex
     root = _job_dir(job_id)
     root.mkdir(parents=True, exist_ok=True)
-    input_path = root / "input.tif"
+    input_path = root / f"input{suffix}"
     input_path.write_bytes(data)
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
     with DB_LOCK, _db() as conn:
@@ -166,7 +247,7 @@ def create_job(data: bytes, original_name: str, research_consent: bool, algorith
             (job_id, "queued", _now().isoformat(), _now().isoformat(), expires.isoformat(), original_name, 0, int(research_consent), algorithm_profile),
         )
         conn.commit()
-    threading.Thread(target=_run, args=(job_id, input_path, original_name, research_consent, algorithm_profile), daemon=True).start()
+    threading.Thread(target=_run, args=(job_id, input_path, original_name, research_consent, algorithm_profile), kwargs={"channel": channel, "time": time, "z": z, "field": field}, daemon=True).start()
     return job_id
 
 
@@ -198,7 +279,7 @@ def get_job(job_id: str) -> dict[str, object] | None:
 
 
 def get_file(job_id: str, filename: str) -> Path:
-    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json"}
+    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json", "community_input.json"}
     if filename not in allowed:
         raise ValueError("File is not a downloadable BioNuclei result")
     row = _get_job(job_id)
@@ -214,8 +295,7 @@ def get_archive(job_id: str) -> Path:
     row = _get_job(job_id)
     if not row or row["status"] != "completed":
         raise FileNotFoundError(job_id)
-    path = _archive(job_id)
-    return path
+    return _archive(job_id)
 
 
 def purge_expired() -> int:
