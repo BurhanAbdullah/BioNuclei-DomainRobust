@@ -9,6 +9,8 @@ Run locally with:
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import tempfile
@@ -20,6 +22,7 @@ import tifffile
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from scipy import ndimage
+from PIL import Image
 
 from bionuclei.data import decode_instance_mask
 from bionuclei.inference import evaluate, predict
@@ -62,6 +65,42 @@ async def _save_upload(upload: UploadFile, suffix: str = ".tif") -> Path:
     path = Path(name)
     path.write_bytes(data)
     return path
+
+
+def _png_data_url(path: Path) -> str:
+    """Encode an output TIFF as a browser-displayable PNG data URL."""
+    image = np.asarray(tifffile.imread(path))
+    if image.ndim == 2:
+        lo, hi = np.percentile(image, [1, 99])
+        if not np.isfinite(lo):
+            lo = float(np.min(image))
+        if not np.isfinite(hi) or hi <= lo:
+            hi = lo + 1.0
+        arr = np.clip((image.astype(np.float32) - lo) / (hi - lo), 0, 1)
+        image = (arr * 255).astype(np.uint8)
+        pil = Image.fromarray(image, mode="L")
+    elif image.ndim == 3 and image.shape[-1] in {3, 4}:
+        if image.dtype != np.uint8:
+            image = np.clip(image, 0, 255).astype(np.uint8)
+        pil = Image.fromarray(image)
+    else:
+        raise ValueError(f"Unsupported output image shape: {image.shape}")
+    buf = io.BytesIO()
+    pil.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _artifact_payload(output: Path) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for name in ["segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json"]:
+        path = output / name
+        if not path.is_file():
+            continue
+        if name.endswith(".tif"):
+            payload[name] = _png_data_url(path)
+        else:
+            payload[name] = path.read_text()
+    return payload
 
 
 @app.get("/health")
@@ -122,7 +161,10 @@ async def predict_api(image: Annotated[UploadFile, File(...)], device: Annotated
     image_path = await _save_upload(image)
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
-            return predict(image_path, _checkpoint(), Path(out), device)
+            output_dir = Path(out)
+            result = predict(image_path, _checkpoint(), output_dir, device)
+            result["artifacts"] = _artifact_payload(output_dir)
+            return result
         finally:
             image_path.unlink(missing_ok=True)
 
@@ -139,7 +181,10 @@ async def evaluate_api(
     gt_path = await _save_upload(ground_truth, suffix=".png")
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
-            return evaluate(image_path, gt_path, _checkpoint(), Path(out), device)
+            output_dir = Path(out)
+            result = evaluate(image_path, gt_path, _checkpoint(), output_dir, device)
+            result["artifacts"] = _artifact_payload(output_dir)
+            return result
         finally:
             image_path.unlink(missing_ok=True)
             gt_path.unlink(missing_ok=True)
