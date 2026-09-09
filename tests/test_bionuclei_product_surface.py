@@ -82,3 +82,30 @@ def test_bionuclei_overview_is_concise_and_user_facing():
     assert "api base url" not in html
     assert "inspect an image" not in html
     assert "evaluate against ground truth" not in html
+
+
+def test_bionuclei_viewer_surface_exposes_original_overlay_and_segmentation():
+    js = read("assets/bionuclei-minimal.js").lower()
+    css = read("assets/bionuclei-viewer.css").lower()
+    for text in [
+        "original",
+        "overlay.tif",
+        "segmentation_mask.tif",
+        "analysis result",
+        "per-nucleus measurements",
+        "download result bundle",
+        "zoom",
+        "/predict",
+        "input_preview.png",
+    ]:
+        assert text in js
+    for text in ["bn-viewer", "bn-tab", "bn-canvas-wrap", "bn-result-grid", "bn-table-wrap"]:
+        assert text in css
+
+
+def test_web_api_returns_original_browser_preview_with_analysis_artifacts():
+    app = (ROOT / "webapp" / "app.py").read_text(encoding="utf-8").lower()
+    assert "input_preview.png" in app
+    assert "_artifact_payload(output_dir, original=image_path)" in app
+    assert "segmentation_mask.tif" in app
+    assert "overlay.tif" in app
