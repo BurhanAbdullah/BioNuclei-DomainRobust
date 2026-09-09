@@ -41,6 +41,7 @@ web = [
 [project.scripts]
 bionuclei = "bionuclei.cli:main"
 bionuclei-mcp = "bionuclei.mcp_server:main"
+bionuclei-mcp-http = "bionuclei.mcp_server:main_http"
 
 [tool.setuptools.packages.find]
 where = ["src"]
