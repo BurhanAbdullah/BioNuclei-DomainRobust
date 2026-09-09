@@ -1,0 +1,11 @@
+{
+  "name": "batch_nuclei_morphology_intensity",
+  "analyses": ["nuclei", "morphology", "intensity"],
+  "device": "cpu",
+  "keep_intermediates": false,
+  "metadata": {
+    "description": "Default reproducible BioNuclei analysis workflow for fluorescence TIFF batches",
+    "input_format": "TIFF",
+    "research_status": "deterministic workflow; model checkpoint required"
+  }
+}
