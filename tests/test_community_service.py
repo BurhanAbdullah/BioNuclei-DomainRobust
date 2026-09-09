@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -28,10 +27,7 @@ def test_delete_research_copy_requires_existing_job(isolated_jobs):
 
 def test_serialize_contains_consent_and_retention_fields(isolated_jobs):
     job_id = "example"
-    isolated_jobs.JOB_ROOT.mkdir(parents=True, exist_ok=True)
     with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
-        isolated_jobs._db()
-        isolated_jobs._set_job if False else None
         conn.execute(
             "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,input_name,retained_copy,research_consent,algorithm_profile) VALUES(?,?,?,?,?,?,?,?,?)",
             (job_id, "queued", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00", "x.tif", 0, 0, "auto"),
