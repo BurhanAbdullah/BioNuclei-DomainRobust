@@ -4,8 +4,7 @@ This is a thin web adapter around the existing deterministic Python package.
 It does not implement or infer scientific measurements itself.
 
 Run locally with:
-    pip install -e '.[web]'
-    BIONUCLEI_CHECKPOINT=/absolute/path/model.pt uvicorn webapp.app:app --host 0.0.0.0 --port 8000
+    pip install -e '.[web]'\n    BIONUCLEI_CHECKPOINT=/absolute/path/model.pt uvicorn webapp.app:app --host 0.0.0.0 --port 8000
 """
 from __future__ import annotations
 
@@ -68,7 +67,7 @@ async def _save_upload(upload: UploadFile, suffix: str = ".tif") -> Path:
 
 
 def _png_data_url(path: Path) -> str:
-    """Encode an output TIFF as a browser-displayable PNG data URL."""
+    """Encode a 2-D scientific image as a browser-displayable PNG data URL."""
     image = np.asarray(tifffile.imread(path))
     if image.ndim == 2:
         lo, hi = np.percentile(image, [1, 99])
@@ -90,8 +89,10 @@ def _png_data_url(path: Path) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def _artifact_payload(output: Path) -> dict[str, object]:
+def _artifact_payload(output: Path, *, original: Path | None = None) -> dict[str, object]:
     payload: dict[str, object] = {}
+    if original is not None and original.is_file():
+        payload["input_preview.png"] = _png_data_url(original)
     for name in ["segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json"]:
         path = output / name
         if not path.is_file():
@@ -163,7 +164,7 @@ async def predict_api(image: Annotated[UploadFile, File(...)], device: Annotated
         try:
             output_dir = Path(out)
             result = predict(image_path, _checkpoint(), output_dir, device)
-            result["artifacts"] = _artifact_payload(output_dir)
+            result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
         finally:
             image_path.unlink(missing_ok=True)
@@ -183,7 +184,7 @@ async def evaluate_api(
         try:
             output_dir = Path(out)
             result = evaluate(image_path, gt_path, _checkpoint(), output_dir, device)
-            result["artifacts"] = _artifact_payload(output_dir)
+            result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
         finally:
             image_path.unlink(missing_ok=True)
