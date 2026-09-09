@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use BioNuclei | User Hub</title>
+<meta name="description" content="Complete BioNuclei user hub: install, predict, evaluate, inspect results, provenance and troubleshooting.">
+<link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/site.css">
+<style>
+.hero{padding:110px 0 70px;background:#fff;border-bottom:1px solid var(--line)}.hero h1{max-width:900px}.hero .lead{max-width:820px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.card{background:#fff;border:1px solid var(--line);border-top:5px solid var(--harvard);padding:28px}.card:nth-child(2){border-top-color:var(--blue)}.card:nth-child(3){border-top-color:var(--green)}.card:nth-child(4){border-top-color:var(--gold)}.step{display:grid;grid-template-columns:58px 1fr;gap:18px;margin:22px 0}.num{font-size:2rem;font-weight:800}.code{background:#111;color:#f4f4f4;border-radius:10px;padding:18px;overflow:auto}.notice{padding:18px;border:1px solid var(--line);background:#fafafa;margin-top:20px}.warning{border-left:4px solid #d08a00;padding:14px 18px;background:#fff7e5}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:25px}@media(max-width:800px){.grid{grid-template-columns:1fr}.step{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>User hub</small></span></a><div class="nav-cta"><a class="btn small primary" href="use.html">Interactive console</a><a class="btn small" href="index.html">Home</a></div></div></nav>
+<main>
+<header class="hero"><div class="wrap"><div class="eyebrow"><span class="pill">BioNuclei</span><span class="pill">User hub</span><span class="pill">Local + web</span></div><h1>From fluorescence image to inspectable result.</h1><p class="lead">BioNuclei is the executable scientific product. Use the local CLI for reproducible analysis or connect the browser console to a separately deployed BioNuclei Web API.</p><div class="actions"><a class="btn primary" href="use.html">Open interactive console</a><a class="btn" href="USER_GUIDE.md">Read the full guide</a><a class="btn" href="results.html">See verified results</a></div></div></header>
+
+<section class="section"><div class="wrap"><div class="section-head"><div class="kicker">What you can do</div><h2>One product, a complete user workflow.</h2><p class="intro">The same deterministic BioNuclei Python functions power the local CLI and the web adapter.</p></div><div class="grid"><article class="card"><div class="kicker">01</div><h3>Inspect</h3><p>Check 2-D image dimensions, dtype and intensity statistics before inference.</p></article><article class="card"><div class="kicker">02</div><h3>Predict</h3><p>Run the Boundary U-Net and receive an instance mask, overlay, measurements, result summary and provenance.</p></article><article class="card"><div class="kicker">03</div><h3>Evaluate</h3><p>Supply a ground-truth mask to compute Dice, IoU and Boundary-F1.</p></article><article class="card"><div class="kicker">04</div><h3>Audit</h3><p>Inspect machine-readable results and provenance before interpreting or sharing an output.</p></article></div></div></section>
+
+<section class="section soft"><div class="wrap"><div class="section-head"><div class="kicker">Local workflow</div><h2>Recommended reproducible path</h2></div>
+<div class="step"><div class="num">01</div><div><h3>Create an environment</h3><pre class="code">python -m venv .venv
+python -m pip install --upgrade pip
+python -m pip install -e .</pre></div></div>
+<div class="step"><div class="num">02</div><div><h3>Check the CLI</h3><pre class="code">bionuclei --help
+bionuclei --version</pre></div></div>
+<div class="step"><div class="num">03</div><div><h3>Predict</h3><pre class="code">bionuclei predict \
+  --input my_fluorescence_image.tif \
+  --checkpoint model.pt \
+  --output results/</pre></div></div>
+<div class="step"><div class="num">04</div><div><h3>Evaluate</h3><pre class="code">bionuclei evaluate \
+  --input my_fluorescence_image.tif \
+  --ground-truth ground_truth.png \
+  --checkpoint model.pt \
+  --output evaluation/</pre></div></div>
+</div></section>
+
+<section class="section"><div class="wrap"><div class="section-head"><div class="kicker">Output contract</div><h2>Every prediction should leave an inspectable bundle.</h2></div><pre class="code">results/
+├── segmentation_mask.tif   # integer-labelled predicted instances
+├── overlay.tif             # visual inspection image
+├── measurements.csv        # area / centroid / bounding-box rows
+├── results.json             # structured run summary
+└── provenance.json          # execution and input metadata</pre><div class="notice"><strong>Interpretation rule:</strong> outputs on arbitrary user images are software results. They are not automatically benchmark evidence. Benchmark claims require the defined dataset, ground truth, frozen protocol and traceable artifact chain.</div></div></section>
+
+<section class="section soft"><div class="wrap"><div class="section-head"><div class="kicker">Verified scientific samples</div><h2>See the actual BioNuclei evidence separately from user examples.</h2><p class="intro">The verified-results page shows retained benchmark evidence from E6/E7. The local output example page shows the file schema without pretending that illustrative values are benchmark measurements.</p><div class="actions"><a class="btn primary" href="results.html">Open verified results</a><a class="btn" href="examples/bionuclei-output/README.md">Open result-bundle example</a></div></div></div></section>
+
+<section class="section"><div class="wrap"><div class="section-head"><div class="kicker">Browser workflow</div><h2>Use the interactive console.</h2><p class="intro">The GitHub Pages interface lets you choose files and call a separately deployed BioNuclei Web API. It cannot execute PyTorch inside the static page itself.</p><div class="actions"><a class="btn primary" href="use.html">Open the console</a><a class="btn" href="BIOMCP_DEPLOYMENT.md">Deploy the backend</a></div></div></div></section>
+
+<section class="section soft"><div class="wrap"><div class="section-head"><div class="kicker">Common problems</div><h2>Fast troubleshooting</h2></div><div class="grid"><article class="card"><h3>Wrong image shape</h3><p>The current user-facing inference path expects a 2-D fluorescence TIFF.</p></article><article class="card"><h3>Missing checkpoint</h3><p>Prediction requires a compatible <code>.pt</code> checkpoint. The official permanent model release remains separate from temporary Actions artifacts.</p></article><article class="card"><h3>Metrics unavailable</h3><p>Accuracy metrics require a matching ground-truth mask. Without ground truth, inspect the prediction and measurements instead.</p></article><article class="card"><h3>Web endpoint unavailable</h3><p>Check the API base URL, HTTPS configuration, CORS policy and server-side <code>BIONUCLEI_CHECKPOINT</code>.</p></article></div></div></section>
+
+<section class="section dark"><div class="wrap"><div class="section-head"><div class="kicker">Scientific boundary</div><h2>BioNuclei computes. Users inspect. Claims follow evidence.</h2><p>BioMCP is a separate optional interoperability layer. BioFM, BioWF and BioSkills are separate products/research directions and are not required to use BioNuclei.</p></div></div></section>
+</main>
+<footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioNuclei</h4><p>Executable, reproducible bioimage analysis.</p></div><div><h4>Use</h4><a href="bionuclei-use.html">User hub</a><a href="use.html">Interactive console</a><a href="results.html">Verified results</a><a href="USER_GUIDE.md">User guide</a></div><div><h4>Separate products</h4><a href="biomcp.html">BioMCP</a><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a></div><div><h4>Source</h4><a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a></div></div></div></footer>
+</body></html>
