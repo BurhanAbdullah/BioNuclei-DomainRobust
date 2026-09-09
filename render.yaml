@@ -13,3 +13,28 @@ services:
         value: https://burhanabdullah.github.io
       - key: BIONUCLEI_MAX_UPLOAD_BYTES
         value: "26214400"
+
+  - type: web
+    name: bionuclei-community
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./webapp/community.Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: bionuclei-community-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: BIONUCLEI_CHECKPOINT
+        sync: false
+      - key: BIONUCLEI_JOB_DIR
+        value: /data/bionuclei-community-jobs
+      - key: BIONUCLEI_ALLOWED_ORIGINS
+        value: https://burhanabdullah.github.io
+      - key: BIONUCLEI_MAX_UPLOAD_BYTES
+        value: "26214400"
+      - key: BIONUCLEI_RESULT_RETENTION_HOURS
+        value: "24"
+      - key: BIONUCLEI_RESEARCH_RETENTION_DAYS
+        value: "90"
