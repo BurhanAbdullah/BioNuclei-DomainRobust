@@ -1,18 +1,29 @@
 """Standalone public BioNuclei Community Analyzer service."""
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .community import MAX_UPLOAD_BYTES, create_job, get_archive, get_file, get_job, purge_expired
 from .app import _checkpoint
+from .community import MAX_UPLOAD_BYTES, create_job, get_archive, get_file, get_job
 
 app = FastAPI(
     title="BioNuclei Community Analyzer",
     version="0.1.0",
     description="Asynchronous public analysis service for the validated BioNuclei segmentation pipeline.",
+)
+
+allowed_origins = [origin.strip() for origin in os.getenv("BIONUCLEI_ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins or ["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"] ,
 )
 
 
@@ -63,12 +74,7 @@ async def analyze(
     if not data:
         raise HTTPException(status_code=400, detail="Uploaded image is empty")
     try:
-        job_id = create_job(
-            data,
-            image.filename or "uploaded-image.tif",
-            research_consent=research_consent,
-            algorithm_profile=algorithm_profile,
-        )
+        job_id = create_job(data, image.filename or "uploaded-image.tif", research_consent, algorithm_profile)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -119,6 +125,7 @@ def delete_retained_copy(job_id: str) -> dict[str, object]:
     return {"job_id": job_id, "deleted": deleted}
 
 
-@app.post("/maintenance/purge")
-def purge() -> dict[str, int]:
-    return {"removed_jobs": purge_expired()}
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run("webapp.community_app:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
