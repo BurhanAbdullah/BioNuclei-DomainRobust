@@ -1,0 +1,2 @@
+# Runtime user/community data is stored on the deployed BioNuclei server's persistent /data volume.
+# Raw user uploads and derived private artifacts must never be committed to Git.
