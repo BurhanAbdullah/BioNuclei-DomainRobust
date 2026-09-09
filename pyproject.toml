@@ -37,6 +37,7 @@ web = [
   "python-multipart>=0.0.9",
   "uvicorn>=0.30",
   "pillow>=10.0",
+  "nd2>=0.11,<0.12",
 ]
 
 [project.scripts]
