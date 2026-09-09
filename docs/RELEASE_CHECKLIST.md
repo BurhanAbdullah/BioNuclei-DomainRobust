@@ -1,6 +1,6 @@
 # Research Release Checklist
 
-This is the final gate before calling the repository paper-ready.
+This is the final gate before calling the repository paper-ready. Checkboxes are marked only from verified machine-readable evidence and provenance.
 
 ## Data provenance
 
@@ -21,21 +21,21 @@ This is the final gate before calling the repository paper-ready.
 - [x] Reproducible training entry point.
 - [x] Reproducible evaluation entry point.
 - [ ] Final experiment command frozen.
-- [ ] Clean-environment reproduction succeeds.
+- [x] Clean-environment reproduction succeeds (run `34312877852`).
 
 ## Scientific validity
 
-- [ ] Source-domain baseline completed.
-- [ ] Validation/test separation demonstrated.
-- [ ] Zero-shot target-domain experiment completed.
-- [ ] Domain-shift mechanism documented.
-- [ ] Proposed method frozen before final test.
-- [ ] Ablations completed.
-- [ ] Strong baselines completed.
-- [ ] Few-shot protocol completed.
-- [ ] Independent external validation completed.
-- [ ] Statistical analysis completed.
-- [ ] Uncertainty/failure analysis completed.
+- [x] Source-domain baseline completed.
+- [x] Validation/test separation demonstrated.
+- [x] Zero-shot target-domain experiment completed.
+- [x] Domain-shift mechanism documented.
+- [x] Proposed method frozen before final test.
+- [x] Ablations completed.
+- [x] Strong baselines completed.
+- [x] Few-shot protocol completed (E6 aggregate artifact from finalizer run `34312833206`; four standardized fractions from source run `34208190019`).
+- [x] Independent external validation completed (E7 run `34312920549`).
+- [x] Statistical analysis completed for the executed E6/E7 evidence chain (uncertainty/failure artifact from run `34312853905`).
+- [x] Uncertainty/failure analysis completed for the executed E6/E7 evidence chain (10,000 bootstrap resamples; retained artifact `10088988731`).
 
 ## Reporting
 
@@ -47,8 +47,8 @@ This is the final gate before calling the repository paper-ready.
 - [ ] No unsupported novelty/first-of-its-kind claim.
 - [ ] Final 2023–2026 literature audit completed.
 - [ ] Limitations documented.
-- [ ] Reproducibility instructions tested by a clean run.
+- [x] Reproducibility instructions tested by a clean run.
 
 ## Release gate
 
-The repository must not be described as producing a completed scientific result until all unchecked scientific-validity and reporting gates above are satisfied. Infrastructure completion and scientific-result completion are deliberately separate.
+The repository must not be described as producing a completed scientific result until all unchecked scientific-validity and reporting gates above are satisfied. Infrastructure completion and scientific-result completion are deliberately separate. A permanent public checkpoint/package is also still required: the repository currently has no GitHub Release, and temporary Actions artifacts are not treated as permanent model releases.
