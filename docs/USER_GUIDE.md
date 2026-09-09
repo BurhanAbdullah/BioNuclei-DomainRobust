@@ -1,37 +1,40 @@
 # BioNuclei user guide
 
-BioNuclei is the executable scientific product in this repository: it loads a compatible checkpoint, segments a fluorescence image, measures instances, evaluates against ground truth when supplied, and records structured provenance.
+BioNuclei is the executable scientific product in this repository: it loads a compatible checkpoint, segments fluorescence images, measures detected instances, and records structured provenance.
 
-BioMCP is a separate optional interoperability layer. BioFM, BioWF and BioSkills are separate research/product directions. They are not required to use BioNuclei.
+BioMCP is a separate optional interoperability layer. BioFM, BioWF and BioSkills are separate research/product directions and are not required to use BioNuclei.
 
-## 1. Fastest local path
+## 1. Use BioNuclei in the browser
 
-Use Python 3.10+ in a clean environment:
+The public user-facing entry point is [`bionuclei-lab.html`](bionuclei-lab.html).
 
-```bash
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# macOS/Linux:      source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
+The intended workflow is:
+
+```text
+choose an ND2 or TIFF
+→ see the selected image
+→ choose the analysis
+→ analyze
+→ inspect original / overlay / segmentation
+→ review measurements
+→ download the result bundle
 ```
 
-Verify the installation:
+The browser interface does not expose developer-only API operations. Live inference still requires the deployed BioNuclei service to be configured by the project; GitHub Pages alone cannot run PyTorch inference.
 
-```bash
-bionuclei --help
-bionuclei --version
-```
+## 2. Supported public inputs
 
-## 2. Get a compatible checkpoint
+The Lab accepts Nikon ND2 and TIFF files.
 
-BioNuclei requires a compatible `.pt` checkpoint for prediction/evaluation. The repository does **not** advertise an expiring GitHub Actions artifact as a permanent model download.
+TIFF images can be previewed locally in the browser before upload. ND2 files are handled by the BioNuclei service so acquisition dimensions and selected planes can be retained explicitly.
 
-Before Release 1.0, the project must publish a versioned checkpoint/release asset with an immutable SHA-256 digest and matching provenance. Until that exists, users should treat any locally supplied checkpoint as an explicit input rather than an official public model release.
+The current scientific model is a 2-D, 1-channel fluorescence nuclear-segmentation model. Multidimensional ND2 data therefore requires an explicit 2-D analysis plane.
 
-## 3. Predict on your own fluorescence image
+## 3. Get a compatible checkpoint
 
-Input: one 2-D fluorescence TIFF image.
+BioNuclei requires a compatible `.pt` checkpoint for prediction/evaluation. The project must publish a versioned checkpoint/release asset with an immutable SHA-256 digest before claiming an official public model release.
+
+## 4. Local prediction
 
 ```bash
 bionuclei predict \
@@ -51,66 +54,31 @@ results/
 └── provenance.json
 ```
 
-### What each file means
-
-`segmentation_mask.tif` contains integer-labelled predicted instances, with background label 0.
+`segmentation_mask.tif` contains integer-labelled predicted instances.
 
 `overlay.tif` is a visual inspection image.
 
 `measurements.csv` contains one row per predicted instance with area, centroid and bounding-box measurements.
 
-`results.json` contains structured run-level summary fields such as the image shape and number of detected instances.
+`results.json` contains the run-level result summary.
 
-`provenance.json` records the command, input/checkpoint locations, device, package identity, Python version and execution timestamp.
+`provenance.json` records execution metadata and lineage.
 
-## 4. Evaluate against ground truth
+## 5. Evaluation and benchmark evidence
 
-When a ground-truth instance mask is available:
+When matching ground truth is available, the local evaluation path can calculate Dice, IoU and Boundary-F1.
 
-```bash
-bionuclei evaluate \
-  --input my_fluorescence_image.tif \
-  --ground-truth ground_truth.png \
-  --checkpoint model.pt \
-  --output evaluation/
-```
-
-The local CLI reports:
-
-- Dice;
-- IoU;
-- Boundary-F1.
-
-The research benchmark pipeline remains authoritative for the complete experimental protocol and AJI analysis. Do not treat a local evaluation on an arbitrary image as evidence for a benchmark claim.
-
-## 5. Use the browser console
-
-The static public console is:
-
-`docs/use.html`
-
-It can connect to a separately deployed BioNuclei Web API and provides browser forms for:
-
-1. image inspection;
-2. prediction;
-3. evaluation;
-4. instance metrics;
-5. provenance inspection;
-6. structured result-summary inspection.
-
-A GitHub Pages site cannot execute PyTorch inference by itself. The browser console therefore requires an explicitly configured HTTPS API endpoint for live inference.
-
-The deployable backend is `webapp/app.py`, with deployment instructions in `docs/BIOMCP_DEPLOYMENT.md` and a Render recipe in `webapp/render.yaml`.
+The research benchmark pipeline remains authoritative for the complete experimental protocol and independent scientific evidence, including AJI and the registered E6/E7 workflows. An arbitrary user upload is not automatically benchmark evidence.
 
 ## 6. Example result bundle
 
-See [`docs/examples/bionuclei-output/README.md`](examples/bionuclei-output/README.md) for a small text-only example of the result schema. Example values in that directory are illustrative unless a file is explicitly identified as a retained benchmark artifact.
+See [`docs/examples/bionuclei-output/README.md`](examples/bionuclei-output/README.md) for the result schema. Example values are illustrative unless explicitly identified as retained benchmark artifacts.
 
-For verified benchmark samples, see [`docs/results.html`](results.html).
+For verified benchmark evidence, see [`results.html`](results.html).
 
-## 7. Reproducibility and scientific interpretation
+## 7. Reproducibility
 
-For any published claim, preserve together:
+For a scientific claim, retain together:
 
 ```text
 repository commit
@@ -124,28 +92,21 @@ repository commit
 + provenance
 ```
 
-A segmentation produced on a user image is a useful software output but is not automatically a scientific benchmark result. Accuracy claims require defined data, ground truth, protocol and traceable evidence.
+A segmentation produced on a user image is a software output. Accuracy and generalization claims require defined data, ground truth, protocol and traceable evidence.
 
 ## 8. Troubleshooting
 
+### The browser says the analysis service is not connected
+The GitHub Pages interface is only the client. A deployed BioNuclei Web API with a validated checkpoint must be configured for live inference.
+
 ### `Expected a 2-D fluorescence image`
-The current inference path expects a 2-D TIFF. Convert or select a single 2-D image rather than a 3-D stack.
+The current scientific inference path expects a 2-D image plane. For multidimensional ND2 acquisitions, select a specific 2-D plane before inference.
 
 ### `BIONUCLEI_CHECKPOINT is not configured`
-This message is for the hosted web adapter. Configure the server-side `BIONUCLEI_CHECKPOINT` path to a compatible checkpoint; do not upload a checkpoint through the public web form.
-
-### CUDA is unavailable
-Use the default CPU path:
-
-```bash
-bionuclei predict --device cpu ...
-```
+This is a server-side deployment error. Configure the service with a validated checkpoint; do not upload a checkpoint through the public interface.
 
 ### Prediction and ground truth shapes differ
 The image and ground-truth mask must describe the same field of view and have identical spatial dimensions.
-
-### I only have an Actions artifact
-Actions artifacts are temporary evidence containers, not permanent public model releases. Follow the release/provenance records before treating a checkpoint as an official downloadable model.
 
 ## 9. Optional BioMCP use
 
@@ -156,4 +117,4 @@ python -m pip install -e '.[mcp]'
 bionuclei-mcp
 ```
 
-For hosted Streamable HTTP, see [`docs/BIOMCP_DEPLOYMENT.md`](BIOMCP_DEPLOYMENT.md).
+For hosted Streamable HTTP, see [`BIOMCP_DEPLOYMENT.md`](BIOMCP_DEPLOYMENT.md).
