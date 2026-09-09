@@ -17,8 +17,7 @@ def test_main_landing_page_stays_minimal():
 
 
 def test_lab_has_simple_real_user_flow():
-    html = read("bionuclei-lab.html")
-    lower = html.lower()
+    html = read("bionuclei-lab.html").lower()
     for text in [
         "upload an image. get the analysis.",
         "what do you want to know?",
@@ -33,10 +32,9 @@ def test_lab_has_simple_real_user_flow():
         "segmentation mask",
         "download full report",
     ]:
-        assert text in lower
-    assert "endpoint" in lower
-    assert "compute instance metrics" not in lower
-    assert "read provenance" not in lower
+        assert text in html
+    assert "compute instance metrics" not in html
+    assert "read provenance" not in html
 
 
 def test_analysis_library_separates_available_and_validation_gated_features():
@@ -64,17 +62,23 @@ def test_community_page_has_explicit_research_consent():
     assert "Research retention is opt-in" in html
 
 
-def test_bionuclei_product_page_is_user_facing_and_minimal():
-    html = read("bionuclei.html")
-    lower = html.lower()
+def test_bionuclei_overview_is_concise_and_user_facing():
+    html = read("bionuclei.html").lower()
     for text in [
-        "From microscopy image to a report you can inspect.",
-        "What BioNuclei analyzes",
-        "Boundary U-Net",
-        "What the current model was trained on.",
-        "Agents help decide how to analyze the image.",
-        "What you actually get back",
+        "see the nuclei.",
+        "what it does",
+        "one focused workflow.",
+        "the model",
+        "ai predicts. scientific code measures.",
+        "training reference",
+        "adaptive analysis",
+        "agents help the workflow adapt.",
+        "your result",
+        "not just a mask.",
+        "open the bionuclei lab",
     ]:
-        assert text.lower() in lower
-    assert "API base URL" not in html
-    assert "six tools" not in lower
+        assert text in html
+    assert "which ai is actually being used?" not in html
+    assert "api base url" not in html
+    assert "inspect an image" not in html
+    assert "evaluate against ground truth" not in html
