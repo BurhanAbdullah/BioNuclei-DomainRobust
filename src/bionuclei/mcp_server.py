@@ -11,6 +11,7 @@ so MCP hosts/Inspector can load this file directly.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -135,6 +136,19 @@ mcp = build_server() if MCPServer is not None else None
 def main() -> None:
     """Run the MCP server over stdio by default."""
     build_server().run()
+
+
+def main_http() -> None:
+    """Run the MCP server over Streamable HTTP for hosted agent clients."""
+    host = os.getenv("BIOMCP_MCP_HOST", "0.0.0.0")
+    port = int(os.getenv("BIOMCP_MCP_PORT", "8001"))
+    path = os.getenv("BIOMCP_STREAMABLE_HTTP_PATH", "/mcp")
+    build_server().run(
+        transport="streamable-http",
+        host=host,
+        port=port,
+        streamable_http_path=path,
+    )
 
 
 if __name__ == "__main__":
