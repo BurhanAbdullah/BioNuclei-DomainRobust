@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Use BioNuclei | BioMCP</title>
+<meta name="description" content="Interactive browser console for the BioNuclei scientific tool surface and BioMCP interoperability layer.">
+<style>
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#14202b;background:#f6f8fb}body{margin:0}main{max-width:1120px;margin:0 auto;padding:48px 22px 80px}.hero{padding:36px;border-radius:24px;background:#12202b;color:white}.eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:12px;opacity:.72}.hero h1{font-size:clamp(38px,7vw,68px);line-height:1;margin:10px 0 14px}.hero p{max-width:760px;font-size:18px;line-height:1.6;opacity:.9}.panel{margin-top:22px;padding:24px;border:1px solid #dde4ea;border-radius:18px;background:white;box-shadow:0 8px 30px rgba(20,32,43,.06)}h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.field{display:flex;flex-direction:column;gap:7px}.field label{font-weight:700;font-size:13px}.field input,.field textarea,.field select{border:1px solid #cfd8e0;border-radius:10px;padding:11px 12px;font:inherit;background:white}.buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.btn{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:pointer;background:#14202b;color:#fff}.btn.alt{background:#eef2f5;color:#14202b}.status{padding:10px 12px;border-radius:10px;background:#eef2f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-word}.result{white-space:pre-wrap;background:#0b1117;color:#e6edf3;border-radius:12px;padding:16px;min-height:120px;overflow:auto}.tool{border:1px solid #e0e6eb;border-radius:14px;padding:16px}.tool strong{display:block;margin-bottom:7px}.muted{color:#61707d}.warning{border-left:4px solid #d08a00;padding:12px 14px;background:#fff7e5;border-radius:8px}.small{font-size:13px;line-height:1.55}
+</style>
+</head>
+<body>
+<main>
+<section class="hero">
+<div class="eyebrow">BioMCP • BioNuclei-DomainRobust</div>
+<h1>Use the science.</h1>
+<p>This browser console calls a configured BioMCP Web API. Measurements are still produced by the deterministic BioNuclei Python package; the web/agent layer only orchestrates validated operations.</p>
+</section>
+
+<section class="panel">
+<h2>Connect to a BioMCP endpoint</h2>
+<div class="grid">
+<div class="field"><label for="api">API base URL</label><input id="api" placeholder="https://your-bionuclei-api.example.com"></div>
+<div class="field"><label for="device">Inference device</label><select id="device"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></div>
+</div>
+<div class="buttons"><button class="btn" onclick="loadTools()">Check endpoint</button><span class="status" id="health">Not connected</span></div>
+<p class="small muted">A hosted endpoint must be deployed separately. The repository includes a deployable FastAPI adapter in <code>webapp/app.py</code>.</p>
+</section>
+
+<section class="panel">
+<h2>Tool surface</h2>
+<div class="grid" id="tools"><div class="tool"><strong>inspect_image</strong><span class="muted">Inspect dimensions, dtype and intensity statistics.</span></div><div class="tool"><strong>predict_image</strong><span class="muted">Run BioNuclei segmentation and return the structured result bundle.</span></div><div class="tool"><strong>evaluate_image</strong><span class="muted">Run segmentation and report Dice, IoU and Boundary-F1.</span></div><div class="tool"><strong>compute_instance_metrics</strong><span class="muted">Compute Dice, IoU, AJI and Boundary-F1 from masks.</span></div><div class="tool"><strong>read_provenance</strong><span class="muted">Inspect machine-readable execution provenance.</span></div><div class="tool"><strong>load_result_summary</strong><span class="muted">Inspect structured results.json data.</span></div></div>
+</section>
+
+<section class="panel">
+<h2>1 — Inspect an image</h2>
+<input type="file" id="inspectFile" accept=".tif,.tiff">
+<div class="buttons"><button class="btn" onclick="inspectImage()">Inspect</button></div>
+<pre class="result" id="inspectResult"></pre>
+</section>
+
+<section class="panel">
+<h2>2 — Predict</h2>
+<div class="grid"><div><input type="file" id="predictFile" accept=".tif,.tiff"></div></div>
+<div class="buttons"><button class="btn" onclick="predictImage()">Run prediction</button></div>
+<pre class="result" id="predictResult"></pre>
+</section>
+
+<section class="panel">
+<h2>3 — Evaluate</h2>
+<div class="grid"><div class="field"><label>Fluorescence image</label><input type="file" id="evalImage" accept=".tif,.tiff"></div><div class="field"><label>Ground-truth mask</label><input type="file" id="evalGt" accept=".tif,.tiff,.png"></div></div>
+<div class="buttons"><button class="btn" onclick="evaluateImage()">Run evaluation</button></div>
+<pre class="result" id="evalResult"></pre>
+</section>
+
+<section class="panel">
+<h2>4 — Compute metrics</h2>
+<div class="grid"><div class="field"><label>Prediction instance mask</label><input type="file" id="predMask" accept=".tif,.tiff"></div><div class="field"><label>Ground-truth instance mask</label><input type="file" id="gtMask" accept=".tif,.tiff,.png"></div></div>
+<div class="buttons"><button class="btn" onclick="computeMetrics()">Compute metrics</button></div>
+<pre class="result" id="metricsResult"></pre>
+</section>
+
+<section class="panel">
+<h2>5 — Provenance</h2>
+<input type="file" id="provFile" accept=".json">
+<div class="buttons"><button class="btn" onclick="readProvenance()">Read provenance</button></div>
+<pre class="result" id="provResult"></pre>
+</section>
+
+<section class="panel warning">
+<strong>Research boundary</strong>
+<p class="small">Registered E6/E7 experiments, benchmark validation, and release gates remain controlled research workflows. The public web surface does not expose arbitrary shell execution, arbitrary checkpoint loading, or mutation of the authoritative scientific evidence.</p>
+</section>
+</main>
+<script>
+const el=id=>document.getElementById(id); const base=()=>el('api').value.replace(/\/$/,'');
+async function call(path, options={}){const b=base(); if(!b) throw new Error('Enter an API base URL first'); const r=await fetch(b+path,options); const text=await r.text(); let data; try{data=JSON.parse(text)}catch{data={raw:text}} if(!r.ok) throw new Error(JSON.stringify(data)); return data;}
+async function loadTools(){try{const [h,t]=await Promise.all([call('/health'),call('/tools')]); el('health').textContent=JSON.stringify(h); el('tools').insertAdjacentHTML('afterbegin','<div class="tool"><strong>Connected</strong><span class="muted">'+t.tools.length+' executable web tools reported by the endpoint.</span></div>')}catch(e){el('health').textContent='ERROR: '+e.message}}
+function form(files, extra={}){const f=new FormData(); Object.entries(files).forEach(([k,v])=>f.append(k,v)); Object.entries(extra).forEach(([k,v])=>f.append(k,v)); return f}
+async function inspectImage(){try{const f=el('inspectFile').files[0]; if(!f) throw new Error('Choose an image'); el('inspectResult').textContent=JSON.stringify(await call('/inspect',{method:'POST',body:form({image:f})}),null,2)}catch(e){el('inspectResult').textContent='ERROR: '+e.message}}
+async function predictImage(){try{const f=el('predictFile').files[0]; if(!f) throw new Error('Choose an image'); el('predictResult').textContent=JSON.stringify(await call('/predict',{method:'POST',body:form({image:f},{device:el('device').value})}),null,2)}catch(e){el('predictResult').textContent='ERROR: '+e.message}}
+async function evaluateImage(){try{const i=el('evalImage').files[0], g=el('evalGt').files[0]; if(!i||!g) throw new Error('Choose both files'); el('evalResult').textContent=JSON.stringify(await call('/evaluate',{method:'POST',body:form({image:i,ground_truth:g},{device:el('device').value})}),null,2)}catch(e){el('evalResult').textContent='ERROR: '+e.message}}
+async function computeMetrics(){try{const p=el('predMask').files[0], g=el('gtMask').files[0]; if(!p||!g) throw new Error('Choose both masks'); el('metricsResult').textContent=JSON.stringify(await call('/metrics',{method:'POST',body:form({prediction:p,ground_truth:g})}),null,2)}catch(e){el('metricsResult').textContent='ERROR: '+e.message}}
+async function readProvenance(){try{const p=el('provFile').files[0]; if(!p) throw new Error('Choose a provenance JSON'); el('provResult').textContent=JSON.stringify(await call('/provenance',{method:'POST',body:form({provenance:p})}),null,2)}catch(e){el('provResult').textContent='ERROR: '+e.message}}
+</script>
+</body>
+</html>
