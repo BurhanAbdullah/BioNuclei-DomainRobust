@@ -3,34 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BioNuclei | Robust Nuclear Segmentation</title>
-  <meta name="description" content="BioNuclei: domain-robust nuclear instance segmentation for fluorescence bioimaging, with reproducible experiments and inspectable results.">
+  <title>BioNuclei | Nuclear Instance Segmentation</title>
+  <meta name="description" content="BioNuclei is open scientific software for nuclear instance segmentation and quantification in fluorescence microscopy images.">
   <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/site.css">
   <link rel="stylesheet" href="assets/home.css">
+  <style>
+    :root{--maroon:#8B1538;--black:#111;--white:#fff;--line:#ddd}
+    body{background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}
+    h1,h2,h3,h4{font-family:Georgia,"Times New Roman",serif;color:#111}
+    .launch-bridge{padding:90px 0;border-top:1px solid var(--line);background:#fff}
+    .launch-bridge .bridge-box{border:2px solid var(--maroon);padding:34px;background:#fff}
+    .launch-bridge h2{margin-bottom:12px;color:#111}
+    .launch-bridge p{max-width:780px;color:#111}
+    .launch-bridge .bridge-label{color:var(--maroon);font-weight:800;text-transform:uppercase;letter-spacing:.12em;font-size:.75rem}
+    .manual-strip{padding:65px 0;background:#111;color:#fff}
+    .manual-strip h2,.manual-strip p{color:#fff}
+    .manual-strip .btn{background:#fff;color:var(--maroon);border-color:#fff}
+    @media(max-width:820px){.manual-strip,.launch-bridge{padding:55px 0}}
+  </style>
 </head>
 <body class="landing">
-  <nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Robust bioimaging AI</small></span></a><div class="nav-links"><a href="bionuclei.html">Overview</a><a href="bionuclei-analysis.html">Analyses</a><a href="bionuclei-formats.html">Formats</a><a href="results.html">Results</a><a href="research.html">Research</a></div><div class="nav-cta"><a class="btn small primary" href="bionuclei-lab.html">Use BioNuclei</a></div></div></nav>
+  <nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Nuclear instance segmentation</small></span></a><div class="nav-links"><a href="bionuclei.html">Overview</a><a href="bionuclei-analysis.html">Analyses</a><a href="bionuclei-formats.html">Formats</a><a href="results.html">Results</a><a href="research.html">Research</a></div><div class="nav-cta"><a class="btn small primary" href="bionuclei-lab.html">Open Lab</a></div></div></nav>
   <main>
     <header class="landing-hero">
-      <div class="landing-hero-image"><img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/LSM%20fluorescence%20image%20of%20HeLa%20immortalized%20cells%20showing%20fluorescent%20staining%20of%20cellular%20compartments.%20Nuclei%20are%20labeled%20in%20blue%2C%20the%20cytoplasm%20in%20orange%2C%20and%20vesicular%20transport%E2%80%93associated%20proteins%20in%20red.jpg" alt="Fluorescence microscopy of cells" loading="eager"><div class="landing-overlay" aria-hidden="true"></div><div class="landing-caption">Fluorescence bioimaging context · Wikimedia Commons</div></div>
-      <div class="landing-copy"><div class="eyebrow"><span class="pill">BioNuclei</span><span class="pill">Open research</span><span class="pill">Executable</span></div><p class="landing-index">Nuclear instance segmentation for fluorescence bioimaging</p><h1>Robust nuclear analysis with inspectable evidence.</h1><p class="lead">BioNuclei is a focused scientific software project for domain-robust nuclear instance segmentation. It connects microscopy input, validated inference, quantitative measurements, evaluation and provenance in one reproducible workflow.</p><div class="actions"><a class="btn primary" href="bionuclei.html">Explore BioNuclei</a><a class="btn" href="bionuclei-lab.html">Use the Lab</a></div><p class="landing-note"><span>Evidence before claims</span><span>Reproducible research</span><span>Open scientific software</span></p></div>
+      <div class="landing-hero-image"><img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/LSM%20fluorescence%20image%20of%20HeLa%20immortalized%20cells%20showing%20fluorescent%20staining%20of%20cellular%20compartments.%20Nuclei%20are%20labeled%20in%20blue%2C%20the%20cytoplasm%20in%20orange%2C%20and%20vesicular%20transport%E2%80%93associated%20proteins%20in%20red.jpg" alt="Fluorescence microscopy of cells" loading="eager"><div class="landing-overlay" aria-hidden="true"></div><div class="landing-caption">Fluorescence microscopy context</div></div>
+      <div class="landing-copy"><div class="eyebrow"><span class="pill">BioNuclei</span><span class="pill">Open scientific software</span><span class="pill">Auditable</span></div><p class="landing-index">Nuclear instance segmentation and quantification</p><h1>See the nuclei. Measure what matters.</h1><p class="lead">BioNuclei is an automated analysis pipeline designed specifically for nuclear instance segmentation and quantification in fluorescence microscopy. AI predicts semantic regions; deterministic scientific software extracts individual nuclei, measurements and provenance.</p><div class="actions"><a class="btn primary" href="bionuclei.html">Explore BioNuclei</a><a class="btn" href="bionuclei-lab.html">Open the Lab</a></div><p class="landing-note"><span>ND2 / TIFF</span><span>Boundary U-Net</span><span>Inspect results</span></p></div>
     </header>
 
     <section class="landing-feature" id="explore"><div class="wrap">
-      <div class="feature-heading"><p class="kicker">BioNuclei</p><h2>One project. One scientific scope.</h2><p>Everything on this website belongs to BioNuclei: the nuclear segmentation model, supported image formats, analysis workflow, experiments, results and reproducibility record.</p></div>
+      <div class="feature-heading"><p class="kicker">The scientific workflow</p><h2>One focused problem. One reproducible pipeline.</h2><p>BioNuclei stays intentionally narrow: segment individual nuclei in fluorescence microscopy images, convert predictions into explicit instances, quantify them, and preserve the evidence needed to inspect the run.</p></div>
       <div class="feature-grid">
-        <a class="feature-card feature-card-large" href="bionuclei.html"><span>01</span><h3>BioNuclei workflow</h3><p>Understand the model, inference pipeline, measurements, provenance and scientific boundaries.</p><b>Explore the workflow →</b></a>
-        <a class="feature-card" href="bionuclei-analysis.html"><span>02</span><h3>Analyses</h3><p>See the supported nuclear analysis tasks and the measurements produced by BioNuclei.</p><b>View analyses →</b></a>
-        <a class="feature-card" href="bionuclei-formats.html"><span>03</span><h3>Image formats</h3><p>Review supported microscopy inputs and how multidimensional acquisitions are handled.</p><b>View formats →</b></a>
-        <a class="feature-card" href="results.html"><span>04</span><h3>Results</h3><p>Inspect quantitative evaluation, visual evidence and machine-readable outputs.</p><b>View results →</b></a>
-        <a class="feature-card" href="research.html"><span>05</span><h3>Research</h3><p>Read the model, data, evaluation protocol, limitations and reproducibility record.</p><b>Read the research →</b></a>
+        <a class="feature-card feature-card-large" href="bionuclei.html"><span>01</span><h3>BioNuclei workflow</h3><p>Model, inference, deterministic instance extraction, measurements and provenance.</p><b>Explore the workflow →</b></a>
+        <a class="feature-card" href="bionuclei-analysis.html"><span>02</span><h3>Analyses</h3><p>Nuclear instances and quantitative measurements from supported fluorescence images.</p><b>View analyses →</b></a>
+        <a class="feature-card" href="bionuclei-formats.html"><span>03</span><h3>Formats</h3><p>Supported Nikon ND2 and TIFF/TIF inputs with explicit acquisition handling.</p><b>View formats →</b></a>
+        <a class="feature-card" href="results.html"><span>04</span><h3>Results</h3><p>Segmentation masks, overlays, measurements and machine-readable provenance.</p><b>View results →</b></a>
+        <a class="feature-card" href="research.html"><span>05</span><h3>Research</h3><p>Training reference, evaluation, limitations and reproducibility records.</p><b>Read the research →</b></a>
       </div>
     </div></section>
 
-    <section class="landing-statement"><div class="wrap"><p class="kicker">Scientific boundary</p><h2>BioNuclei measures nuclei. It does not diagnose disease.</h2><p>AI inference, deterministic post-processing, measurements and evaluation are kept explicit so that every reported result can be traced to its data, configuration and computation.</p></div></section>
+    <section class="manual-strip"><div class="wrap"><p class="kicker" style="color:#fff">Manual mode</p><h2>Prefer to inspect the image yourself?</h2><p>BioNuclei also provides a manual browser route through ImageJ.JS. Manual processing is separate from the automated BioNuclei inference path.</p><a class="btn" href="bionuclei-lab.html#manual">Open ImageJ.JS in the Lab →</a></div></section>
+
+    <section class="launch-bridge"><div class="wrap"><div class="bridge-box"><div class="bridge-label">Separate interoperability project</div><h2>BioMCP connects agents to BioNuclei.</h2><p>BioMCP is separate from BioNuclei's scientific scope. It provides an interoperability layer for exposing validated BioNuclei operations to compatible AI agents and MCP clients. BioNuclei remains the scientific source of truth.</p><a class="btn primary" href="biomcp.html">Learn about BioMCP →</a></div></div></section>
+
+    <section class="landing-statement"><div class="wrap"><p class="kicker">Scientific boundary</p><h2>AI predicts. Deterministic scientific software measures.</h2><p>BioNuclei is not a clinical diagnostic tool, not an online continuous-learning system, and not a general-purpose whole-cell imaging suite. Every result should remain inspectable and traceable to its computational provenance.</p></div></section>
   </main>
-  <footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioNuclei</h4><p>Domain-robust nuclear instance segmentation for fluorescence bioimaging.</p></div><div><h4>Explore</h4><a href="bionuclei.html">Overview</a><a href="bionuclei-analysis.html">Analyses</a><a href="bionuclei-formats.html">Formats</a><a href="results.html">Results</a><a href="research.html">Research</a></div><div><h4>Use</h4><a href="bionuclei-lab.html">BioNuclei Lab</a><a href="bionuclei-use.html">Getting started</a></div><div><h4>Source</h4><a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a></div></div><div class="foot-bottom"><span>BioNuclei · Evidence before claims.</span></div></div></footer>
+  <footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioNuclei</h4><p>Nuclear instance segmentation and quantification for fluorescence microscopy.</p></div><div><h4>Explore</h4><a href="bionuclei.html">Overview</a><a href="bionuclei-analysis.html">Analyses</a><a href="bionuclei-formats.html">Formats</a><a href="results.html">Results</a><a href="research.html">Research</a></div><div><h4>Use</h4><a href="bionuclei-lab.html">BioNuclei Lab</a><a href="bionuclei-lab.html#manual">ImageJ.JS manual mode</a><a href="bionuclei-use.html">Getting started</a></div><div><h4>Separate</h4><a href="biomcp.html">BioMCP interoperability</a><a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a></div></div><div class="foot-bottom"><span>BioNuclei · Evidence before claims.</span></div></div></footer>
 <script src="assets/site.js"></script>
 </body>
 </html>
