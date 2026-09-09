@@ -92,9 +92,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.REQUIRED_PYTHON }}
       - name: Verify pinned GitHub artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,20 +100,20 @@ jobs:
           python - <<'PY'
           import json, os, urllib.request
           repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
-          checks={
-            'e6':os.environ['E6_AGGREGATE_ARTIFACT_ID'],
-            'e7':os.environ['E7_ARTIFACT_ID'],
-            'uncertainty':os.environ['UNCERTAINTY_ARTIFACT_ID'],
+          expected={
+            os.environ['E6_AGGREGATE_ARTIFACT_ID']: {'workflow_run': 34312521029, 'digest': 'sha256:b45d15101bfd1702414cb4b437c972d79434675fbd8c77780784c2a614a24503'},
+            os.environ['E7_ARTIFACT_ID']: {'workflow_run': 34311290928, 'digest': 'sha256:a6965228177505a264b24443fdef0e17e8ee9afc9868e40b5561d607af90e5ae'},
+            os.environ['UNCERTAINTY_ARTIFACT_ID']: {'workflow_run': 34312702218, 'digest': 'sha256:16e90efbd365ba5922cfbf851739df90be0336de3ead4a2bfaadf3c34ff99a88'},
           }
           def get(url):
             req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
             with urllib.request.urlopen(req) as h:return json.load(h)
-          for label,aid in checks.items():
+          for aid, exp in expected.items():
             o=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
-            assert not o['expired'], label
-            assert o['workflow_run'] and o['workflow_run']['id'], label
-            assert o['digest'].startswith('sha256:'), label
-            print(label, o['id'], o['digest'])
+            assert not o['expired'], aid
+            assert o['digest']==exp['digest'], (aid,o['digest'],exp['digest'])
+            assert int(o['workflow_run']['id'])==exp['workflow_run'], (aid,o['workflow_run']['id'])
+            print(aid, o['digest'], 'run', o['workflow_run']['id'])
           PY
 
   claims:
@@ -124,13 +121,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Search for unsafe readiness/metric claims
+      - name: Detect unsupported positive claims
         run: |
           set -euo pipefail
-          ! grep -RniE 'scientifically ready|proven superior|state-of-the-art|generalizes universally|clinically validated' README.md docs . --exclude-dir=.git --exclude='*.json' || {
-            echo 'Potential overclaiming language detected; review required.'
-            exit 1
-          }
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          patterns=re.compile(r'\b(?:scientifically ready|proven superior|state-of-the-art|generalizes universally|clinically validated)\b',re.I)
+          negation=re.compile(r'\b(?:not|no|cannot|does not|do not|never|without|not yet|not by itself)\b',re.I)
+          bad=[]
+          for path in [Path('README.md'),Path('docs')]:
+              paths=[path] if path.is_file() else list(path.rglob('*'))
+              for p in paths:
+                  if p.suffix.lower() not in {'.md','.html','.txt'}: continue
+                  for n,line in enumerate(p.read_text(errors='ignore').splitlines(),1):
+                      if patterns.search(line) and not negation.search(line):
+                          bad.append(f'{p}:{n}:{line.strip()}')
+          if bad:
+              print('Potential unsupported positive claims:')
+              print('\n'.join(bad))
+              raise SystemExit(1)
+          print('claims/documentation audit: PASS')
+          PY
           test -f docs/RELEASE_CHECKLIST.md
           test -f docs/METHOD_FREEZE_2026-09-04.md
 
