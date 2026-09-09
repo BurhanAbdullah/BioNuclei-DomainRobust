@@ -50,25 +50,25 @@ This checklist is updated only when a step is actually verified. Tooling is not 
 - [x] Implement authoritative Aitslab train/development/test acquisition and normalization.
 - [x] Implement frozen-E4 initialization and deterministic 1%, 5%, 10%, 25% E6 runner with provenance.
 - [x] Add a fail-closed E6 GitHub Actions workflow that verifies the retained E4 artifact before execution.
-- [ ] Execute few-shot adaptation at pre-registered label fractions.
-- [ ] Measure annotation efficiency.
-- [ ] Validate on an independent external fluorescence dataset.
-- [ ] Evaluate robustness to acquisition/intensity/noise shifts.
-- [ ] Evaluate failure cases and uncertainty calibration.
+- [x] Execute few-shot adaptation at pre-registered label fractions; finalizer run `34312833206` aggregates the four standardized fractions from source run `34208190019`.
+- [ ] Measure annotation efficiency as a separate scientific analysis.
+- [x] Validate on an independent external fluorescence dataset: E7 BBBC038 run `34312920549` passed.
+- [x] Execute E6/E7 image-level uncertainty and failure analysis: run `34312853905`, artifact `10088988731`, 10,000 bootstrap resamples.
+- [ ] Establish separate uncertainty calibration metrics beyond the retained image-level failure/uncertainty analysis.
 
 ## Phase 6 — paper and release
 - [ ] Freeze final experimental protocol.
 - [ ] Complete final literature/novelty audit.
 - [ ] Generate paper figures/tables directly from versioned outputs.
-- [ ] Re-run complete pipeline from a clean environment.
+- [x] Re-run complete pipeline from a clean environment: run `34312877852` passed.
 - [ ] Audit every reported number against raw experiment artifacts.
-- [ ] Release code, manifests, configurations and reproducibility instructions.
+- [ ] Release code, manifests, configurations and reproducibility instructions as the permanent public package/checkpoint.
 - [ ] Prepare manuscript only after evidence supports the claims.
 
-## Current state — 2026-09-07
+## Verified evidence ledger — 2026-09-09
 
-The corrected BBBC039 baseline, corrected S-BIAD634 zero-shot transfer, corrected E4 execution, corrected S-BIAD634 target profile, matched E3/E4 statistical verification, and E5 aggregate integrity gate remain artifact-backed as recorded above.
+The latest repository revision is `2dba10e614bc5efc9bc4de66994c7c920d6667cb` (`Retrigger verified E6 analysis chain`). The E6 finalizer run `34312833206` completed successfully and produced artifact `10088980217` (`e6-external-few-shot-final-34312833206`, digest `sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34`). The machine-readable aggregate explicitly uses only the four standardized E6 fraction artifacts from source run `34208190019` and records immutable dataset/config/E4 hashes, seed 42, 20 epochs, activation checkpointing and fail-closed leakage flags. The aggregate source experiment commit is `e5d76f279e4a2d9be0159357853fd21319cd0d1e`; the finalizer itself does not retrain and is deliberately pinned to those retained standardized artifacts.
 
-E6 remains **not scientifically complete**. The latest inspected E6 workflow run `34027678815` checked out commit `2b0689347f24c5097ec09f0c1cc4b5c8e9d0c27b`. Its latest 25% job `101605861702` completed all setup and scientific integrity prerequisites (retained-E4 identity, authoritative Aitslab-bioimaging1 acquisition, `30/10/10` publisher split, and train/development/test disjointness), then entered the locked `20 epochs / seed 42 / fraction 0.25` training command. At `2026-09-07T02:48:39Z` the hosted runner received a shutdown signal and the operation was cancelled; cross-check and evidence upload were skipped. No 25% metric, checkpoint, or evidence artifact was produced. The aggregate evidence job was correctly skipped. A retry remains the required execution path; no result is inferred from the retry until a job actually completes and its machine-readable evidence/provenance is independently verified.
+E7 independent BBBC038 validation passed in run `34312920549` on the latest revision. E6/E7 uncertainty and failure analysis passed in run `34312853905`; retained artifact `10088988731` has digest `sha256:0cbef10c50d7c254a38bf2c865d20dcac4c420010171af70a44e0e266c85d6a7` and records 10,000 bootstrap resamples plus image-level failure evidence tied to source metric hashes. Clean-environment reproduction passed in run `34312877852`.
 
-The current `main` branch is `8ab112dc59f04144b4c2b6e4cfb47c9b499e5c7f`; the failed E6 job above ran against the preceding workflow-trigger commit `2b0689347f24c5097ec09f0c1cc4b5c8e9d0c27b`. E7 remains independent and must not consume the locked S-BIAD634 zero-shot test set. No downstream release gate is promoted while E6 is incomplete. Release readiness remains unclaimed.
+The project is therefore past the earlier E6 execution blocker. The remaining release blockers are permanent checkpoint/package publication, final experiment-manifest/reporting closure, final literature/novelty audit, full traceability of every reported table/figure/number to machine-readable evidence, and final scientific/reproducibility audit. No Release 1.0 readiness or biological-superiority claim is inferred until those gates pass.
