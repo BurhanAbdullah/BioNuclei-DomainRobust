@@ -37,6 +37,7 @@ class AnalysisPlan:
     warnings: tuple[str, ...]
     actions: tuple[str, ...]
     profile: ImageProfile
+    agent_roles: tuple[str, ...] = ("input-qc", "analysis-planner", "scientific-runner", "quality-reviewer", "report-writer")
 
 
 def inspect_image(path: Path) -> ImageProfile:
@@ -72,7 +73,13 @@ def build_plan(path: Path, requested_modules: set[str] | None = None) -> Analysi
     profile = inspect_image(path)
     requested = set(requested_modules or {"nuclei", "morphology", "intensity"})
     warnings: list[str] = []
-    actions = ["Run the released BioNuclei checkpoint in evaluation mode.", "Record input and execution provenance."]
+    actions = [
+        "Input-QC agent: validate image structure and basic intensity properties.",
+        "Analysis-planner agent: select only enabled, validated report modules.",
+        "Scientific-runner agent: run the released BioNuclei checkpoint in evaluation mode.",
+        "Quality-reviewer agent: preserve input warnings without turning them into accuracy claims.",
+        "Report-writer agent: assemble machine-readable and human-readable outputs.",
+    ]
     if not profile.finite:
         warnings.append("Image contains non-finite values; inference is not scientifically safe.")
     if profile.std == 0 or profile.p995 == profile.p01:
@@ -83,7 +90,7 @@ def build_plan(path: Path, requested_modules: set[str] | None = None) -> Analysi
         warnings.append("More than 1% of pixels are at the detected dtype ceiling; saturation may affect boundaries.")
     if profile.zero_fraction > 0.80:
         warnings.append("More than 80% of pixels are zero; confirm the acquisition/ROI is intentional.")
-    actions.append("Label the run with any detected input-quality warnings; do not convert them into model accuracy claims.")
+    actions.append("Do not claim a calibrated probability of correctness unless a separately validated uncertainty model is available.")
     status = "BLOCKED" if not profile.finite or profile.std == 0 else "CAUTION" if warnings else "READY"
     return AnalysisPlan(
         status=status,
@@ -99,5 +106,6 @@ def to_dict(plan: AnalysisPlan) -> dict[str, Any]:
     payload["recommended_modules"] = list(plan.recommended_modules)
     payload["warnings"] = list(plan.warnings)
     payload["actions"] = list(plan.actions)
+    payload["agent_roles"] = list(plan.agent_roles)
     payload["profile"]["shape"] = list(plan.profile.shape)
     return payload
