@@ -9,20 +9,21 @@ Run locally with:
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
 from typing import Annotated
 
+import numpy as np
 import tifffile
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from scipy import ndimage
 
+from bionuclei.data import decode_instance_mask
 from bionuclei.inference import evaluate, predict
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
-from bionuclei.data import decode_instance_mask
-import numpy as np
-from scipy import ndimage
 
 app = FastAPI(
     title="BioMCP Web API",
@@ -170,9 +171,19 @@ async def metrics_api(prediction: Annotated[UploadFile, File(...)], ground_truth
 async def provenance(provenance: Annotated[UploadFile, File(...)]) -> dict[str, object]:
     path = await _save_upload(provenance, suffix=".json")
     try:
-        import json
         return json.loads(path.read_text())
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid provenance JSON: {exc}") from exc
+    finally:
+        path.unlink(missing_ok=True)
+
+
+@app.post("/result-summary")
+async def result_summary(results: Annotated[UploadFile, File(...)]) -> dict[str, object]:
+    path = await _save_upload(results, suffix=".json")
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid results JSON: {exc}") from exc
     finally:
         path.unlink(missing_ok=True)
