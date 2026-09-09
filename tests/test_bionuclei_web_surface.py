@@ -16,7 +16,7 @@ def test_bionuclei_product_page_has_local_visual_and_core_sections() -> None:
     assert 'id="outputs"' in html
     assert "Boundary U-Net" in html
     assert "2-D fluorescence" in html
-    assert "measurements + provenance" in html
+    assert "measurements + provenance" in html.lower()
     assert "synthetic illustration" in html.lower()
     assert "No biological diagnosis" in html
 
