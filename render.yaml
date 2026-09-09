@@ -9,7 +9,7 @@ services:
     envVars:
       - key: BIONUCLEI_CHECKPOINT
         sync: false
-      - key: BIOMCP_ALLOWED_ORIGINS
+      - key: BIONUCLEI_ALLOWED_ORIGINS
         value: https://burhanabdullah.github.io
       - key: BIONUCLEI_MAX_UPLOAD_BYTES
         value: "26214400"
