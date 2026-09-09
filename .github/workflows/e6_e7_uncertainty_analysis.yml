@@ -1,0 +1,106 @@
+name: E6 E7 uncertainty and failure analysis
+
+on:
+  workflow_run:
+    workflows: ["E6 finalize verified evidence"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  analyze:
+    name: Image-level uncertainty and failure analysis
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install analysis dependencies
+        run: python -m pip install --disable-pip-version-check numpy scipy
+
+      - name: Download pinned evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          declare -A IDS
+          IDS[e6_final]=10088871204
+          IDS[e6_01]=10048904584
+          IDS[e6_05]=10049300074
+          IDS[e6_10]=10055510835
+          IDS[e6_25]=10051231349
+          IDS[e7]=10088666629
+
+          for key in e6_final e6_01 e6_05 e6_10 e6_25 e7; do
+            id="${IDS[$key]}"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "evidence/${key}.zip"
+            unzip -q "evidence/${key}.zip" -d "evidence/${key}"
+          done
+
+          cat > evidence/artifact_metadata.json <<'JSON'
+          {
+            "e6_final": {"artifact_id": 10088871204, "digest": "sha256:b45d15101bfd1702414cb4b437c972d79434675fbd8c77780784c2a614a24503"},
+            "e6_01": {"artifact_id": 10048904584, "digest": "sha256:b1f4732c39de3c93d7bcd1ace242c73bc9d5b2c3c7a4d9e431ed0ccd42ee4f93"},
+            "e6_05": {"artifact_id": 10049300074, "digest": "sha256:4841db1700af56556292eaf8b267a5b95195c65445bc555efa80e93780b95103"},
+            "e6_10": {"artifact_id": 10055510835, "digest": "sha256:00c2757ed9911db655945ab22c6cb2f70d0f6e48f376c614a8d25342e89bc472"},
+            "e6_25": {"artifact_id": 10051231349, "digest": "sha256:8907e0dbc6d00714eb0cb4e235410462db689dd1ebbd4094b882e01e2f47b6b0"},
+            "e7": {"artifact_id": 10088666629, "digest": "sha256:8f4fb9e8f050242814696e11a89618b5d603bca1cb240feb3ba4cb2d117173f1"},
+            "e6_source_run_id": 34208190019,
+            "e6_source_commit": "e5d76f279e4a2d9be0159357853fd21319cd0d1e",
+            "e7_source_run_id": 34311290928,
+            "e7_source_commit": "2d30a2910199bf0e2819f3e2c35729dcc2793018"
+          }
+          JSON
+
+      - name: Verify evidence layout and provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for label in ("01", "05", "10", "25"):
+              roots=list(Path(f"evidence/e6_{label}").rglob("provenance.json"))
+              assert len(roots)==1, (label, roots)
+              p=json.loads(roots[0].read_text())
+              assert p["seed"]==42 and p["epochs"]==20
+              assert p.get("activation_checkpointing") is True
+              assert p["s_biad634_used_for_adaptation"] is False
+              assert p["test_images_used_for_adaptation"] is False
+              assert p["development_images_used_for_training_or_selection"] is False
+          e7=list(Path("evidence/e7").rglob("outputs/e7_bbbc038/metrics.json"))
+          assert len(e7)==1, e7
+          m=json.loads(e7[0].read_text())
+          assert m["n_images"]==670 and len(m["per_image"])==670
+          print("evidence layout/provenance: PASS")
+          PY
+
+      - name: Execute image-level uncertainty and failure analysis
+        run: |
+          python scripts/analyze_e6_e7_uncertainty.py \
+            --e6 01pct evidence/e6_01/outputs/e6_external_few_shot/01pct/01pct/evaluation/test_metrics.json \
+            --e6 05pct evidence/e6_05/outputs/e6_external_few_shot/05pct/05pct/evaluation/test_metrics.json \
+            --e6 10pct evidence/e6_10/outputs/e6_external_few_shot/10pct/10pct/evaluation/test_metrics.json \
+            --e6 25pct evidence/e6_25/outputs/e6_external_few_shot/25pct/25pct/evaluation/test_metrics.json \
+            --e7 evidence/e7/outputs/e7_bbbc038/metrics.json \
+            --metadata evidence/artifact_metadata.json \
+            --out outputs/e6_e7_uncertainty_failure_analysis.json \
+            --seed 42 \
+            --bootstrap-resamples 10000
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-e7-uncertainty-failure-analysis-${{ github.run_id }}
+          path: outputs/e6_e7_uncertainty_failure_analysis.json
+          if-no-files-found: error
+          retention-days: 90
