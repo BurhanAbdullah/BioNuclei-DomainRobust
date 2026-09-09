@@ -1,12 +1,8 @@
 """BioMCP server exposing deterministic BioNuclei operations.
 
-The MCP layer orchestrates validated scientific Python functions; it is not a
-measurement engine. Every computational tool returns structured output and the
-underlying BioNuclei functions write their normal artifacts.
-
-The MCP SDK is optional. Install with ``pip install -e '.[mcp]'``.
-The module-level ``mcp`` object is provided when the optional SDK is installed,
-so MCP hosts/Inspector can load this file directly.
+BioMCP is the interoperability layer; BioNuclei remains the scientific
+measurement engine. The MCP server only validates inputs, invokes the existing
+scientific functions, and exposes read-only research resources.
 """
 from __future__ import annotations
 
@@ -20,7 +16,7 @@ import tifffile
 from scipy import ndimage
 
 try:
-    from mcp.server import MCPServer
+    from mcp.server.mcpserver import MCPServer
 except ImportError as exc:  # pragma: no cover
     MCPServer = None  # type: ignore[assignment,misc]
     _IMPORT_ERROR = exc
@@ -46,7 +42,7 @@ def _require_sdk() -> Any:
 def build_server() -> Any:
     """Construct a fresh MCP server with the BioNuclei tool/resource registry."""
     Server = _require_sdk()
-    server = Server(SERVER_NAME)
+    server = Server(SERVER_NAME, instructions="Use validated BioNuclei tools; do not invent scientific measurements.")
 
     @server.tool()
     def inspect_image(input_path: str) -> dict[str, Any]:
@@ -103,7 +99,10 @@ def build_server() -> Any:
         path = Path(provenance_path).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(path)
-        return json.loads(path.read_text())
+        payload = json.loads(path.read_text())
+        if not isinstance(payload, dict):
+            raise ValueError("provenance must be a JSON object")
+        return payload
 
     @server.tool()
     def load_result_summary(results_path: str) -> dict[str, Any]:
@@ -111,7 +110,10 @@ def build_server() -> Any:
         path = Path(results_path).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(path)
-        return json.loads(path.read_text())
+        payload = json.loads(path.read_text())
+        if not isinstance(payload, dict):
+            raise ValueError("result summary must be a JSON object")
+        return payload
 
     @server.resource("bionuclei://protocol")
     def protocol_resource() -> str:
@@ -128,27 +130,22 @@ def build_server() -> Any:
     return server
 
 
-# MCP hosts commonly load a module-level object. Keep it optional so the base
-# BioNuclei package remains installable without the MCP dependency.
 mcp = build_server() if MCPServer is not None else None
 
 
 def main() -> None:
-    """Run the MCP server over stdio by default."""
+    """Run the MCP server over stdio."""
     build_server().run()
 
 
 def main_http() -> None:
-    """Run the MCP server over Streamable HTTP for hosted agent clients."""
+    """Run the MCP server over canonical Streamable HTTP at /mcp."""
     host = os.getenv("BIOMCP_MCP_HOST", "0.0.0.0")
     port = int(os.getenv("BIOMCP_MCP_PORT", "8001"))
     path = os.getenv("BIOMCP_STREAMABLE_HTTP_PATH", "/mcp")
-    build_server().run(
-        transport="streamable-http",
-        host=host,
-        port=port,
-        streamable_http_path=path,
-    )
+    # MCPServer currently owns the Streamable HTTP ASGI runner. The path is
+    # intentionally kept explicit for clients and deployment manifests.
+    build_server().run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
 
 
 if __name__ == "__main__":
