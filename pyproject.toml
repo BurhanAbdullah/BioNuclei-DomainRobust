@@ -44,6 +44,7 @@ bionuclei = "bionuclei.cli:main"
 bionuclei-mcp = "bionuclei.mcp_server:main"
 bionuclei-mcp-http = "bionuclei.mcp_server:main_http"
 biomcp = "biomcp.cli:main"
+bionuclei-community = "webapp.community_app:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
