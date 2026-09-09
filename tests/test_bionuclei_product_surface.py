@@ -57,17 +57,36 @@ def test_community_page_has_explicit_research_consent():
     assert "Research retention is opt-in" in html
 
 
-def test_bionuclei_science_page_is_user_facing_not_api_facing():
+def test_bionuclei_product_page_is_user_facing_and_minimal():
     html = read("bionuclei.html")
+    lower = html.lower()
     for text in [
         "From microscopy image to a report you can inspect.",
-        "What BioNuclei is built to do.",
-        "One scientific model. Clear responsibilities.",
+        "What BioNuclei analyzes",
+        "Boundary U-Net",
         "What the current model was trained on.",
         "Agents help decide how to analyze the image.",
-        "What you receive",
-        "Upload and analyze",
+        "What you actually get back",
     ]:
-        assert text in html
-    assert "Which AI is actually being used?" not in html
+        assert text.lower() in lower
     assert "API base URL" not in html
+    assert "six tools" not in lower
+
+
+def test_bionuclei_analyze_surface_is_single_user_flow():
+    js = read("assets/bionuclei-minimal.js")
+    lower = js.lower()
+    for text in [
+        "choose an image",
+        "nd2",
+        "tiff",
+        "analysis",
+        "uploading",
+        "analyzing",
+        "analysis complete",
+        "download",
+    ]:
+        assert text in lower
+    assert "inspect image" not in lower
+    assert "compute instance metrics" not in lower
+    assert "api base url" not in lower
