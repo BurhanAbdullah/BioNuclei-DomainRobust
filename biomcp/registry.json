@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "product": "BioMCP",
+  "servers": [
+    {
+      "name": "bionuclei",
+      "display_name": "BioNuclei",
+      "description": "Validated bioimage analysis tools exposed through MCP.",
+      "command": "bionuclei-mcp",
+      "transport": ["stdio", "streamable-http"],
+      "status": "validated",
+      "installable": true,
+      "scientific_boundary": "BioMCP routes requests; BioNuclei performs the scientific computation.",
+      "tools": [
+        "inspect_image",
+        "predict_image",
+        "evaluate_image",
+        "compute_instance_metrics",
+        "read_provenance",
+        "load_result_summary"
+      ],
+      "resources": ["bionuclei://protocol", "bionuclei://datasets"]
+    },
+    {
+      "name": "bioimagej",
+      "display_name": "ImageJ / Fiji interoperability",
+      "description": "Planned MCP adapter for validated ImageJ/Fiji operations.",
+      "status": "planned",
+      "installable": false,
+      "scientific_boundary": "Adapter only; ImageJ/Fiji remains the underlying scientific software."
+    },
+    {
+      "name": "cellprofiler",
+      "display_name": "CellProfiler interoperability",
+      "description": "Planned MCP adapter for validated CellProfiler pipelines.",
+      "status": "planned",
+      "installable": false,
+      "scientific_boundary": "Adapter only; CellProfiler remains the underlying scientific software."
+    }
+  ]
+}
