@@ -1,0 +1,101 @@
+name: E6 finalizer for retained run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e6_finalize_existing_run.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_RUN_ID: "34208190019"
+  EXPECTED_SHA: "e5d76f279e4a2d9be0159357853fd21319cd0d1e"
+  EXPECTED_DATASET_MANIFEST_SHA: "2121057ada64a699356dee2a4b1b521d0e5e3cb535c6266478ccb68f6a92d9de"
+  EXPECTED_CONFIG_SHA: "0b2069bb14b46e2c96341757c989c5f5ef7756face4e5b592feb465b79295e54"
+  EXPECTED_E4_CHECKPOINT_SHA: "c73ac5e61c7361b44d6db0fde85586d48286e4a4a29a6597a7821cba49061fbd"
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download exact retained artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          declare -A IDS=(
+            [01pct]=10048904584
+            [05pct]=10049300074
+            [10pct]=10055510835
+            [25pct]=10051231349
+          )
+          declare -A DIGESTS=(
+            [01pct]=b1f4732c39de3c93d7bcd1ace242c73bc9d5b2c3c7a4d9e431ed0ccd42ee4f93
+            [05pct]=4841db1700af56556292eaf8b267a5b95195c65445bc555efa80e93780b95103
+            [10pct]=00c2757ed9911db655945ab22c6cb2f70d0f6e48f376c614a8d25342e89bc472
+            [25pct]=8907e0dbc6d00714eb0cb4e235410462db689dd1ebbd4094b882e01e2f47b6b0
+          )
+          for label in 01pct 05pct 10pct 25pct; do
+            id=${IDS[$label]}
+            expected=${DIGESTS[$label]}
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" --jq '.workflow_run.head_sha + " " + .name + " " + .digest' > "evidence/${label}.meta"
+            read sha name digest < "evidence/${label}.meta"
+            test "$sha" = "$EXPECTED_SHA"
+            test "$name" = "e6-fraction-${label}-${SOURCE_RUN_ID}"
+            test "$digest" = "sha256:${expected}"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "evidence/${label}.zip"
+            test "$(sha256sum "evidence/${label}.zip" | cut -d' ' -f1)" = "$expected"
+            mkdir -p "evidence/${label}"
+            unzip -q "evidence/${label}.zip" -d "evidence/${label}"
+          done
+      - name: Validate all four provenance records and aggregate
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('evidence')
+          expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
+          rows=[]
+          common={}
+          for label, frac, n in expected:
+              provs=list((root/label).rglob('provenance.json'))
+              assert len(provs)==1, (label, provs)
+              p=provs[0]
+              prov=json.loads(p.read_text())
+              assert (prov['fraction'],prov['n_adaptation_images'])==(frac,n)
+              assert (prov['seed'],prov['epochs'])==(42,20)
+              assert prov['activation_checkpointing'] is True
+              assert prov['dataset_manifest_sha256']== '2121057ada64a699356dee2a4b1b521d0e5e3cb535c6266478ccb68f6a92d9de'
+              assert prov['config_sha256']== '0b2069bb14b46e2c96341757c989c5f5ef7756face4e5b592feb465b79295e54'
+              assert prov['init_checkpoint_sha256']== 'c73ac5e61c7361b44d6db0fde85586d48286e4a4a29a6597a7821cba49061fbd'
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              assert prov['development_images_used_for_training_or_selection'] is False
+              metrics=p.parent/'evaluation'/'test_metrics.json'
+              assert metrics.is_file()
+              obj=json.loads(metrics.read_text())
+              assert obj['n_images']==10
+              assert all(k in obj['mean'] for k in ('dice','iou','aji','boundary_f1'))
+              assert hashlib.sha256(metrics.read_bytes()).hexdigest()==prov['test_metrics_sha256']
+              common.setdefault('dataset_manifest_sha256',prov['dataset_manifest_sha256'])
+              common.setdefault('config_sha256',prov['config_sha256'])
+              common.setdefault('init_checkpoint_sha256',prov['init_checkpoint_sha256'])
+              rows.append({'fraction':frac,'n_adaptation_images':n,'mean':obj['mean'],'test_metrics_sha256':prov['test_metrics_sha256'],'provenance_sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          assert len(rows)==4
+          out=pathlib.Path('final_e6'); out.mkdir(exist_ok=True)
+          result={'protocol':'E6_cross_dataset_few_shot','source_run_id':34208190019,'head_sha':'e5d76f279e4a2d9be0159357853fd21319cd0d1e','execution_semantics':'identical across all fractions; activation_checkpointing=true; batch_size preserved','common_hashes':common,'all_four_fractions_verified':True,'fractions':rows}
+          (out/'aggregate_results.json').write_text(json.dumps(result,indent=2)+'\n')
+          print('E6 aggregate: PASS')
+          PY
+      - name: Upload final E6 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e6-external-few-shot-final-retained-34208190019
+          path: final_e6/aggregate_results.json
+          if-no-files-found: error
+          retention-days: 30
