@@ -9,6 +9,11 @@
     var target = document.getElementById('analyze');
     if (!target) return;
 
+    var style = document.createElement('style');
+    style.id = 'bionuclei-preview-style';
+    style.textContent = '.bn-upload-preview{margin-top:18px;border:1px solid #dbe4e9;border-radius:18px;background:#fff;overflow:hidden}.bn-preview-head{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:13px 15px;border-bottom:1px solid #e5ecef}.bn-preview-head b{display:block;font-size:14px}.bn-preview-head small{display:block;color:#667580;font-size:11px;margin-top:3px}.bn-preview-badge{padding:6px 9px;border-radius:999px;background:#eef7f2;color:#1f7a55;font-size:9px;font-weight:900;letter-spacing:.08em}.bn-preview-badge.nd2{background:#f3eef8;color:#65458b}.bn-preview-stage{background:#0b151d;min-height:280px;max-height:560px;display:flex;align-items:center;justify-content:center;overflow:auto;padding:12px}.bn-preview-stage img{display:block;max-width:100%;max-height:520px;width:auto;height:auto;object-fit:contain}.bn-result{margin-top:24px}.bn-viewer{margin-top:15px;background:#0b151d;border-radius:18px;overflow:hidden}.bn-viewer-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:10px;border-bottom:1px solid #263640}.bn-viewer-toolbar button{border:1px solid #455660;background:#13212a;color:#eef4f7;border-radius:8px;padding:7px 10px;font:inherit;font-size:11px;font-weight:800;cursor:pointer}.bn-viewer-toolbar button.active{background:#fff;color:#17222b}.bn-spacer{flex:1}.bn-canvas-wrap{min-height:340px;max-height:640px;overflow:auto;display:flex;align-items:center;justify-content:center;padding:12px;background:#070e13}.bn-canvas-wrap img{display:block;max-width:none;transform-origin:center center}.bn-viewer-caption{padding:10px 12px;color:#b9c7cf;font-size:11px}.bn-result-top{display:flex;justify-content:space-between;align-items:end;gap:15px;flex-wrap:wrap}.bn-result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:15px}.bn-result-grid>div{padding:13px;border:1px solid #dbe4e9;border-radius:12px;background:#fff}.bn-result-grid span{display:block;color:#667580;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.bn-result-grid b{display:block;margin-top:4px;font-size:19px}.bn-table-wrap{margin-top:16px;border:1px solid #dbe4e9;border-radius:14px;background:#fff;overflow:hidden}.bn-table-head{display:flex;justify-content:space-between;gap:10px;padding:13px 15px;border-bottom:1px solid #e5ecef}.bn-table-head h4{margin:0;font-size:15px}.bn-table-head span{color:#667580;font-size:11px}.bn-scroll{overflow:auto}.bn-scroll table{width:100%;border-collapse:collapse;font-size:11px}.bn-scroll th,.bn-scroll td{text-align:left;padding:8px 9px;border-bottom:1px solid #edf1f3;white-space:nowrap}.bn-scroll th{background:#f5f8fa;color:#536570;font-weight:800}.bn-details{margin-top:12px;border:1px solid #dbe4e9;border-radius:12px;background:#fff;padding:10px 13px}.bn-details summary{cursor:pointer;font-weight:800;font-size:12px}.bn-details pre{max-height:280px;overflow:auto;font-size:11px}.bn-empty{padding:16px;color:#667580;font-size:12px}@media(max-width:760px){.bn-result-grid{grid-template-columns:1fr 1fr}}@media(max-width:520px){.bn-result-grid{grid-template-columns:1fr}.bn-preview-stage{min-height:220px}.bn-canvas-wrap{min-height:250px}}';
+    document.head.appendChild(style);
+
     target.innerHTML = [
       '<div class="wrap">',
       '  <div class="section-head">',
@@ -103,7 +108,9 @@
         canvas.width = ifds[0].width;
         canvas.height = ifds[0].height;
         canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba), canvas.width, canvas.height), 0, 0);
-        previewObjectUrl = URL.createObjectURL(await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/png'); }));
+        var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/png'); });
+        if (!blob) throw new Error('Could not create TIFF preview');
+        previewObjectUrl = URL.createObjectURL(blob);
         preview.src = previewObjectUrl;
         previewInfo.textContent = ifds[0].width + ' × ' + ifds[0].height + ' px · shown locally · not uploaded';
         statusText('Image selected and visible. Ready to analyze.', 'good');
