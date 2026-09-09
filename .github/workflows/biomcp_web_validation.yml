@@ -1,0 +1,79 @@
+name: BioMCP and web validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/bionuclei/mcp_server.py"
+      - "webapp/**"
+      - "tests/test_mcp_server.py"
+      - "pyproject.toml"
+      - "docs/use.html"
+      - ".github/workflows/biomcp_web_validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mcp:
+    name: MCP server smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install package with MCP extra
+        run: python -m pip install -e ".[mcp,test]"
+      - name: Validate module and MCP registry
+        run: |
+          python - <<'PY'
+          from bionuclei.mcp_server import build_server
+          server = build_server()
+          assert server.name == "BioMCP-BioNuclei"
+          print("BioMCP server construction: PASS")
+          PY
+      - name: Run MCP-focused tests
+        run: pytest -q tests/test_mcp_server.py
+
+  web:
+    name: Web adapter smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install web extra
+        run: python -m pip install -e ".[web,test]"
+      - name: Import web application
+        run: |
+          python - <<'PY'
+          from webapp.app import app
+          routes = {route.path for route in app.routes}
+          required = {"/health", "/tools", "/inspect", "/predict", "/evaluate", "/metrics", "/provenance"}
+          missing = required - routes
+          assert not missing, missing
+          print("BioMCP Web API routes: PASS")
+          PY
+      - name: Run full tests
+        run: pytest -q
+
+  website:
+    name: Public console integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate public console
+        run: |
+          set -euo pipefail
+          test -s docs/use.html
+          grep -q "inspect_image" docs/use.html
+          grep -q "predict_image" docs/use.html
+          grep -q "evaluate_image" docs/use.html
+          grep -q "compute_instance_metrics" docs/use.html
+          grep -q "read_provenance" docs/use.html
+          echo "Public BioMCP console: PASS"
