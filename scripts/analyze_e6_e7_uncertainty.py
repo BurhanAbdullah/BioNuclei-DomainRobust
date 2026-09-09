@@ -75,6 +75,8 @@ def main() -> None:
         "e7": {},
     }
 
+    e6_ids_by_label: dict[str, set[str]] = {}
+    e6_rows_by_label: dict[str, dict[str, dict[str, Any]]] = {}
     for label, raw in a.e6:
         path = Path(raw)
         obj = load_json(path)
@@ -83,33 +85,29 @@ def main() -> None:
             raise AssertionError(f"{label}: expected 10 E6 test images, got {len(rows)}")
         if obj.get("n_images") != 10:
             raise AssertionError(f"{label}: n_images != 10")
-        assert set(r["image"] for r in rows) == set(r["image"] for r in rows)
+        ids = {str(r["image"]) for r in rows}
+        if len(ids) != 10:
+            raise AssertionError(f"{label}: duplicate E6 image IDs")
+        e6_ids_by_label[label] = ids
+        e6_rows_by_label[label] = {str(r["image"]): r for r in rows}
         summary = {m: summarize_metric(rows, m, rng, a.bootstrap_resamples) for m in E6_METRICS}
-        summary["image_ids"] = [r["image"] for r in rows]
+        summary["image_ids"] = sorted(ids)
         summary["source_metrics_sha256"] = sha256(path)
         out["e6"][label] = summary
 
-    e7_path = Path(a.e7)
-    e7 = load_json(e7_path)
-    rows7 = e7.get("per_image", [])
-    if len(rows7) != 670 or e7.get("n_images") != 670:
-        raise AssertionError(f"E7 expected 670 images, got {len(rows7)}")
-    out["e7"]["n_images"] = 670
-    out["e7"]["metrics"] = {m: summarize_metric(rows7, m, rng, a.bootstrap_resamples) for m in E7_METRICS}
-    out["e7"]["source_metrics_sha256"] = sha256(e7_path)
-
-    # Descriptive E6 stability: paired changes across the same ten held-out images.
-    labels = [label for label, _ in a.e6]
-    by_label = {label: {r["image"]: r for r in load_json(Path(raw))["per_image"]} for label, raw in a.e6}
-    if len(labels) >= 2:
-        reference = labels[0]
-        for label in labels[1:]:
-            ids = sorted(set(by_label[reference]) & set(by_label[label]))
-            if len(ids) != 10:
-                raise AssertionError(f"E6 paired comparison {reference}->{label} does not share all 10 images")
+    e6_labels = [label for label, _ in a.e6]
+    if e6_labels:
+        reference = e6_labels[0]
+        for label in e6_labels[1:]:
+            if e6_ids_by_label[label] != e6_ids_by_label[reference]:
+                raise AssertionError(f"E6 paired comparison {reference}->{label} does not share the exact same 10 test images")
+            ids = sorted(e6_ids_by_label[reference])
             paired = {}
             for m in E6_METRICS:
-                d = np.asarray([by_label[label][i][m] - by_label[reference][i][m] for i in ids], dtype=float)
+                d = np.asarray([
+                    e6_rows_by_label[label][i][m] - e6_rows_by_label[reference][i][m]
+                    for i in ids
+                ], dtype=float)
                 paired[m] = {
                     "reference": reference,
                     "comparison": label,
@@ -122,7 +120,15 @@ def main() -> None:
                 }
             out.setdefault("e6", {}).setdefault("paired_descriptive_changes", {})[f"{reference}_vs_{label}"] = paired
 
-    # E7 failure/outlier analysis, retaining full per-image records.
+    e7_path = Path(a.e7)
+    e7 = load_json(e7_path)
+    rows7 = e7.get("per_image", [])
+    if len(rows7) != 670 or e7.get("n_images") != 670:
+        raise AssertionError(f"E7 expected 670 images, got {len(rows7)}")
+    out["e7"]["n_images"] = 670
+    out["e7"]["metrics"] = {m: summarize_metric(rows7, m, rng, a.bootstrap_resamples) for m in E7_METRICS}
+    out["e7"]["source_metrics_sha256"] = sha256(e7_path)
+
     def lowest(metric: str, k: int = 20) -> list[dict[str, Any]]:
         return [
             {
@@ -155,8 +161,6 @@ def main() -> None:
         "target_instance_count_min": min(int(r["target_instances"]) for r in rows7),
         "target_instance_count_max": max(int(r["target_instances"]) for r in rows7),
     }
-
-    # Preserve every image-level E7 metric row so aggregate claims can be regenerated.
     out["e7"]["per_image"] = rows7
 
     out_path = Path(a.out)
@@ -165,5 +169,4 @@ def main() -> None:
     print(f"wrote {out_path}")
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
