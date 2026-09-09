@@ -7,7 +7,9 @@ __pycache__/
 .venv/
 venv/
 
-# Local datasets — never commit raw third-party data
+# User/community uploads — never commit user microscopy data or derived private artifacts.
+data/*
+!data/.gitkeep
 data/raw/
 data/interim/
 data/processed/
