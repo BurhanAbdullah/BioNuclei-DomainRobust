@@ -23,15 +23,14 @@ app.add_middleware(
     allow_origins=allowed_origins or ["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"] ,
+    allow_headers=["*"],
 )
 
 
 @app.get("/health")
 def health() -> dict[str, object]:
     try:
-        checkpoint = _checkpoint()
-        checkpoint_available = checkpoint.is_file()
+        checkpoint_available = _checkpoint().is_file()
     except Exception:
         checkpoint_available = False
     return {
@@ -39,6 +38,7 @@ def health() -> dict[str, object]:
         "service": "bionuclei-community-analyzer",
         "checkpoint_available": checkpoint_available,
         "max_upload_bytes": MAX_UPLOAD_BYTES,
+        "supported_input_formats": [".tif", ".tiff", ".nd2"],
     }
 
 
@@ -69,12 +69,25 @@ async def analyze(
     image: Annotated[UploadFile, File(...)],
     research_consent: Annotated[bool, Form()] = False,
     algorithm_profile: Annotated[str, Form()] = "auto",
+    nd2_channel: Annotated[int, Form()] = 0,
+    nd2_time: Annotated[int, Form()] = 0,
+    nd2_z: Annotated[int, Form()] = 0,
+    nd2_field: Annotated[int, Form()] = 0,
 ) -> dict[str, object]:
     data = await image.read(MAX_UPLOAD_BYTES + 1)
     if not data:
         raise HTTPException(status_code=400, detail="Uploaded image is empty")
     try:
-        job_id = create_job(data, image.filename or "uploaded-image.tif", research_consent, algorithm_profile)
+        job_id = create_job(
+            data,
+            image.filename or "uploaded-image.tif",
+            research_consent,
+            algorithm_profile,
+            channel=nd2_channel,
+            time=nd2_time,
+            z=nd2_z,
+            field=nd2_field,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -83,6 +96,7 @@ async def analyze(
         "poll": f"/jobs/{job_id}",
         "research_consent": research_consent,
         "algorithm_profile": algorithm_profile,
+        "nd2_selection": {"channel": nd2_channel, "time": nd2_time, "z": nd2_z, "field": nd2_field},
         "retention": "research copy retained only when explicit consent is true; result expires according to server retention policy",
     }
 
