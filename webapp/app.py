@@ -26,12 +26,12 @@ from bionuclei.inference import evaluate, predict
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 
 app = FastAPI(
-    title="BioMCP Web API",
+    title="BioNuclei Web API",
     version="0.1.0",
     description="HTTP adapter for deterministic BioNuclei bioimage-analysis operations.",
 )
 
-allowed_origins = [origin.strip() for origin in os.getenv("BIOMCP_ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
+allowed_origins = [origin.strip() for origin in os.getenv("BIONUCLEI_ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins or ["*"],
@@ -40,7 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MAX_UPLOAD_BYTES = int(os.getenv("BIOMCP_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 
 def _checkpoint() -> Path:
@@ -77,7 +77,7 @@ def health() -> dict[str, object]:
 @app.get("/tools")
 def tools() -> dict[str, object]:
     return {
-        "server": "BioMCP Web API",
+        "server": "BioNuclei Web API",
         "measurement_policy": "Scientific Python code is authoritative; the web layer only orchestrates it.",
         "tools": [
             {"name": "inspect_image", "http": "POST /inspect", "status": "implemented"},
@@ -182,7 +182,10 @@ async def provenance(provenance: Annotated[UploadFile, File(...)]) -> dict[str, 
 async def result_summary(results: Annotated[UploadFile, File(...)]) -> dict[str, object]:
     path = await _save_upload(results, suffix=".json")
     try:
-        return json.loads(path.read_text())
+        payload = json.loads(path.read_text())
+        if not isinstance(payload, dict):
+            raise ValueError("result summary must be a JSON object")
+        return payload
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid results JSON: {exc}") from exc
     finally:
