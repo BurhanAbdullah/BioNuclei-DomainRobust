@@ -36,6 +36,7 @@ web = [
   "fastapi>=0.115",
   "python-multipart>=0.0.9",
   "uvicorn>=0.30",
+  "pillow>=10.0",
 ]
 
 [project.scripts]
