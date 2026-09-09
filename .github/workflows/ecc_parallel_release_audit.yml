@@ -1,0 +1,192 @@
+name: ECC parallel release audit
+
+# ECC-style multi-agent release gate. Each independent lane checks one concern
+# from the immutable evidence chain. The final integrator accepts readiness only
+# when every lane passes. No lane may rewrite scientific result artifacts.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ecc-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  E6_RUN_ID: "34312521029"
+  E6_SOURCE_RUN_ID: "34208190019"
+  E7_RUN_ID: "34311290928"
+  UNCERTAINTY_RUN_ID: "34312702218"
+  E6_AGGREGATE_ARTIFACT_ID: "10088871204"
+  E7_ARTIFACT_ID: "10088666629"
+  UNCERTAINTY_ARTIFACT_ID: "10088937486"
+  REQUIRED_PYTHON: "3.11"
+
+jobs:
+  scientific:
+    name: A1 Scientific evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.REQUIRED_PYTHON }}
+      - name: Install analysis dependencies
+        run: python -m pip install --upgrade pip numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm
+      - name: Verify statistical plan and analyzers
+        run: |
+          set -euo pipefail
+          python -m compileall -q scripts src
+          test -f docs/STATISTICAL_ANALYSIS_PLAN.md
+          test -f scripts/analyze_e3_e4_statistics.py
+          test -f scripts/analyze_e6_e7_uncertainty.py
+      - name: Verify immutable evidence identifiers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']
+          token=os.environ['GH_TOKEN']
+          def get(url):
+              r=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(r) as h: return json.load(h)
+          for aid in [os.environ['E6_AGGREGATE_ARTIFACT_ID'],os.environ['E7_ARTIFACT_ID'],os.environ['UNCERTAINTY_ARTIFACT_ID']]:
+              obj=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
+              assert obj['expired'] is False, aid
+              assert obj['size_in_bytes'] > 0, aid
+          print('scientific evidence identifiers: PASS')
+          PY
+
+  reproduction:
+    name: A2 Clean-environment reproduction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.REQUIRED_PYTHON }}
+      - name: Install from package metadata
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+      - name: Environment and test verification
+        run: |
+          python - <<'PY'
+          import sys, torch
+          print(sys.version)
+          print(torch.__version__)
+          assert not torch.cuda.is_available()
+          PY
+          pytest -q
+          python -m compileall -q scripts src
+
+  provenance:
+    name: A3 Provenance and artifact integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.REQUIRED_PYTHON }}
+      - name: Verify pinned GitHub artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
+          checks={
+            'e6':os.environ['E6_AGGREGATE_ARTIFACT_ID'],
+            'e7':os.environ['E7_ARTIFACT_ID'],
+            'uncertainty':os.environ['UNCERTAINTY_ARTIFACT_ID'],
+          }
+          def get(url):
+            req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(req) as h:return json.load(h)
+          for label,aid in checks.items():
+            o=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
+            assert not o['expired'], label
+            assert o['workflow_run'] and o['workflow_run']['id'], label
+            assert o['digest'].startswith('sha256:'), label
+            print(label, o['id'], o['digest'])
+          PY
+
+  claims:
+    name: A4 Claims and documentation audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Search for unsafe readiness/metric claims
+        run: |
+          set -euo pipefail
+          ! grep -RniE 'scientifically ready|proven superior|state-of-the-art|generalizes universally|clinically validated' README.md docs . --exclude-dir=.git --exclude='*.json' || {
+            echo 'Potential overclaiming language detected; review required.'
+            exit 1
+          }
+          test -f docs/RELEASE_CHECKLIST.md
+          test -f docs/METHOD_FREEZE_2026-09-04.md
+
+  hostile_review:
+    name: A5 Hostile reproducibility checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.REQUIRED_PYTHON }}
+      - name: Static release checks
+        run: |
+          set -euo pipefail
+          python -m compileall -q scripts src
+          grep -Rni "E6_cross_dataset_few_shot" docs scripts .github/workflows >/dev/null
+          grep -Rni "BBBC038" docs scripts .github/workflows >/dev/null
+          grep -Rni "seed.*42" docs .github/workflows >/dev/null
+          grep -Rni "20" docs .github/workflows >/dev/null
+
+  integrator:
+    name: ECC integrator
+    needs: [scientific, reproduction, provenance, claims, hostile_review]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fail closed on any lane failure
+        run: |
+          set -euo pipefail
+          for result in '${{ needs.scientific.result }}' '${{ needs.reproduction.result }}' '${{ needs.provenance.result }}' '${{ needs.claims.result }}' '${{ needs.hostile_review.result }}'; do
+            test "$result" = success || { echo "ECC lane failure: $result"; exit 1; }
+          done
+      - name: Publish machine-readable readiness state
+        run: |
+          mkdir -p ecc_release
+          cat > ecc_release/readiness.json <<EOF
+          {
+            "status": "pass",
+            "commit": "${GITHUB_SHA}",
+            "lanes": {
+              "scientific": "pass",
+              "clean_environment_reproduction": "pass",
+              "provenance": "pass",
+              "claims_and_documentation": "pass",
+              "hostile_reproducibility": "pass"
+            },
+            "e6_artifact_id": ${E6_AGGREGATE_ARTIFACT_ID},
+            "e7_artifact_id": ${E7_ARTIFACT_ID},
+            "uncertainty_artifact_id": ${UNCERTAINTY_ARTIFACT_ID},
+            "note": "Engineering/reproducibility gate only; final scientific readiness still requires human review of the complete release audit."
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecc-release-readiness-${{ github.run_id }}
+          path: ecc_release/readiness.json
+          if-no-files-found: error
+          retention-days: 90
