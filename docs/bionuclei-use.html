@@ -1,91 +1,71 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Use BioNuclei | Interactive Bioimage Analysis</title>
-<meta name="description" content="Use BioNuclei for fluorescence-image inspection, nuclear instance segmentation, evaluation, measurements and provenance.">
-<link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/site.css">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use BioNuclei | Interactive Bioimaging Tool</title>
+<meta name="description" content="Use BioNuclei to inspect fluorescence images, run segmentation, evaluate predictions, compute metrics and inspect provenance.">
 <style>
-:root{--surface:#f6f8fa;--ink2:#52606d;--line2:#d9e0e6;--accent:#8f1d2c;--accent2:#135f73;--ok:#2f6f4e}
-body{background:var(--surface)}
-.hero{padding:92px 0 70px;background:linear-gradient(180deg,#fff 0%,#f7f9fb 100%);border-bottom:1px solid var(--line)}
-.hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:54px;align-items:center}.hero h1{max-width:860px;font-size:clamp(3.5rem,7vw,6.6rem);line-height:.93;letter-spacing:-.045em}.hero .lead{max-width:760px;font-size:1.2rem;line-height:1.65;color:var(--ink2)}
-.eyebrow{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:18px}.pill.live{background:#e8f3ec;border-color:#c9e0d2;color:var(--ok)}
-.hero-panel{background:#101821;color:#fff;border-radius:20px;padding:26px;box-shadow:0 24px 60px rgba(16,24,33,.18)}.hero-panel h3{color:#fff;margin:0 0 10px}.hero-panel p{color:#ccd5dc;line-height:1.55}.mock-screen{border:1px solid #32404b;border-radius:14px;overflow:hidden;background:#0b1117}.mock-top{display:flex;gap:7px;padding:11px;border-bottom:1px solid #25313b}.dot{width:8px;height:8px;border-radius:50%;background:#64717d}.mock-body{padding:18px}.mock-title{color:#fff;font-weight:700;font-size:14px}.mock-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:10px;margin-top:12px}.mock-image,.mock-card{min-height:140px;border:1px solid #2b3944;border-radius:10px}.mock-image{background:radial-gradient(circle at 25% 30%,#e0e8ef 0 3%,transparent 4%),radial-gradient(circle at 65% 60%,#d2dbe4 0 4%,transparent 5%),radial-gradient(circle at 80% 30%,#c4d0da 0 3%,transparent 4%),#202b34;background-size:120px 100px,160px 130px,130px 120px,auto}.mock-card{padding:14px}.mock-number{font-size:28px;font-weight:800;color:#fff}
-.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}.btn.demo{background:#111;color:#fff}.btn.demo:hover{background:#222}
-.trust{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:34px}.trust-card{background:#fff;border:1px solid var(--line2);padding:18px;border-radius:14px}.trust-card strong{display:block;font-size:1.1rem}.trust-card span{display:block;margin-top:5px;color:var(--ink2);font-size:.92rem;line-height:1.45}
-.section-head{max-width:980px}.section-head .intro{max-width:830px}
-.workflow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.workflow-card{background:#fff;border:1px solid var(--line2);padding:26px;border-radius:16px;min-height:205px;position:relative}.workflow-card .index{font:700 .78rem ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);letter-spacing:.08em}.workflow-card h3{font-size:1.6rem;margin:18px 0 10px}.workflow-card p{color:var(--ink2);line-height:1.55}
-.demo-wrap{display:grid;grid-template-columns:1fr .9fr;gap:22px}.demo-panel{background:#fff;border:1px solid var(--line2);border-radius:18px;padding:25px}.drop{border:2px dashed #bcc7d0;border-radius:14px;padding:34px;text-align:center;background:#fbfcfd;transition:.15s}.drop.drag{border-color:var(--accent2);background:#eef7f9}.drop input{margin-top:15px}.demo-status{margin-top:14px;padding:12px 14px;border-radius:10px;background:#eef2f5;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}.result{background:#0c1319;color:#eaf0f4;border-radius:12px;padding:18px;min-height:230px;overflow:auto;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}.metric-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.metric{border:1px solid var(--line2);border-radius:12px;padding:15px}.metric small{display:block;color:var(--ink2);font-size:.78rem}.metric strong{display:block;font-size:1.7rem;margin-top:4px}
-.links{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.link-card{display:block;background:#fff;border:1px solid var(--line2);padding:23px;border-radius:15px}.link-card:hover{transform:translateY(-2px)}.link-card h3{margin:9px 0}.link-card p{color:var(--ink2);line-height:1.5}
-.notice{padding:18px 20px;border:1px solid var(--line2);background:#fff;border-radius:12px}.notice.warning{border-left:4px solid #c78600;background:#fff9ec}.note-list{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:16px}.note{padding:15px;border-radius:10px;background:#f5f7f9;border:1px solid var(--line2);line-height:1.5}.note b{display:block;margin-bottom:5px}
-@media(max-width:980px){.hero-grid,.demo-wrap{grid-template-columns:1fr}.trust,.workflow{grid-template-columns:repeat(2,1fr)}.links{grid-template-columns:1fr}}
-@media(max-width:600px){.hero{padding:72px 0 55px}.hero h1{font-size:3.2rem}.trust,.workflow,.metric-grid,.note-list{grid-template-columns:1fr}}
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#14202b;background:#f6f8fb}body{margin:0}main{max-width:1180px;margin:0 auto;padding:38px 22px 90px}.hero{padding:46px;border-radius:24px;background:#12202b;color:white}.eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:12px;opacity:.72}.hero h1{font-size:clamp(40px,7vw,72px);line-height:1;margin:10px 0 14px}.hero p{max-width:820px;font-size:19px;line-height:1.65;opacity:.92}.panel{margin-top:22px;padding:26px;border:1px solid #dde4ea;border-radius:18px;background:white;box-shadow:0 8px 30px rgba(20,32,43,.06)}h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.field{display:flex;flex-direction:column;gap:7px}.field label{font-weight:700;font-size:13px}.field input,.field textarea,.field select{border:1px solid #cfd8e0;border-radius:10px;padding:11px 12px;font:inherit;background:white}.buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.btn{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:pointer;background:#14202b;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.btn.alt{background:#eef2f5;color:#14202b}.btn.green{background:#136f63}.status{padding:10px 12px;border-radius:10px;background:#eef2f5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-word}.result{white-space:pre-wrap;background:#0b1117;color:#e6edf3;border-radius:12px;padding:16px;min-height:120px;overflow:auto}.tool{border:1px solid #e0e6eb;border-radius:14px;padding:16px}.tool strong{display:block;margin-bottom:7px}.muted{color:#61707d}.warning{border-left:4px solid #d08a00;padding:12px 14px;background:#fff7e5;border-radius:8px}.ok{border-left:4px solid #198754;padding:12px 14px;background:#edf9f1;border-radius:8px}.small{font-size:13px;line-height:1.55}.nav{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}.nav a{color:#14202b;font-weight:700;text-decoration:none}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}.hero-actions .btn{background:#fff;color:#14202b}.hero-actions .btn.primary{background:#dfe9ef}.path{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:24px}.path div{padding:15px;border-radius:12px;background:#1c303d;text-align:center}.path b{display:block;font-size:14px}.path span{font-size:12px;opacity:.75}@media(max-width:800px){.path{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
-<nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="index.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Interactive bioimage analysis</small></span></a><div class="nav-links"><a href="bionuclei-use.html">Use</a><a href="results.html">Results</a><a href="research.html">Research</a></div><div class="nav-cta"><a class="btn small primary" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a></div></div></nav>
-
 <main>
-<header class="hero"><div class="wrap hero-grid">
-<div>
-<div class="eyebrow"><span class="pill">BioNuclei</span><span class="pill">Executable</span><span class="pill live">User-ready surface</span></div>
-<h1>Turn a fluorescence image into an inspectable result.</h1>
-<p class="lead">Inspect an image, segment nuclei, evaluate against ground truth, read measurements and preserve provenance. BioNuclei keeps the scientific computation in the executable Python package while making the workflow easy to use.</p>
-<div class="actions"><a class="btn primary" href="#try">Try the demo</a><a class="btn" href="#local">Run locally</a><a class="btn" href="results.html">See verified results</a></div>
-<div class="trust"><div class="trust-card"><strong>2-D TIFF</strong><span>Current inference input contract.</span></div><div class="trust-card"><strong>Instance masks</strong><span>Per-nucleus labelled output.</span></div><div class="trust-card"><strong>Measurements</strong><span>Area, centroid and bounding box.</span></div><div class="trust-card"><strong>Provenance</strong><span>Machine-readable execution record.</span></div></div>
+<div class="nav"><a href="index.html">Home</a><a href="bionuclei.html">BioNuclei</a><a href="results.html">Verified results</a><a href="../README.md">README</a><a href="USER_GUIDE.md">User guide</a><a href="DEPLOY_BIONUCLEI.md">Deploy</a></div>
+<section class="hero">
+<div class="eyebrow">BioNuclei • Interactive use</div>
+<h1>Run BioNuclei on your own fluorescence images.</h1>
+<p>Inspect the image, predict nuclear instances, evaluate against ground truth, compute metrics, and inspect the resulting files and provenance. The same deterministic Python package powers local and deployed use.</p>
+<div class="hero-actions"><a class="btn primary" href="#connect">Connect a live endpoint</a><a class="btn" href="DEPLOY_BIONUCLEI.md">Deploy BioNuclei</a><a class="btn" href="results.html">See verified results</a></div>
+<div class="path"><div><b>01 · Inspect</b><span>image quality</span></div><div><b>02 · Predict</b><span>instances</span></div><div><b>03 · Evaluate</b><span>metrics</span></div><div><b>04 · Audit</b><span>provenance</span></div></div>
+</section>
+
+<section class="panel ok"><strong>BioNuclei is the product here.</strong><p class="small">BioMCP is a separate optional interoperability layer. BioFM, BioWF and BioSkills are separate products/research directions. You do not need any of them to use BioNuclei.</p></section>
+
+<section class="panel" id="connect">
+<h2>Connect to a live BioNuclei backend</h2>
+<div class="grid">
+<div class="field"><label for="api">API base URL</label><input id="api" placeholder="https://your-bionuclei-api.example.com" autocomplete="url"></div>
+<div class="field"><label for="device">Inference device</label><select id="device"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></div>
 </div>
-<div class="hero-panel"><h3>What users get</h3><p>A single prediction can produce the image, an instance mask, measurements, a structured summary and provenance that can be inspected independently.</p><div class="mock-screen"><div class="mock-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><div class="mock-body"><div class="mock-title">BioNuclei result bundle</div><div class="mock-grid"><div class="mock-image" aria-label="Illustrative fluorescence microscopy preview"></div><div class="mock-card"><div class="mock-number">42</div><div style="color:#aeb8c1;font-size:12px">detected instances</div><div style="height:12px"></div><div style="color:#aeb8c1;font-size:12px">provenance ✓</div><div style="color:#aeb8c1;font-size:12px">measurements ✓</div></div></div></div></div></div>
-</div></header>
+<div class="buttons"><button class="btn" onclick="loadTools()">Check endpoint</button><span class="status" id="health">Not connected</span></div>
+<p class="small muted">The GitHub Pages site is the client. Live PyTorch inference requires the separately deployed BioNuclei Web API with a validated permanent checkpoint configured on the server.</p>
+</section>
 
-<section class="section"><div class="wrap"><div class="section-head"><div class="kicker">Four-step workflow</div><h2>A simple path for researchers and image-analysis users.</h2><p class="intro">The interface is intentionally task-oriented. You do not need to understand the benchmark pipeline to use the local product.</p></div><div class="workflow"><article class="workflow-card"><div class="index">01 · INSPECT</div><h3>Check the image</h3><p>Confirm dimensions, dtype and intensity characteristics before inference.</p></article><article class="workflow-card"><div class="index">02 · PREDICT</div><h3>Segment nuclei</h3><p>Run the current BioNuclei model and generate instance-labelled segmentation output.</p></article><article class="workflow-card"><div class="index">03 · EVALUATE</div><h3>Measure quality</h3><p>Provide a ground-truth mask to compute supported accuracy metrics.</p></article><article class="workflow-card"><div class="index">04 · AUDIT</div><h3>Inspect evidence</h3><p>Review structured results and provenance before making scientific interpretations.</p></article></div></div></section>
+<section class="panel">
+<h2>What the tool can do</h2>
+<div class="grid" id="tools">
+<div class="tool"><strong>1 · Inspect image</strong><span class="muted">Dimensions, dtype and intensity statistics.</span></div>
+<div class="tool"><strong>2 · Predict</strong><span class="muted">Boundary U-Net segmentation and structured prediction output.</span></div>
+<div class="tool"><strong>3 · Evaluate</strong><span class="muted">Dice, IoU and Boundary-F1 when ground truth is supplied.</span></div>
+<div class="tool"><strong>4 · Compute instance metrics</strong><span class="muted">Dice, IoU, AJI and Boundary-F1 directly from masks.</span></div>
+<div class="tool"><strong>5 · Read provenance</strong><span class="muted">Machine-readable execution and input metadata.</span></div>
+<div class="tool"><strong>6 · Read result summary</strong><span class="muted">Structured <code>results.json</code> output.</span></div>
+</div>
+</section>
 
-<section class="section soft" id="try"><div class="wrap"><div class="section-head"><div class="kicker">Try without a server</div><h2>See the output shape instantly.</h2><p class="intro">The demo below is a <strong>UI demonstration only</strong>. It never runs the scientific model and never presents demo values as benchmark results. For real inference, connect the interactive console to a deployed BioNuclei Web API or run the CLI locally.</p></div><div class="demo-wrap"><div class="demo-panel"><h3>Demo workspace</h3><div class="drop" id="drop"><strong>Drop a TIFF here</strong><div class="muted">or choose a local file to preview its metadata</div><input id="file" type="file" accept=".tif,.tiff"></div><div class="demo-status" id="status">No image selected.
-Demo mode does not upload or execute your file.</div><div class="actions"><button class="btn demo" type="button" id="demoBtn">Show sample result</button><a class="btn" href="use.html">Open real console</a></div></div><div class="demo-panel"><h3>Sample output schema</h3><div class="metric-grid"><div class="metric"><small>Instances</small><strong>42</strong></div><div class="metric"><small>Image shape</small><strong>1024×1024</strong></div><div class="metric"><small>Measurements</small><strong>CSV</strong></div><div class="metric"><small>Provenance</small><strong>JSON</strong></div></div><pre class="result" id="sample">Click “Show sample result” to inspect an illustrative structured response.</pre></div></div></div></section>
+<section class="panel"><h2>1 — Inspect an image</h2><input type="file" id="inspectFile" accept=".tif,.tiff"><div class="buttons"><button class="btn" onclick="inspectImage()">Inspect image</button></div><pre class="result" id="inspectResult"></pre></section>
+<section class="panel"><h2>2 — Predict</h2><input type="file" id="predictFile" accept=".tif,.tiff"><div class="buttons"><button class="btn" onclick="predictImage()">Run prediction</button></div><pre class="result" id="predictResult"></pre></section>
+<section class="panel"><h2>3 — Evaluate</h2><div class="grid"><div class="field"><label>Fluorescence image</label><input type="file" id="evalImage" accept=".tif,.tiff"></div><div class="field"><label>Ground-truth mask</label><input type="file" id="evalGt" accept=".tif,.tiff,.png"></div></div><div class="buttons"><button class="btn" onclick="evaluateImage()">Run evaluation</button></div><pre class="result" id="evalResult"></pre></section>
+<section class="panel"><h2>4 — Compute metrics</h2><div class="grid"><div class="field"><label>Prediction instance mask</label><input type="file" id="predMask" accept=".tif,.tiff"></div><div class="field"><label>Ground-truth instance mask</label><input type="file" id="gtMask" accept=".tif,.tiff,.png"></div></div><div class="buttons"><button class="btn" onclick="computeMetrics()">Compute metrics</button></div><pre class="result" id="metricsResult"></pre></section>
+<section class="panel"><h2>5 — Inspect provenance</h2><input type="file" id="provFile" accept=".json"><div class="buttons"><button class="btn" onclick="readProvenance()">Read provenance</button></div><pre class="result" id="provResult"></pre></section>
+<section class="panel"><h2>6 — Read result summary</h2><input type="file" id="resultFile" accept=".json"><div class="buttons"><button class="btn" onclick="readResultSummary()">Read results.json</button></div><pre class="result" id="resultSummary"></pre></section>
 
-<section class="section" id="local"><div class="wrap"><div class="section-head"><div class="kicker">Real inference</div><h2>Run BioNuclei locally.</h2><p class="intro">The local CLI is the primary reproducible path. A compatible checkpoint is required for prediction or evaluation.</p></div><div class="demo-panel"><pre class="result">python -m venv .venv
-python -m pip install --upgrade pip
-python -m pip install -e .
+<section class="panel">
+<h2>Need the backend?</h2><p>Deploy the BioNuclei Web API from this public repository, configure a validated permanent checkpoint, verify the health endpoint, and paste the HTTPS URL above.</p><div class="buttons"><a class="btn green" href="DEPLOY_BIONUCLEI.md">Deployment guide</a><a class="btn alt" href="https://render.com/deploy?repo=https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">Deploy to Render ↗</a></div></section>
 
-bionuclei --help
-
-bionuclei predict \
-  --input my_fluorescence_image.tif \
-  --checkpoint model.pt \
-  --output results/
-
-bionuclei evaluate \
-  --input my_fluorescence_image.tif \
-  --ground-truth ground_truth.png \
-  --checkpoint model.pt \
-  --output evaluation/</pre><div class="notice warning"><strong>Checkpoint status:</strong> do not use an expiring Actions artifact as a permanent public model download. The repository is keeping Release 1.0 fail-closed until the validated checkpoint/package is permanently published.</div><div class="actions"><a class="btn primary" href="USER_GUIDE.md">Full user guide</a><a class="btn" href="results.html">Verified result samples</a><a class="btn" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">Source code</a></div></div></div></section>
-
-<section class="section soft"><div class="wrap"><div class="section-head"><div class="kicker">Output bundle</div><h2>Results users can keep and inspect.</h2></div><div class="demo-panel"><pre class="result">results/
-├── segmentation_mask.tif   # integer-labelled nuclear instances
-├── overlay.tif             # visual inspection overlay
-├── measurements.csv        # per-instance measurements
-├── results.json             # structured prediction summary
-└── provenance.json          # execution + input metadata</pre><div class="note-list"><div class="note"><b>For arbitrary user images</b>BioNuclei produces software outputs and measurements. Do not infer benchmark accuracy without ground truth and the defined evaluation protocol.</div><div class="note"><b>For benchmark experiments</b>Use the registered research workflows. Their artifacts, manifests, hashes and statistical analysis are the authoritative evidence chain.</div></div></div></div></section>
-
-<section class="section"><div class="wrap"><div class="section-head"><div class="kicker">Verified BioNuclei evidence</div><h2>See what the research actually achieved.</h2><p class="intro">Benchmark evidence stays separate from the user demo and product UI.</p></div><div class="links"><a class="link-card" href="results.html"><div class="kicker">RESULTS</div><h3>Verified benchmark samples →</h3><p>Actual retained E6/E7 evidence, with explicit evidence context.</p></a><a class="link-card" href="research.html"><div class="kicker">RESEARCH</div><h3>Scientific evidence ledger →</h3><p>Experiments, gates, methods and interpretation boundaries.</p></a><a class="link-card" href="datasets.html"><div class="kicker">DATASETS</div><h3>Dataset roles & provenance →</h3><p>Source/target/independent-validation roles and split discipline.</p></a></div></div></section>
-
-<section class="section dark"><div class="wrap"><div class="section-head"><div class="kicker">Product boundary</div><h2>BioNuclei is the science product.</h2><p>BioMCP is a separate interoperability layer. BioFM, BioWF and BioSkills are separate directions. None is required to use BioNuclei.</p><div class="actions"><a class="btn" href="biomcp.html">BioMCP</a><a class="btn" href="biofm.html">BioFM</a><a class="btn" href="biowf.html">BioWF</a><a class="btn" href="bioskills.html">BioSkills</a></div></div></div></section>
+<section class="panel warning"><strong>Scientific boundary</strong><p class="small">The public interface does not invent metrics, tune benchmark protocols, upload arbitrary checkpoints, or execute arbitrary shell commands. Registered E6/E7 experiments and release validation remain controlled scientific workflows.</p></section>
 </main>
-<footer class="site-footer"><div class="wrap"><div class="foot-grid"><div><h4>BioNuclei</h4><p>Executable, inspectable bioimage analysis.</p></div><div><h4>Use BioNuclei</h4><a href="bionuclei-use.html">User hub</a><a href="use.html">Interactive console</a><a href="results.html">Results</a><a href="USER_GUIDE.md">User guide</a></div><div><h4>Separate products</h4><a href="biomcp.html">BioMCP</a><a href="biofm.html">BioFM</a><a href="biowf.html">BioWF</a><a href="bioskills.html">BioSkills</a></div><div><h4>Source</h4><a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a></div></div></div></footer>
 <script>
-const file=document.getElementById('file');
-const drop=document.getElementById('drop');
-const status=document.getElementById('status');
-const sample=document.getElementById('sample');
-const demo={command:'predict',status:'illustrative UI sample only',outputs:{instances:42,image_shape:[1024,1024],files:['segmentation_mask.tif','overlay.tif','measurements.csv','results.json','provenance.json']},note:'This response is not a model execution and must not be cited as benchmark evidence.'};
-function showFile(f){if(!f){status.textContent='No image selected.\nDemo mode does not upload or execute your file.';return;} const kb=(f.size/1024).toFixed(1); status.textContent='Selected: '+f.name+'\nSize: '+kb+' KB\nBrowser-only preview: file was not uploaded or executed.';}
-file.addEventListener('change',()=>showFile(file.files[0]));
-['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('drag')}));
-['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('drag')}));
-drop.addEventListener('drop',ev=>showFile(ev.dataTransfer.files[0]));
-document.getElementById('demoBtn').addEventListener('click',()=>{sample.textContent=JSON.stringify(demo,null,2)});
+const el=id=>document.getElementById(id); const base=()=>el('api').value.replace(/\/$/,'');
+async function call(path, options={}){const b=base(); if(!b) throw new Error('Enter an API base URL first'); const r=await fetch(b+path,options); const text=await r.text(); let data; try{data=JSON.parse(text)}catch{data={raw:text}} if(!r.ok) throw new Error(JSON.stringify(data)); return data;}
+async function loadTools(){try{const [h,t]=await Promise.all([call('/health'),call('/tools')]); el('health').textContent=JSON.stringify(h); el('tools').insertAdjacentHTML('afterbegin','<div class="tool"><strong>Connected</strong><span class="muted">'+t.tools.length+' implemented operations reported by the endpoint.</span></div>')}catch(e){el('health').textContent='ERROR: '+e.message}}
+function form(files, extra={}){const f=new FormData(); Object.entries(files).forEach(([k,v])=>f.append(k,v)); Object.entries(extra).forEach(([k,v])=>f.append(k,v)); return f}
+async function inspectImage(){try{const f=el('inspectFile').files[0]; if(!f) throw new Error('Choose an image'); el('inspectResult').textContent=JSON.stringify(await call('/inspect',{method:'POST',body:form({image:f})}),null,2)}catch(e){el('inspectResult').textContent='ERROR: '+e.message}}
+async function predictImage(){try{const f=el('predictFile').files[0]; if(!f) throw new Error('Choose an image'); el('predictResult').textContent=JSON.stringify(await call('/predict',{method:'POST',body:form({image:f},{device:el('device').value})}),null,2)}catch(e){el('predictResult').textContent='ERROR: '+e.message}}
+async function evaluateImage(){try{const i=el('evalImage').files[0], g=el('evalGt').files[0]; if(!i||!g) throw new Error('Choose both files'); el('evalResult').textContent=JSON.stringify(await call('/evaluate',{method:'POST',body:form({image:i,ground_truth:g},{device:el('device').value})}),null,2)}catch(e){el('evalResult').textContent='ERROR: '+e.message}}
+async function computeMetrics(){try{const p=el('predMask').files[0], g=el('gtMask').files[0]; if(!p||!g) throw new Error('Choose both files'); el('metricsResult').textContent=JSON.stringify(await call('/metrics',{method:'POST',body:form({prediction:p,ground_truth:g})}),null,2)}catch(e){el('metricsResult').textContent='ERROR: '+e.message}}
+async function readProvenance(){try{const p=el('provFile').files[0]; if(!p) throw new Error('Choose a provenance JSON'); el('provResult').textContent=JSON.stringify(await call('/provenance',{method:'POST',body:form({provenance:p})}),null,2)}catch(e){el('provResult').textContent='ERROR: '+e.message}}
+async function readResultSummary(){try{const p=el('resultFile').files[0]; if(!p) throw new Error('Choose a results.json file'); el('resultSummary').textContent=JSON.stringify(await call('/result-summary',{method:'POST',body:form({results:p})}),null,2)}catch(e){el('resultSummary').textContent='ERROR: '+e.message}}
 </script>
 </body>
 </html>
