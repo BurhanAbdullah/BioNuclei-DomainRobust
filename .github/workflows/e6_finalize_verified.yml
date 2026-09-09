@@ -1,10 +1,8 @@
 name: E6 finalize verified evidence
 
-# Finalizes E6 after the dedicated 25% recovery succeeds. This workflow never
-# retrains and never substitutes a fraction. It downloads the latest retained
-# artifact for each preregistered fraction and verifies the immutable dataset,
-# config, frozen-E4 initialization, split, seed, epoch budget, leakage flags,
-# and test-metric digests before publishing an aggregate evidence artifact.
+# Finalizes E6 without retraining. It is deliberately pinned to the four
+# standardized fraction artifacts from run 34208190019 so the official
+# aggregate cannot accidentally consume the earlier 25% recovery artifact.
 on:
   push:
     branches: [main]
@@ -15,6 +13,10 @@ on:
 permissions:
   contents: read
   actions: read
+
+env:
+  E6_SOURCE_RUN_ID: "34208190019"
+  E6_SOURCE_SHA: "e5d76f279e4a2d9be0159357853fd21319cd0d1e"
 
 jobs:
   finalize:
@@ -30,25 +32,40 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Download latest retained E6 artifacts
+      - name: Download pinned standardized E6 artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p fractions
-          for label in 01pct 05pct 10pct; do
-            artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" --jq '[.artifacts[] | select(.expired == false) | select(.name | startswith("e6-fraction-'"${label}"'-"))] | sort_by(.created_at) | last | .id')"
-            test -n "$artifact_id" && test "$artifact_id" != "null"
-            echo "$label artifact=$artifact_id"
+
+          declare -A IDS
+          IDS[01pct]=10048904584
+          IDS[05pct]=10049300074
+          IDS[10pct]=10055510835
+          IDS[25pct]=10051231349
+
+          declare -A DIGESTS
+          DIGESTS[01pct]=b1f4732c39de3c93d7bcd1ace242c73bc9d5b2c3c7a4d9e431ed0ccd42ee4f93
+          DIGESTS[05pct]=4841db1700af56556292eaf8b267a5b95195c65445bc555efa80e93780b95103
+          DIGESTS[10pct]=00c2757ed9911db655945ab22c6cb2f70d0f6e48f376c614a8d25342e89bc472
+          DIGESTS[25pct]=8907e0dbc6d00714eb0cb4e235410462db689dd1ebbd4094b882e01e2f47b6b0
+
+          for label in 01pct 05pct 10pct 25pct; do
+            artifact_id="${IDS[$label]}"
+            expected_digest="${DIGESTS[$label]}"
+            meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}")"
+            name="$(jq -r '.name' <<<"$meta")"
+            digest="$(jq -r '.digest' <<<"$meta")"
+            head_sha="$(jq -r '.workflow_run.head_sha' <<<"$meta")"
+            run_id="$(jq -r '.workflow_run.id' <<<"$meta")"
+            test "$name" = "e6-fraction-${label}-${E6_SOURCE_RUN_ID}"
+            test "$digest" = "sha256:${expected_digest}"
+            test "$head_sha" = "$E6_SOURCE_SHA"
+            test "$run_id" = "$E6_SOURCE_RUN_ID"
             gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${label}.zip"
             unzip -q "${label}.zip" -d "fractions/${label}"
           done
-
-          artifact_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" --jq '[.artifacts[] | select(.expired == false) | select(.name | startswith("e6-25pct-recovery-"))] | sort_by(.created_at) | last | .id')"
-          test -n "$artifact_id" && test "$artifact_id" != "null"
-          echo "25pct artifact=$artifact_id"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > 25pct.zip
-          unzip -q 25pct.zip -d fractions/25pct
 
       - name: Validate and aggregate E6 evidence
         run: |
@@ -75,6 +92,7 @@ jobs:
               assert prov['s_biad634_used_for_adaptation'] is False, label
               assert prov['test_images_used_for_adaptation'] is False, label
               assert prov['development_images_used_for_training_or_selection'] is False, label
+              assert prov.get('activation_checkpointing') is True, label
               assert metrics['n_images'] == 10, label
               assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1')), label
               metric_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
@@ -98,17 +116,19 @@ jobs:
                   'mean': metrics['mean'],
                   'test_metrics_sha256': metric_sha,
                   'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest(),
-                  'activation_checkpointing': bool(prov.get('activation_checkpointing', False)),
+                  'activation_checkpointing': prov.get('activation_checkpointing'),
               })
 
           out = Path('e6_verified')
           out.mkdir(exist_ok=True)
           aggregate = {
               'protocol': 'E6_cross_dataset_few_shot',
+              'source_run_id': 34208190019,
+              'source_commit': 'e5d76f279e4a2d9be0159357853fd21319cd0d1e',
               'all_four_fractions_verified': True,
               'immutable_provenance_common': common,
               'fractions': rows,
-              'acceptance_note': 'All four preregistered fractions have independently retained, provenance-verified evidence. The 25pct memory-only activation-checkpoint path preserves protocol hyperparameters and batch composition and records its execution mode explicitly.',
+              'acceptance_note': 'Official E6 aggregate uses only the four standardized fraction artifacts from run 34208190019. All four record activation checkpointing enabled, seed 42, 20 epochs, the same immutable dataset/config/E4 hashes, and fail-closed leakage flags.',
           }
           (out / 'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + '\n')
           print('E6 verified aggregate: PASS')
