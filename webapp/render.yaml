@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bionuclei-biomcp
+    name: bionuclei-api
     runtime: docker
     plan: starter
     dockerfilePath: ./webapp/Dockerfile
