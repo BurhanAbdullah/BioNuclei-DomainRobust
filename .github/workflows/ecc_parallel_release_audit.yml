@@ -18,13 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  E6_RUN_ID: "34312521029"
+  E6_RUN_ID: "34312833206"
   E6_SOURCE_RUN_ID: "34208190019"
-  E7_RUN_ID: "34311290928"
-  UNCERTAINTY_RUN_ID: "34312702218"
-  E6_AGGREGATE_ARTIFACT_ID: "10088871204"
-  E7_ARTIFACT_ID: "10088666629"
-  UNCERTAINTY_ARTIFACT_ID: "10088937486"
+  E7_RUN_ID: "34312920549"
+  UNCERTAINTY_RUN_ID: "34312853905"
+  E6_AGGREGATE_ARTIFACT_ID: "10088980217"
+  E7_ARTIFACT_ID: "10089229809"
+  UNCERTAINTY_ARTIFACT_ID: "10088988731"
   REQUIRED_PYTHON: "3.11"
 
 jobs:
@@ -101,9 +101,9 @@ jobs:
           import json, os, urllib.request
           repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
           expected={
-            os.environ['E6_AGGREGATE_ARTIFACT_ID']: {'workflow_run': 34312521029, 'digest': 'sha256:b45d15101bfd1702414cb4b437c972d79434675fbd8c77780784c2a614a24503'},
-            os.environ['E7_ARTIFACT_ID']: {'workflow_run': 34311290928, 'digest': 'sha256:a6965228177505a264b24443fdef0e17e8ee9afc9868e40b5561d607af90e5ae'},
-            os.environ['UNCERTAINTY_ARTIFACT_ID']: {'workflow_run': 34312702218, 'digest': 'sha256:16e90efbd365ba5922cfbf851739df90be0336de3ead4a2bfaadf3c34ff99a88'},
+            os.environ['E6_AGGREGATE_ARTIFACT_ID']: {'workflow_run': 34312833206, 'digest': 'sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34'},
+            os.environ['E7_ARTIFACT_ID']: {'workflow_run': 34312920549, 'digest': 'sha256:e71df73427544700809d6cd2a094b33b572c3e7d835f754482a76061dd18ede7'},
+            os.environ['UNCERTAINTY_ARTIFACT_ID']: {'workflow_run': 34312853905, 'digest': 'sha256:0cbef10c50d7c254a38bf2c865d20dcac4c420010171af70a44e0e266c85d6a7'},
           }
           def get(url):
             req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
@@ -112,7 +112,7 @@ jobs:
             o=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
             assert not o['expired'], aid
             assert o['digest']==exp['digest'], (aid,o['digest'],exp['digest'])
-            assert int(o['workflow_run']['id'])==exp['workflow_run'], (aid,o['workflow_run']['id'])
+            assert int(o['workflow_run']['id'])==exp['workflow_run'], (aid,o['workflow_run']['id'],exp['workflow_run'])
             print(aid, o['digest'], 'run', o['workflow_run']['id'])
           PY
 
