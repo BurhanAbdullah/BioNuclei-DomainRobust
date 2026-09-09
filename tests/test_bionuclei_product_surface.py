@@ -55,3 +55,19 @@ def test_community_page_has_explicit_research_consent():
     assert "Optional research contribution" in html
     assert "explicitly agree" in html
     assert "Research retention is opt-in" in html
+
+
+def test_bionuclei_science_page_is_user_facing_not_api_facing():
+    html = read("bionuclei.html")
+    for text in [
+        "From microscopy image to a report you can inspect.",
+        "What BioNuclei is built to do.",
+        "One scientific model. Clear responsibilities.",
+        "What the current model was trained on.",
+        "Agents help decide how to analyze the image.",
+        "What you receive",
+        "Upload and analyze",
+    ]:
+        assert text in html
+    assert "Which AI is actually being used?" not in html
+    assert "API base URL" not in html
