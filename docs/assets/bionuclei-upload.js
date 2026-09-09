@@ -1,5 +1,5 @@
-/* BioNuclei product upload UX: visible file state + upload/analyze progress. */
-document.addEventListener('DOMContentLoaded', function () {
+/* BioNuclei product upload UX: visible file state + ND2/TIFF input + real upload progress. */
+(function () {
   if (!location.pathname.endsWith('/bionuclei.html') && location.pathname !== 'bionuclei.html') return;
   var file = document.getElementById('file');
   var preview = document.getElementById('preview');
@@ -31,89 +31,58 @@ document.addEventListener('DOMContentLoaded', function () {
   function setStatus(text, kind, progress) {
     status.textContent = text;
     if (kind === 'good') {
-      status.style.background = '#eef8f2';
-      status.style.borderColor = '#b9dec9';
-      status.style.color = '#1f6a4a';
+      status.style.background = '#eef8f2'; status.style.borderColor = '#b9dec9'; status.style.color = '#1f6a4a';
     } else if (kind === 'warn') {
-      status.style.background = '#fff7e5';
-      status.style.borderColor = '#eed3a0';
-      status.style.color = '#7b5b16';
+      status.style.background = '#fff7e5'; status.style.borderColor = '#eed3a0'; status.style.color = '#7b5b16';
     } else {
-      status.style.background = '#fff';
-      status.style.borderColor = 'var(--line)';
-      status.style.color = 'var(--muted)';
+      status.style.background = '#fff'; status.style.borderColor = 'var(--line)'; status.style.color = 'var(--muted)';
     }
     if (typeof progress === 'number') {
-      progressWrap.style.display = 'block';
-      progressBar.style.width = Math.max(0, Math.min(100, progress)) + '%';
-    } else {
-      progressWrap.style.display = 'none';
-    }
-  }
-
-  function showFileState(f) {
-    if (!f) {
-      setStatus('No image selected yet. Choose an ND2 or TIFF file to begin.', '');
-      return;
-    }
-    var lower = f.name.toLowerCase();
-    var isND2 = lower.endsWith('.nd2');
-    var mb = (f.size / (1024 * 1024)).toFixed(1);
-    setStatus('Selected: ' + f.name + ' • ' + mb + ' MB • ' + (isND2 ? 'Nikon ND2 — server-side plane selection required' : 'TIFF ready for analysis'), 'good');
+      progressWrap.style.display = 'block'; progressBar.style.width = Math.max(0, Math.min(100, progress)) + '%';
+    } else progressWrap.style.display = 'none';
   }
 
   file.addEventListener('change', function () {
     var f = file.files && file.files[0];
-    showFileState(f);
-    if (!f) return;
+    if (!f) { setStatus('No image selected yet. Choose an ND2 or TIFF file to begin.', ''); return; }
     var isND2 = f.name.toLowerCase().endsWith('.nd2');
+    var mb = (f.size / (1024 * 1024)).toFixed(1);
     if (isND2) {
-      setStatus('Selected: ' + f.name + ' • ND2 detected. The browser cannot preview ND2 directly; upload is ready and the server will read its microscopy metadata/planes.', 'good');
+      setStatus('Selected: ' + f.name + ' • ' + mb + ' MB • Nikon ND2 detected. The server will read the acquisition metadata and selected plane.', 'good');
       return;
     }
-    try {
-      var url = URL.createObjectURL(f);
-      var img = new Image();
-      img.onload = function () {
-        setStatus('Image ready: ' + f.name + ' • ' + img.naturalWidth + ' × ' + img.naturalHeight + ' px • ready for analysis.', 'good');
-        URL.revokeObjectURL(url);
-      };
-      img.onerror = function () {
-        setStatus('File selected: ' + f.name + ' • browser preview is unavailable, but the file can still be uploaded to a live compatible backend.', 'warn');
-        URL.revokeObjectURL(url);
-      };
-      img.src = url;
-    } catch (e) {
-      setStatus('File selected and ready to upload: ' + f.name, 'good');
-    }
+    var url = URL.createObjectURL(f);
+    var img = new Image();
+    img.onload = function () {
+      setStatus('Image ready: ' + f.name + ' • ' + mb + ' MB • ' + img.naturalWidth + ' × ' + img.naturalHeight + ' px • ready for analysis.', 'good');
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = function () {
+      setStatus('File selected: ' + f.name + ' • browser preview is unavailable, but the file is ready for a live compatible backend.', 'warn');
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
   });
 
   window.predictImage = function () {
     var f = file.files && file.files[0];
-    if (!f) {
-      setStatus('Choose an ND2 or TIFF image first.', 'warn');
-      return;
-    }
+    if (!f) { setStatus('Choose an ND2 or TIFF image first.', 'warn'); return; }
     var base = (api && api.value ? api.value : '').replace(/\/$/, '');
     if (!base) {
-      setStatus('Image selected and ready, but no live BioNuclei API is configured. Enter a trusted HTTPS API URL above before Analyze.', 'warn');
-      var apiInput = document.getElementById('api');
-      if (apiInput) { apiInput.focus(); apiInput.scrollIntoView({behavior:'smooth', block:'center'}); }
+      setStatus('Image selected and ready. Enter a trusted HTTPS BioNuclei API URL before clicking Analyze.', 'warn');
+      if (api) { api.focus(); api.scrollIntoView({behavior:'smooth', block:'center'}); }
       return;
     }
     var xhr = new XMLHttpRequest();
     xhr.open('POST', base + '/predict', true);
-    var form = new FormData();
-    form.append('image', f);
-    form.append('device', 'cpu');
+    var form = new FormData(); form.append('image', f); form.append('device', 'cpu');
     var started = Date.now();
     setStatus('Uploading ' + f.name + '…', '', 0);
     xhr.upload.onprogress = function (e) {
       if (e.lengthComputable) setStatus('Uploading ' + f.name + '… ' + Math.round(e.loaded / e.total * 100) + '%', '', e.loaded / e.total * 70);
     };
     xhr.onload = function () {
-      var payload;
-      try { payload = JSON.parse(xhr.responseText || '{}'); } catch (_) { payload = {raw:xhr.responseText}; }
+      var payload; try { payload = JSON.parse(xhr.responseText || '{}'); } catch (_) { payload = {raw:xhr.responseText}; }
       if (xhr.status < 200 || xhr.status >= 300) {
         setStatus('Analysis failed: ' + (payload.detail || payload.error || 'backend returned HTTP ' + xhr.status), 'warn');
         progressWrap.style.display = 'none';
@@ -145,4 +114,4 @@ document.addEventListener('DOMContentLoaded', function () {
   };
 
   setStatus('No image selected yet. Choose an ND2 or TIFF file to begin.', '');
-});
+})();
