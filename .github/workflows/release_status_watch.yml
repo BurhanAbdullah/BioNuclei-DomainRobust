@@ -1,0 +1,47 @@
+name: Release status watch
+
+# Lightweight watcher only. It does not retrain or alter evidence. It checks
+# that the pinned release artifacts still exist and that their producing runs
+# remain recorded. The full ECC-style audit remains push/manual driven.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check pinned evidence state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          E6_ARTIFACT_ID: "10088871204"
+          E7_ARTIFACT_ID: "10088666629"
+          UNCERTAINTY_ARTIFACT_ID: "10088937486"
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
+          ids={
+            'E6 aggregate':os.environ['E6_ARTIFACT_ID'],
+            'E7 BBBC038':os.environ['E7_ARTIFACT_ID'],
+            'uncertainty/failure':os.environ['UNCERTAINTY_ARTIFACT_ID'],
+          }
+          def get(url):
+            req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(req) as h:return json.load(h)
+          for label, aid in ids.items():
+            obj=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
+            state='EXPIRED' if obj['expired'] else 'LIVE'
+            run=(obj.get('workflow_run') or {}).get('id')
+            print(f'{label}: {state}; artifact={aid}; run={run}; digest={obj.get("digest")}')
+            assert not obj['expired'], label
+            assert run, label
+          print('status watch: PASS')
+          PY
