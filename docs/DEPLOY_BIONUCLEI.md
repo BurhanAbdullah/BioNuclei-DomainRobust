@@ -10,31 +10,38 @@ Render reads the repository Blueprint and creates the `bionuclei-api` Docker web
 
 ## Required model checkpoint
 
-The service deliberately starts in a degraded state until `BIONUCLEI_CHECKPOINT` points to a **validated permanent BioNuclei checkpoint**. The repository does not currently ship a permanent `.pt` release asset, so do not invent or substitute a checkpoint.
+The service deliberately starts in a degraded state until `BIONUCLEI_CHECKPOINT` points to a **validated permanent BioNuclei checkpoint**. Do not invent or substitute a checkpoint — only publish one that a CI run already produced and that `docs/PROGRESS.md` records as verified.
 
-In Render, set:
+### Promote a verified CI artifact to a permanent release
+
+CI baseline runs (`bbbc039-baseline-*`) produce trained checkpoints, but Actions artifacts expire and are not treated as permanent releases. Promote a verified artifact only through the repository release procedure:
+
+```bash
+gh auth login
+scripts/publish_checkpoint_release.sh <run-id> checkpoint-bbbc039-v1
+```
+
+The script downloads `last.pt`, records its SHA-256, and publishes the checkpoint as a versioned GitHub Release asset.
+
+### Configure the Render service
+
+Set:
 
 ```text
 BIONUCLEI_CHECKPOINT=/opt/models/bionuclei.pt
+BIONUCLEI_CHECKPOINT_URL=https://github.com/<repo>/releases/download/checkpoint-bbbc039-v1/bionuclei_bbbc039.pt
+BIONUCLEI_CHECKPOINT_SHA256=<sha256 printed by the publish script>
 ```
 
-Then provide the validated checkpoint at that path using the deployment mechanism selected for the service. Keep the checkpoint hash in the release manifest and verify `/health` reports `checkpoint_configured: true` before connecting the public console.
+The container startup entrypoint fetches and verifies the checkpoint when it is not already mounted at `BIONUCLEI_CHECKPOINT`.
 
-## Connect the website
-
-After the service is live, copy its HTTPS URL and paste it into the **API base URL** field on [`use.html`](use.html).
-
-The static GitHub Pages site cannot run PyTorch by itself. It is the client interface; the deployed BioNuclei Web API performs the deterministic computation.
-
-## Health check
-
-Open:
+Redeploy and verify:
 
 ```text
 https://YOUR-SERVICE.onrender.com/health
 ```
 
-Expected healthy response shape:
+with:
 
 ```json
 {
@@ -44,8 +51,14 @@ Expected healthy response shape:
 }
 ```
 
+## Connect the website
+
+The public user experience is the **BioNuclei Lab** at [`bionuclei-lab.html`](bionuclei-lab.html). Users should not enter API URLs or call individual developer operations.
+
+The static GitHub Pages site is the client. The deployed BioNuclei Web API performs the PyTorch inference and returns the analysis result.
+
 ## Security and scientific boundary
 
-The public adapter accepts bounded image/JSON uploads and exposes only the defined BioNuclei operations. It does not accept arbitrary shell commands, arbitrary checkpoint uploads, or mutation of authoritative benchmark evidence.
+The public adapter accepts bounded image uploads and exposes only the supported BioNuclei analysis workflow. It does not accept arbitrary shell commands, arbitrary checkpoint uploads, or mutation of authoritative benchmark evidence.
 
 Registered E6/E7 research workflows remain controlled scientific experiments and are not exposed as public buttons.
