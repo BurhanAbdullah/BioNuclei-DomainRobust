@@ -1,14 +1,15 @@
 """Standalone public BioNuclei Community Analyzer service."""
 from __future__ import annotations
 
+import base64
 import os
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
-from .app import _checkpoint
+from .app import _checkpoint, _png_data_url
 from .auth import authenticate
 from .community import MAX_UPLOAD_BYTES, create_job, get_archive, get_file, get_job, get_jobs_for_user
 
@@ -119,6 +120,23 @@ def job(request: Request, job_id: str) -> dict[str, object]:
     if payload is None:
         raise HTTPException(status_code=404, detail="Analysis job not found")
     return payload
+
+
+@app.get("/jobs/{job_id}/preview/{filename}")
+def preview(request: Request, job_id: str, filename: str) -> Response:
+    """Return an authenticated browser-displayable PNG preview for a result TIFF."""
+    if filename not in {"overlay.tif", "segmentation_mask.tif"}:
+        raise HTTPException(status_code=404, detail="Unsupported preview file")
+    user = authenticate(request)
+    try:
+        path = get_file(job_id, user.id, filename)
+        data_url = _png_data_url(path)
+        encoded = data_url.split(",", 1)[1]
+        return Response(content=base64.b64decode(encoded), media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/jobs/{job_id}/download")
