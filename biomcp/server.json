@@ -1,0 +1,21 @@
+{
+  "name": "io.github.burhanabdullah/biomcp",
+  "title": "BioMCP",
+  "description": "MCP interoperability layer for validated biomedical and bioimaging scientific tools.",
+  "repository": "https://github.com/BurhanAbdullah/BioNuclei-DomainRobust",
+  "package": {
+    "python": "bionuclei-domainrobust",
+    "command": "biomcp"
+  },
+  "transports": ["stdio", "streamable-http"],
+  "backend": "BioNuclei is a separate scientific backend; BioMCP does not reimplement its measurements.",
+  "tool_names": [
+    "inspect_image",
+    "predict_image",
+    "evaluate_image",
+    "compute_instance_metrics",
+    "read_provenance",
+    "load_result_summary"
+  ],
+  "status": "experimental"
+}
