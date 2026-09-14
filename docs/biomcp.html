@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BioMCP — Open scientific software interoperability</title>
-<meta name="description" content="What BioMCP is, how to use it, how it connects AI agents to scientific software, and how to join the open community.">
+<title>BioMCP — Scientific AI interoperability platform</title>
+<meta name="description" content="BioMCP is an open scientific AI interoperability platform connecting AI hosts and agents to scientific software, model runtimes and auditable workflows through MCP.">
 <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/site.css">
 <style>
-.biomcp-hero{padding:105px 0 80px;background:linear-gradient(120deg,#fff 0%,#fff 64%,var(--rose) 100%);border-bottom:1px solid var(--line)}
-.biomcp-hero h1{max-width:1050px}.hero-lead{font-size:1.35rem;max-width:900px}
+.biomcp-hero{padding:105px 0 80px;background:linear-gradient(120deg,#fff 0%,#fff 58%,var(--rose) 100%);border-bottom:1px solid var(--line)}
+.biomcp-hero h1{max-width:1100px}.hero-lead{font-size:1.35rem;max-width:950px}
 .biomcp-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:30px}
 .biomcp-section{padding:95px 0;border-bottom:1px solid var(--line)}
 .biomcp-section.alt{background:var(--cream)}
@@ -20,7 +20,10 @@
 .biomcp-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--harvard);border:1px solid var(--harvard)}
 .biomcp-step{background:#fff;padding:25px;min-height:180px}.biomcp-step strong{display:block;color:var(--harvard);font-size:1.15rem;margin-bottom:8px}
 .biomcp-table{width:100%;border-collapse:collapse;background:#fff}.biomcp-table th,.biomcp-table td{padding:16px;border:1px solid var(--line);text-align:left;vertical-align:top}.biomcp-table th{background:var(--cream)}
-.biomcp-boundary{background:var(--harvard);color:#fff;padding:55px}.biomcp-boundary h2,.biomcp-boundary p{color:#fff}.join-panel{background:var(--ink);color:#fff;padding:50px}.join-panel h2,.join-panel p{color:#fff}.join-panel .btn{background:#fff;color:var(--harvard);border-color:#fff}.note{font-size:.9rem;color:var(--muted)}
+.biomcp-boundary{background:var(--harvard);color:#fff;padding:55px}.biomcp-boundary h2,.biomcp-boundary p{color:#fff}
+.join-panel{background:var(--ink);color:#fff;padding:50px}.join-panel h2,.join-panel p{color:#fff}.join-panel .btn{background:#fff;color:var(--harvard);border-color:#fff}.note{font-size:.9rem;color:var(--muted)}
+.biomcp-architecture{border:1px solid var(--line);background:#fff;padding:18px;margin-top:35px}.biomcp-architecture img{display:block;width:100%;height:auto}.caption{font-size:.9rem;color:var(--muted);margin:12px 5px 0}
+.biomcp-highlight{background:var(--cream);border-left:5px solid var(--harvard);padding:28px 32px;margin-top:30px}.biomcp-highlight h3{margin-top:0}
 @media(max-width:900px){.biomcp-grid{grid-template-columns:1fr 1fr}.biomcp-flow{grid-template-columns:1fr 1fr}.biomcp-table{font-size:.92rem}}
 @media(max-width:650px){.biomcp-grid,.biomcp-flow{grid-template-columns:1fr}}
 </style>
@@ -34,62 +37,72 @@
 
 <main>
 <header class="biomcp-hero"><div class="wrap">
-<div class="eyebrow"><span class="pill">Open scientific infrastructure</span><span class="pill">MCP interoperability</span><span class="pill">BioNuclei ecosystem</span></div>
-<h1>BioMCP connects AI agents to real scientific software.</h1>
-<p class="hero-lead">BioMCP is a separate, open-source interoperability platform for biology, bioinformatics, bioimaging and scientific AI. It provides the MCP layer that lets compatible AI hosts discover and invoke scientific tools while the underlying software remains responsible for computation, measurement and validation.</p>
+<div class="eyebrow"><span class="pill">Open scientific infrastructure</span><span class="pill">MCP interoperability</span><span class="pill">Scientific AI</span></div>
+<h1>BioMCP is the interoperability layer between AI and scientific software.</h1>
+<p class="hero-lead">BioMCP is a separate, open-source platform for biology, bioinformatics, bioimaging and scientific AI. Its purpose is not to replace scientific software, but to make real scientific capabilities discoverable, callable, configurable and auditable from modern AI hosts and agents through the Model Context Protocol.</p>
 <div class="biomcp-actions"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioMCP">Open BioMCP on GitHub →</a><a class="btn" href="community.html">Join the community →</a></div>
 </div></header>
 
 <section class="biomcp-section"><div class="wrap">
-<div class="section-head"><div class="kicker">What is BioMCP?</div><h2>An interoperability layer, not a replacement for science.</h2><p class="intro">Modern biological research already has powerful open-source software. BioMCP addresses the missing connection between those tools and AI agents: discovery, typed tool contracts, routing, configuration, validation and evidence-aware interoperability.</p></div>
+<div class="section-head"><div class="kicker">Platform architecture</div><h2>One scientific interoperability layer. Many capabilities.</h2><p class="intro">BioMCP is being developed as a PowerMCP-class scientific platform: a unified registry, CLI, configuration layer and MCP runtime that can connect AI hosts to carefully validated scientific software and model providers.</p></div>
+<div class="biomcp-architecture">
+<img src="https://raw.githubusercontent.com/BurhanAbdullah/BioMCP/main/2as.png" alt="BioMCP architecture showing AI hosts, BioMCP core, LLM gateway, scientific software and structured scientific evidence" loading="lazy">
+<p class="caption">BioMCP platform vision. The diagram represents the long-term architecture; individual integrations are introduced only after implementation and validation.</p>
+</div>
+<div class="biomcp-highlight"><h3>AI orchestrates. Scientific software measures.</h3><p>BioMCP separates language-model reasoning and workflow orchestration from scientific computation. The model may plan and select an operation, but the underlying scientific software remains responsible for the measurement, computation, artifact or validated domain result.</p></div>
+</div></section>
+
+<section class="biomcp-section alt"><div class="wrap">
+<div class="section-head"><div class="kicker">How it works</div><h2>From a research question to structured scientific evidence.</h2></div>
+<div class="biomcp-flow">
+<div class="biomcp-step"><strong>01 · Researcher</strong><p>Defines the scientific question, analysis or workflow.</p></div>
+<div class="biomcp-step"><strong>02 · AI host / agent</strong><p>Plans the task, discovers capabilities and selects permitted tools.</p></div>
+<div class="biomcp-step"><strong>03 · BioMCP</strong><p>Resolves registry metadata, validates a typed MCP call and routes it to the selected capability.</p></div>
+<div class="biomcp-step"><strong>04 · Scientific software / model</strong><p>Performs the actual computation, measurement or model inference under the integration's controls.</p></div>
+<div class="biomcp-step"><strong>05 · Result + evidence</strong><p>Returns structured output, provenance and execution evidence where supported.</p></div>
+</div>
+</div></section>
+
+<section class="biomcp-section"><div class="wrap">
+<div class="section-head"><div class="kicker">Core platform</div><h2>BioMCP is more than an MCP wrapper.</h2></div>
 <div class="biomcp-grid">
-<article class="biomcp-card"><h3>AI hosts and agents</h3><p>Plan a task, discover available capabilities, select an appropriate tool and explain the resulting workflow. The agent should not invent a scientific measurement.</p></article>
-<article class="biomcp-card"><h3>BioMCP</h3><p>Provides registry metadata, MCP tool schemas, routing, server configuration, diagnostics and integration lifecycle management.</p></article>
-<article class="biomcp-card"><h3>Scientific software</h3><p>Performs the domain-specific operation: image analysis, molecular visualization, sequence analysis, simulation, workflow execution or another validated computation.</p></article>
+<article class="biomcp-card"><h3>Registry & discovery</h3><p>A machine-readable registry describes integration lifecycle, installation metadata, transport and capabilities. Planned software is not presented as installable.</p></article>
+<article class="biomcp-card"><h3>Unified CLI & configuration</h3><p>The platform is built around operational workflows such as <code>install</code>, <code>list</code>, <code>run</code>, <code>doctor</code> and client configuration, with diagnostics and dry-run support.</p></article>
+<article class="biomcp-card"><h3>Real MCP interoperability</h3><p>Validation should exercise actual MCP client/server paths, installed artifacts and external dependencies rather than relying only on source imports or documentation claims.</p></article>
 </div>
 </div></section>
 
 <section class="biomcp-section alt"><div class="wrap">
-<div class="section-head"><div class="kicker">How it works</div><h2>From a research question to an auditable operation.</h2></div>
-<div class="biomcp-flow">
-<div class="biomcp-step"><strong>01 · Researcher</strong><p>Defines the scientific question or workflow.</p></div>
-<div class="biomcp-step"><strong>02 · AI host / agent</strong><p>Plans, discovers and selects a suitable MCP capability.</p></div>
-<div class="biomcp-step"><strong>03 · BioMCP</strong><p>Routes a typed tool call and applies integration/configuration controls.</p></div>
-<div class="biomcp-step"><strong>04 · Scientific software</strong><p>Performs the actual computation or measurement.</p></div>
-<div class="biomcp-step"><strong>05 · Result + evidence</strong><p>Returns structured output with provenance where supported.</p></div>
+<div class="section-head"><div class="kicker">LLM Gateway</div><h2>A first-class scientific AI subsystem.</h2><p class="intro">The LLM component is being expanded from its initial OpenAI-compatible bridge into a provider-agnostic gateway for scientific AI orchestration.</p></div>
+<div class="biomcp-grid">
+<article class="biomcp-card"><h3>Model providers</h3><p>Target provider abstraction for OpenAI-compatible endpoints, local/self-hosted runtimes such as Ollama and vLLM, and compatible custom endpoints.</p></article>
+<article class="biomcp-card"><h3>Agent capabilities</h3><p>Target model discovery, streaming, structured outputs, JSON/schema responses, tool/function calling, context/session controls and provider capability metadata.</p></article>
+<article class="biomcp-card"><h3>Scientific orchestration</h3><p>Target controlled MCP tool discovery and execution so an LLM can coordinate scientific software while preserving typed inputs, bounded resources, provenance and scientific responsibility.</p></article>
 </div>
+<p class="note" style="margin-top:22px">The gateway expansion is a development target, not a claim that all of these capabilities are already implemented or validated.</p>
 </div></section>
 
 <section class="biomcp-boundary"><div class="wrap">
 <div class="kicker" style="color:#fff">Scientific boundary</div><h2>AI orchestrates. Scientific software measures.</h2>
-<p>BioNuclei remains the scientific source of truth for its own models, measurements, evaluation, artifacts and provenance. BioMCP does not copy or reimplement the BioNuclei scientific engine.</p>
+<p>BioNuclei remains the scientific source of truth for its own models, measurements, evaluation, artifacts and provenance. BioMCP provides interoperability around scientific systems; it does not copy or reimplement the BioNuclei scientific engine.</p>
 </div></section>
 
 <section class="biomcp-section"><div class="wrap">
-<div class="section-head"><div class="kicker">What can users do?</div><h2>Three practical ways to use BioMCP.</h2></div>
-<div class="biomcp-grid">
-<article class="biomcp-card"><h3>1. Use existing servers</h3><p>Install BioMCP and use its current local server families for supported image analysis, ImageJ/Fiji interoperability and an OpenAI-compatible LLM endpoint.</p><p><strong>Start:</strong> <code>pip install biomcp</code></p></article>
-<article class="biomcp-card"><h3>2. Connect an AI host</h3><p>Generate MCP configuration for supported clients such as Claude Desktop, Codex or a generic MCP host. Preview changes with <code>--dry-run</code> before writing configuration.</p></article>
-<article class="biomcp-card"><h3>3. Build an adapter</h3><p>Develop an integration for an open scientific project such as PyMOL, CellProfiler or BLAST+. New adapters begin as planned and become installable only after tests and validation.</p></article>
-</div>
-</div></section>
-
-<section class="biomcp-section alt"><div class="wrap">
-<div class="section-head"><div class="kicker">Current BioMCP state</div><h2>Small, explicit, and expandable.</h2></div>
+<div class="section-head"><div class="kicker">Current BioMCP state</div><h2>Explicit lifecycle, honest capabilities.</h2></div>
 <table class="biomcp-table"><thead><tr><th>Integration</th><th>Purpose</th><th>State</th></tr></thead><tbody>
 <tr><td><strong>BioImage</strong></td><td>Local image inspection, intensity summaries and thresholding primitives.</td><td>Experimental · installable</td></tr>
 <tr><td><strong>ImageJ / Fiji</strong></td><td>Controlled bridge to an explicitly configured local ImageJ/Fiji runtime.</td><td>Experimental · installable</td></tr>
-<tr><td><strong>LLM Bridge</strong></td><td>OpenAI-compatible model endpoint integration.</td><td>Experimental · installable</td></tr>
+<tr><td><strong>LLM Gateway</strong></td><td>Initial OpenAI-compatible model bridge; broader provider and agent capabilities are under development.</td><td>Experimental · installable</td></tr>
 <tr><td><strong>BioNuclei</strong></td><td>Independent validated scientific MCP server; not copied into BioMCP.</td><td>Validated · external</td></tr>
 <tr><td><strong>PyMOL</strong></td><td>Molecular visualization and structural-biology workflows.</td><td>Planned v0.3</td></tr>
 <tr><td><strong>CellProfiler</strong></td><td>Reproducible bioimage-analysis pipelines.</td><td>Planned v0.3</td></tr>
 <tr><td><strong>BLAST+</strong></td><td>Local sequence-similarity analysis.</td><td>Planned v0.3</td></tr>
 </tbody></table>
-<p class="note" style="margin-top:18px">Planned means roadmap only. BioMCP does not advertise an integration as installable until executable code, tests, packaging and CI evidence exist.</p>
+<p class="note" style="margin-top:18px">Planned means roadmap only. Experimental means executable work exists but the full validation gates have not yet been satisfied. Validated means documented evidence supports the lifecycle state. External means maintained outside this repository.</p>
 </div></section>
 
-<section class="biomcp-section"><div class="wrap">
-<div class="section-head"><div class="kicker">Installation</div><h2>Start locally in minutes.</h2></div>
+<section class="biomcp-section alt"><div class="wrap">
+<div class="section-head"><div class="kicker">Use BioMCP</div><h2>Start locally, then connect an AI host.</h2></div>
 <pre class="biomcp-code">pip install biomcp
 biomcp list
 biomcp doctor
@@ -102,29 +115,29 @@ biomcp install --servers bioimage --clients generic
 
 # Preview without writing configuration
 biomcp install --servers bioimage --clients generic --dry-run</pre>
-<p class="note" style="margin-top:20px">Image-analysis dependencies can be installed with <code>pip install 'biomcp[bioimage]'</code>. ImageJ/Fiji requires an explicitly configured local executable. The LLM bridge uses environment-provided endpoint and credential configuration.</p>
-<div class="biomcp-actions"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioMCP#quick-start">Read the complete installation guide →</a><a class="btn" href="https://github.com/BurhanAbdullah/BioMCP#configure-ai-hosts">AI-host configuration →</a></div>
-</div></section>
-
-<section class="biomcp-section alt"><div class="wrap">
-<div class="section-head"><div class="kicker">How to contribute</div><h2>Help add the open scientific software ecosystem.</h2><p class="intro">BioMCP is designed to grow through small, reviewable adapters rather than speculative wrappers.</p></div>
-<div class="biomcp-grid">
-<article class="biomcp-card"><h3>Choose one workflow</h3><p>Start from a concrete scientific use case and identify the upstream project, executable or library and its supported interface.</p></article>
-<article class="biomcp-card"><h3>Implement safely</h3><p>Define typed MCP inputs/outputs, validate paths and parameters, bound resources and subprocesses, and expose useful provenance.</p></article>
-<article class="biomcp-card"><h3>Prove it</h3><p>Add unit/integration tests, real MCP interoperability tests where applicable, packaging checks, documentation and CI evidence.</p></article>
-</div>
-<div class="mt"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioMCP">Read contribution instructions on GitHub →</a></div>
+<p class="note" style="margin-top:20px">The complete installation and client configuration documentation lives in the BioMCP repository. ImageJ/Fiji requires an explicitly configured local executable. The current LLM bridge uses environment-provided endpoint and credential configuration.</p>
+<div class="biomcp-actions"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioMCP#quick-start">Read BioMCP quick start →</a><a class="btn" href="https://github.com/BurhanAbdullah/BioMCP#configure-ai-hosts">Configure AI hosts →</a></div>
 </div></section>
 
 <section class="biomcp-section"><div class="wrap">
+<div class="section-head"><div class="kicker">Open scientific ecosystem</div><h2>Start small. Grow through validated adapters.</h2><p class="intro">The next planned integrations are deliberately concrete: PyMOL, CellProfiler and BLAST+. More tools can follow when they provide a clear scientific use case and can meet BioMCP's execution, security, testing and reproducibility requirements.</p></div>
+<div class="biomcp-grid">
+<article class="biomcp-card"><h3>PyMOL</h3><p>Molecular visualization and structural-biology workflows. <strong>Planned.</strong></p></article>
+<article class="biomcp-card"><h3>CellProfiler</h3><p>Reproducible bioimage-analysis pipelines. <strong>Planned.</strong></p></article>
+<article class="biomcp-card"><h3>BLAST+</h3><p>Local sequence-similarity analysis. <strong>Planned.</strong></p></article>
+</div>
+</div></section>
+
+<section class="biomcp-section alt"><div class="wrap">
 <div class="section-head"><div class="kicker">Contribution lifecycle</div><h2>Every integration earns its status.</h2></div>
 <div class="biomcp-flow">
 <div class="biomcp-step"><strong>Idea</strong><p>Scientific use case and upstream project.</p></div>
 <div class="biomcp-step"><strong>Planned</strong><p>Registry entry; not installable.</p></div>
-<div class="biomcp-step"><strong>Experimental</strong><p>Executable adapter + focused tests.</p></div>
+<div class="biomcp-step"><strong>Experimental</strong><p>Executable adapter plus focused tests.</p></div>
 <div class="biomcp-step"><strong>Validation</strong><p>MCP, security, packaging and CI evidence.</p></div>
 <div class="biomcp-step"><strong>Validated</strong><p>Documented evidence supports the integration state.</p></div>
 </div>
+<div class="mt"><a class="btn primary" href="https://github.com/BurhanAbdullah/BioMCP">Read contribution instructions →</a></div>
 </div></section>
 
 <section class="join-panel"><div class="wrap">
@@ -132,7 +145,7 @@ biomcp install --servers bioimage --clients generic --dry-run</pre>
 <h2>Build, review, reproduce, and improve open scientific AI.</h2>
 <p>The BioNuclei community is the broader open research community around this ecosystem. You can join using your GitHub identity, contribute code or documentation, review evidence, reproduce work, or suggest scientific improvements.</p>
 <a class="btn" href="community.html">Join BioNuclei community →</a>
-<p class="note" style="color:#ddd;margin-top:20px">The community page explains the GitHub-based join process and public community registry. BioMCP remains independently maintained as an interoperability project.</p>
+<p class="note" style="color:#ddd;margin-top:20px">BioMCP remains independently maintained as an interoperability project. BioNuclei remains the scientific source of truth for its own scientific engine.</p>
 </div></section>
 
 <footer class="site-footer"><div class="wrap"><div class="foot-grid">
