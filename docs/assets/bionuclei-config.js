@@ -8,7 +8,7 @@ window.BIONUCLEI_CONFIG = {
   supabasePublishableKey: "sb_publishable_lqjnxrtMfZqZJLNFzgyErw_8uadb6fp"
 };
 
-/* Production readability and workflow safeguards for the analysis workspace. */
+/* Production readability, workflow and evidence disclosure safeguards. */
 (function () {
   var css = document.createElement("style");
   css.textContent = `
@@ -34,6 +34,8 @@ window.BIONUCLEI_CONFIG = {
     .contrast-dark * { color: #ffffff !important; }
     .contrast-light { background: #ffffff !important; color: #12202b !important; }
     .contrast-light * { color: #12202b !important; }
+    .agent-status { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: #eef4f7; color: #12202b; border: 1px solid #cfd9e0; font-size: 12px; line-height: 1.5; }
+    .agent-status b { color: #12202b; }
     @media (max-width: 800px) {
       .hero { padding: 28px !important; }
       .hero h1 { font-size: clamp(34px, 12vw, 54px) !important; }
@@ -53,7 +55,7 @@ window.BIONUCLEI_CONFIG = {
       try {
         var req = indexedDB.open("bionuclei_lab", 1);
         req.onupgradeneeded = function () {
-          req.result.createObjectStore("pending_files");
+          if (!req.result.objectStoreNames.contains("pending_files")) req.result.createObjectStore("pending_files");
         };
         req.onsuccess = function () {
           var db = req.result;
@@ -64,9 +66,7 @@ window.BIONUCLEI_CONFIG = {
       } catch (_) {}
     }
 
-    file.addEventListener("change", function () {
-      saveSelected(file.files && file.files[0]);
-    });
+    file.addEventListener("change", function () { saveSelected(file.files && file.files[0]); });
 
     var original = window.runAnalysis;
     if (typeof original === "function" && !original.__bionucleiGuarded) {
@@ -76,9 +76,8 @@ window.BIONUCLEI_CONFIG = {
         analyze.setAttribute("aria-busy", "true");
         analyze.dataset.originalText = analyze.textContent;
         analyze.textContent = "Analysis running";
-        try {
-          return await original.apply(this, arguments);
-        } finally {
+        try { return await original.apply(this, arguments); }
+        finally {
           analyze.disabled = false;
           analyze.removeAttribute("aria-busy");
           analyze.textContent = analyze.dataset.originalText || "Analyze image";
@@ -100,6 +99,17 @@ window.BIONUCLEI_CONFIG = {
           }
         });
       }).observe(runMsg, {childList:true, subtree:true});
+    }
+
+    var analyzer = document.querySelector(".fileinfo .muted");
+    if (analyzer) analyzer.textContent = "Boundary U Net, quantitative measurements, and evidence constrained specialist agents";
+    var info = document.getElementById("fileInfo");
+    if (info && !document.getElementById("agentStatus")) {
+      var note = document.createElement("div");
+      note.id = "agentStatus";
+      note.className = "agent-status";
+      note.innerHTML = "<b>Specialist analysis:</b> 8 evidence constrained agents review image quality, segmentation, morphology, intensity, population metrics, interpretation, scientific consistency, and report generation. Training provenance is disclosed only when a verified manifest supports it.";
+      info.parentNode.insertBefore(note, info.nextSibling);
     }
   }
 
