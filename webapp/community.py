@@ -1,7 +1,8 @@
 """Public community-analysis job service for BioNuclei.
 
-This module orchestrates the existing deterministic inference/measurement code.
-Account ownership is explicit. User-image retention is explicit opt-in.
+The service processes uploaded images transiently. The original input is deleted
+when processing finishes. Results are retained only until the user downloads or
+deletes them, or the short server-side expiry is reached.
 """
 from __future__ import annotations
 
@@ -31,12 +32,9 @@ JOB_ROOT = Path(os.getenv("BIONUCLEI_JOB_DIR", "/tmp/bionuclei-community-jobs"))
 DB_PATH = JOB_ROOT / "jobs.sqlite3"
 JOB_ROOT.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
-DEFAULT_RESULT_RETENTION_HOURS = int(os.getenv("BIONUCLEI_RESULT_RETENTION_HOURS", "24"))
-DEFAULT_RESEARCH_RETENTION_DAYS = int(os.getenv("BIONUCLEI_RESEARCH_RETENTION_DAYS", "90"))
+DEFAULT_RESULT_RETENTION_HOURS = int(os.getenv("BIONUCLEI_RESULT_RETENTION_HOURS", "1"))
 ENABLED_MODULES = {"nuclei", "morphology", "intensity"}
 DB_LOCK = threading.Lock()
-# Render's free instance has a tight memory ceiling. Serializing model construction
-# and prediction prevents duplicate Boundary U Net allocations from overlapping.
 INFERENCE_LOCK = threading.Lock()
 
 
@@ -102,39 +100,6 @@ def _archive(job_id: str) -> Path:
             if path.is_file():
                 zf.write(path, path.relative_to(root))
     return archive
-
-
-def _save_research_copy(job_id: str, input_path: Path, input_sha256: str, metadata: dict) -> None:
-    destination = JOB_ROOT / "research_contributions" / job_id
-    destination.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(input_path, destination / f"input{input_path.suffix}")
-    (destination / "contribution.json").write_text(
-        json.dumps(
-            {
-                "job_id": job_id,
-                "input_sha256": input_sha256,
-                "created_at": _now().isoformat(),
-                "retention_days": DEFAULT_RESEARCH_RETENTION_DAYS,
-                "research_consent": True,
-                "purpose": "Optional research contribution for future BioNuclei development and model-training datasets.",
-                "metadata": metadata,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-
-
-def delete_research_copy(job_id: str, user_id: str) -> bool:
-    row = _get_job(job_id, user_id)
-    if row is None:
-        raise FileNotFoundError(job_id)
-    destination = JOB_ROOT / "research_contributions" / job_id
-    if not destination.exists():
-        return False
-    shutil.rmtree(destination, ignore_errors=True)
-    _set_job(job_id, retained_copy=0, research_consent=0)
-    return True
 
 
 def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> dict[str, object]:
@@ -274,12 +239,9 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
         (output / "community_input.json").write_text(json.dumps({"source_filename": original_name, "source_sha256": input_sha256, **input_metadata}, indent=2) + "\n")
         build_report(result, output)
-        metadata = {"original_filename": original_name, "algorithm_profile": algorithm_profile, "analysis_modules": sorted(analysis_modules), "checkpoint_configured": True, "input_metadata": input_metadata}
-        if research_consent:
-            _save_research_copy(job_id, image_path, input_sha256, metadata)
         _archive(job_id)
-        expiry = _now() + timedelta(days=DEFAULT_RESEARCH_RETENTION_DAYS if research_consent else 1)
-        _set_job(job_id, status="completed", expires_at=expiry.isoformat(), input_sha256=input_sha256, input_name=original_name, result_json=json.dumps(result), retained_copy=int(research_consent))
+        expiry = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
+        _set_job(job_id, status="completed", expires_at=expiry.isoformat(), input_sha256=input_sha256, input_name=original_name, result_json=json.dumps(result), retained_copy=0, research_consent=0)
     except Exception as exc:
         _set_job(job_id, status="failed", error=f"{type(exc).__name__}: {exc}")
     finally:
@@ -307,15 +269,15 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     input_path.write_bytes(data)
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
     with DB_LOCK, _db() as conn:
-        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id, "queued", _now().isoformat(), _now().isoformat(), expires.isoformat(), user_id, original_name, 0, int(research_consent), algorithm_profile, ",".join(sorted(modules))))
+        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id, "queued", _now().isoformat(), _now().isoformat(), expires.isoformat(), user_id, original_name, 0, 0, algorithm_profile, ",".join(sorted(modules))))
         conn.commit()
-    threading.Thread(target=_run, args=(job_id, user_id, input_path, original_name, research_consent, algorithm_profile, modules), kwargs={"channel": channel, "time": time, "z": z, "field": field}, daemon=True).start()
+    threading.Thread(target=_run, args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules), kwargs={"channel": channel, "time": time, "z": z, "field": field}, daemon=True).start()
     return job_id
 
 
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
-    return {"job_id": row["id"], "status": row["status"], "created_at": row["created_at"], "updated_at": row["updated_at"], "expires_at": row["expires_at"], "input_name": row["input_name"], "input_sha256": row["input_sha256"], "research_consent": bool(row["research_consent"]), "retained_copy": bool(row["retained_copy"]), "algorithm_profile": row["algorithm_profile"], "analysis_modules": row["analysis_modules"].split(",") if row["analysis_modules"] else [], "result": result, "error": row["error"], "downloads": {"zip": f"/jobs/{row['id']}/download", "results": f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
+    return {"job_id": row["id"], "status": row["status"], "created_at": row["created_at"], "updated_at": row["updated_at"], "expires_at": row["expires_at"], "input_name": row["input_name"], "input_sha256": row["input_sha256"], "research_consent": False, "retained_copy": False, "algorithm_profile": row["algorithm_profile"], "analysis_modules": row["analysis_modules"].split(",") if row["analysis_modules"] else [], "result": result, "error": row["error"], "downloads": {"zip": f"/jobs/{row['id']}/download", "results": f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
 
 
 def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
@@ -347,6 +309,18 @@ def get_archive(job_id: str, user_id: str) -> Path:
     if not row or row["status"] != "completed":
         raise FileNotFoundError(job_id)
     return _archive(job_id)
+
+
+def delete_job(job_id: str, user_id: str) -> bool:
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    shutil.rmtree(_job_dir(job_id), ignore_errors=True)
+    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    with DB_LOCK, _db() as conn:
+        conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id))
+        conn.commit()
+    return True
 
 
 def purge_expired() -> int:
