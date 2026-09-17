@@ -13,6 +13,7 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ JOB_ROOT.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 DEFAULT_RESULT_RETENTION_HOURS = int(os.getenv("BIONUCLEI_RESULT_RETENTION_HOURS", "1"))
 ENABLED_MODULES = {"nuclei", "morphology", "intensity"}
+ALLOWED_UPLOAD_SUFFIXES = {".tif", ".tiff", ".nd2"}
 DB_LOCK = threading.Lock()
 INFERENCE_LOCK = threading.Lock()
 
@@ -252,6 +254,9 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
 def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
+    suffix = Path(original_name or "").suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_SUFFIXES:
+        raise ValueError("Unsupported image format. Upload a TIFF (.tif/.tiff) or Nikon ND2 (.nd2) file.")
     if algorithm_profile not in {"auto", "nucleus-segmentation"}:
         raise ValueError("Unsupported analysis profile")
     modules = set(analysis_modules or ["nuclei", "morphology", "intensity"])
@@ -261,7 +266,6 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         raise ValueError(f"Unsupported analysis modules: {', '.join(sorted(unknown))}")
     if any(value < 0 for value in (channel, time, z, field)):
         raise ValueError("ND2 indices must be non-negative")
-    suffix = ".nd2" if original_name.lower().endswith(".nd2") else ".tif"
     job_id = uuid.uuid4().hex
     root = _job_dir(job_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -335,3 +339,15 @@ def purge_expired() -> int:
             removed += 1
         conn.commit()
     return removed
+
+
+def _cleanup_loop() -> None:
+    while True:
+        try:
+            purge_expired()
+        except Exception as exc:
+            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}", flush=True)
+        time.sleep(300)
+
+
+threading.Thread(target=_cleanup_loop, name="bionuclei-expiry-cleaner", daemon=True).start()
