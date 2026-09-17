@@ -22,6 +22,7 @@ This is the final gate before calling the repository paper-ready. Checkboxes are
 - [x] Reproducible evaluation entry point.
 - [ ] Final experiment command frozen.
 - [x] Clean-environment reproduction succeeds (run `34312877852`).
+- [x] Permanent BBBC039 checkpoint release exists (`checkpoint-bbbc039-v1`; SHA-256 `7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92`).
 
 ## Scientific validity
 
@@ -52,4 +53,4 @@ This is the final gate before calling the repository paper-ready. Checkboxes are
 
 ## Release gate
 
-The repository must not be described as producing a completed scientific result until all unchecked scientific-validity and reporting gates above are satisfied. Infrastructure completion and scientific-result completion are deliberately separate. A permanent public checkpoint/package is also still required: the repository currently has no GitHub Release, and temporary Actions artifacts are not treated as permanent model releases.
+The repository must not be described as producing a completed scientific result until all unchecked scientific-validity and reporting gates above are satisfied. Infrastructure completion and scientific-result completion are deliberately separate. A permanent public BBBC039 checkpoint is now available; the broader permanent evidence package remains a release-integrity task until its exact E6/E7/uncertainty/clean-reproduction artifacts and provenance are bundled and verified.
