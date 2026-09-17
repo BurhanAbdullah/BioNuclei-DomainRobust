@@ -19,7 +19,7 @@ def main() -> int:
     url = sys.argv[1]
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "BioNuclei-DomainRobust-site-check/1.0"},
+        headers={"User-Agent": "BioNuclei-DomainRobust-site-check/1.1"},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -40,9 +40,10 @@ def main() -> int:
         return 1
 
     required = (
-        "Reliable AI for biological imaging.",
-        "BioNuclei",
-        "Open research. Public code. Evidence before claims.",
+        "BioNuclei is an automated analysis pipeline designed specifically for nuclear instance segmentation",
+        "Nuclear instance segmentation and quantification",
+        'href="bionuclei-lab.html"',
+        'href="research.html"',
     )
     missing = [item for item in required if item not in body]
     if missing:
