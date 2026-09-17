@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from typing import Annotated
 
@@ -10,22 +11,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
 from .app import _checkpoint, _png_data_url
-from .auth import authenticate, authenticate_optional, create_guest_token
+from .auth import authenticate_optional, create_guest_token
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
 
-app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.0", description="Transient public image analysis service with optional account history.")
+app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.1", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
 def root():
-    return {"service":"bionuclei-community-analyzer","version":"0.3.0","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
+    return {"service":"bionuclei-community-analyzer","version":"0.3.1","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
 
 @app.get("/health")
 def health():
     try: available=_checkpoint().is_file()
     except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False}
+    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
 
 @app.get("/algorithms")
 def algorithms():
@@ -52,6 +53,15 @@ def jobs(request:Request):
 def job(request:Request,job_id:str):
     user=authenticate_optional(request);payload=get_job(job_id,user.id)
     if payload is None: raise HTTPException(status_code=404,detail="Analysis job not found")
+    # Older analyzer jobs may have results.json on disk but no DB result_json field.
+    # Hydrate the status response from the owned result artifact without persisting
+    # another copy of the scientific result in the job metadata table.
+    if payload.get("status")=="completed" and payload.get("result") is None:
+        try:
+            result_path=get_file(job_id,user.id,"results.json")
+            payload["result"]=json.loads(result_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError,ValueError,json.JSONDecodeError,OSError):
+            pass
     return payload
 
 @app.get("/jobs/{job_id}/preview/{filename}")
