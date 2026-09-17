@@ -30,23 +30,34 @@ jobs:
           grep -q 'supabaseUrl:' docs/assets/bionuclei-config.js
           grep -q 'supabasePublishableKey:' docs/assets/bionuclei-config.js
           grep -q 'bionuclei-app.html' docs/bionuclei-lab.html
+          grep -q 'data-access-tab="signup"' docs/bionuclei-app.html
+          grep -q 'data-access-tab="signin"' docs/bionuclei-app.html
+          grep -q 'data-access-tab="guest"' docs/bionuclei-app.html
+          grep -q 'X-BioNuclei-Guest-Token' docs/bionuclei-app.html
           echo 'Frontend integration contract: PASS'
-      - name: Validate authentication contract
+      - name: Validate authentication and privacy contract
         run: |
           set -euo pipefail
           grep -q 'SUPABASE_URL' webapp/auth.py
           grep -q 'SUPABASE_PUBLISHABLE_KEY' webapp/auth.py
           grep -q 'Bearer ' webapp/auth.py
-          grep -q 'authenticate(request)' webapp/community_app.py
-          echo 'Authentication contract: PASS'
+          grep -q 'authenticate_optional(request)' webapp/community_app.py
+          grep -q 'create_guest_token' webapp/community_app.py
+          grep -q 'authenticate_guest' webapp/auth.py
+          grep -q 'delete_job' webapp/community_app.py
+          echo 'Authentication/privacy contract: PASS'
       - name: Validate public analysis contract
         run: |
           set -euo pipefail
+          grep -q '@app.post("/guest-session")' webapp/community_app.py
           grep -q '@app.post("/analyze")' webapp/community_app.py
           grep -q '@app.get("/jobs")' webapp/community_app.py
           grep -q '@app.get("/jobs/{job_id}")' webapp/community_app.py
+          grep -q '@app.delete("/jobs/{job_id}")' webapp/community_app.py
           grep -q 'overlay.tif' webapp/community_app.py
           grep -q 'segmentation_mask.tif' webapp/community_app.py
+          grep -q 'ALLOWED_UPLOAD_SUFFIXES' webapp/community.py
+          grep -q 'purge_expired' webapp/community.py
           echo 'Analysis/result contract: PASS'
 
   live:
@@ -60,6 +71,7 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-delay 3 \
             https://bionuclei-community-analyzer.onrender.com/ > /tmp/root.json
           grep -q '"status":"online"' /tmp/root.json
+          grep -q 'guest sessions' /tmp/root.json || grep -q 'guest sessions use an ephemeral job token' /tmp/root.json
           echo 'Render root: PASS'
       - name: Check service health
         run: |
@@ -67,8 +79,16 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-delay 3 \
             https://bionuclei-community-analyzer.onrender.com/health > /tmp/health.json
           grep -q '"status":"ok"' /tmp/health.json
-          grep -q '"account_required":true' /tmp/health.json
+          grep -q '"account_required":false' /tmp/health.json
           echo 'Render health: PASS'
+      - name: Check guest session contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            -X POST https://bionuclei-community-analyzer.onrender.com/guest-session > /tmp/guest.json
+          grep -q 'guest_token' /tmp/guest.json
+          grep -q '"persisted":false' /tmp/guest.json
+          echo 'Render guest session: PASS'
       - name: Check algorithm contract
         run: |
           set -euo pipefail
