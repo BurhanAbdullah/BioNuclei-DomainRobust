@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+<title id="title">Illustrative fluorescence microscopy segmentation output</title>
+<desc id="desc">A dark microscopy-style field with luminous nuclei and thin instance boundaries, illustrating how segmented nuclear objects can be inspected.</desc>
+<rect width="1200" height="900" fill="#10161d"/>
+<g opacity=".28" fill="#8fd7ff">
+ <circle cx="130" cy="150" r="82"/><circle cx="360" cy="110" r="58"/><circle cx="570" cy="190" r="92"/><circle cx="830" cy="120" r="67"/><circle cx="1050" cy="205" r="86"/>
+ <circle cx="190" cy="430" r="66"/><circle cx="430" cy="400" r="92"/><circle cx="690" cy="450" r="70"/><circle cx="930" cy="390" r="96"/><circle cx="1080" cy="520" r="58"/>
+ <circle cx="120" cy="700" r="92"/><circle cx="370" cy="670" r="66"/><circle cx="610" cy="720" r="96"/><circle cx="850" cy="680" r="72"/><circle cx="1080" cy="760" r="92"/>
+</g>
+<g fill="none" stroke="#ffffff" stroke-width="5" opacity=".9">
+ <circle cx="130" cy="150" r="82"/><circle cx="360" cy="110" r="58"/><circle cx="570" cy="190" r="92"/><circle cx="830" cy="120" r="67"/><circle cx="1050" cy="205" r="86"/>
+ <circle cx="190" cy="430" r="66"/><circle cx="430" cy="400" r="92"/><circle cx="690" cy="450" r="70"/><circle cx="930" cy="390" r="96"/><circle cx="1080" cy="520" r="58"/>
+ <circle cx="120" cy="700" r="92"/><circle cx="370" cy="670" r="66"/><circle cx="610" cy="720" r="96"/><circle cx="850" cy="680" r="72"/><circle cx="1080" cy="760" r="92"/>
+</g>
+<g fill="#ffffff" opacity=".7"><circle cx="130" cy="150" r="20"/><circle cx="570" cy="190" r="25"/><circle cx="930" cy="390" r="24"/><circle cx="610" cy="720" r="25"/></g>
+<rect x="34" y="34" width="1132" height="832" rx="18" fill="none" stroke="#5d7284" stroke-width="2"/>
+<g font-family="Arial,Helvetica,sans-serif"><rect x="60" y="62" width="275" height="48" rx="24" fill="#ffffff"/><text x="86" y="93" font-size="21" font-weight="700" fill="#10161d">INSTANCE OVERLAY · MOCK</text><text x="60" y="835" font-size="18" fill="#dce7ef">Illustrative product visual, not benchmark evidence.</text></g>
+</svg>
