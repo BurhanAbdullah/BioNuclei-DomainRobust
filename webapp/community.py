@@ -5,6 +5,7 @@ Account ownership is explicit. User-image retention is explicit opt-in.
 """
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
 import os
@@ -34,6 +35,9 @@ DEFAULT_RESULT_RETENTION_HOURS = int(os.getenv("BIONUCLEI_RESULT_RETENTION_HOURS
 DEFAULT_RESEARCH_RETENTION_DAYS = int(os.getenv("BIONUCLEI_RESEARCH_RETENTION_DAYS", "90"))
 ENABLED_MODULES = {"nuclei", "morphology", "intensity"}
 DB_LOCK = threading.Lock()
+# Render's free instance has a tight memory ceiling. Serializing model construction
+# and prediction prevents duplicate Boundary U Net allocations from overlapping.
+INFERENCE_LOCK = threading.Lock()
 
 
 def _db() -> sqlite3.Connection:
@@ -244,7 +248,9 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
 
         _set_job(job_id, status="running")
-        result = predict(inference_input, checkpoint, output, device="cpu")
+        with INFERENCE_LOCK:
+            result = predict(inference_input, checkpoint, output, device="cpu")
+            gc.collect()
         report_summary = _extended_reports(inference_input, output, analysis_modules)
         result.update({
             "analysis_profile": algorithm_profile,
