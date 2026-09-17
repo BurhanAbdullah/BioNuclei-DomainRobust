@@ -1,0 +1,90 @@
+name: Permanent evidence package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  E6_ARTIFACT_ID: "10088980217"
+  E7_ARTIFACT_ID: "10089229809"
+  UNCERTAINTY_ARTIFACT_ID: "10088988731"
+  CLEAN_REPRO_ARTIFACT_ID: "10089022008"
+  SCIENTIFIC_SOURCE_COMMIT: "2dba10e614bc5efc9bc4de66994c7c920d6667cb"
+  RELEASE_TAG: "evidence-package-v1"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download exact retained artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p package/evidence
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${E6_ARTIFACT_ID}/zip" > package/evidence/e6-aggregate.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${E7_ARTIFACT_ID}/zip" > package/evidence/e7-bbbc038.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${UNCERTAINTY_ARTIFACT_ID}/zip" > package/evidence/e6-e7-uncertainty-failure.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CLEAN_REPRO_ARTIFACT_ID}/zip" > package/evidence/clean-reproduction.zip
+          test -s package/evidence/e6-aggregate.zip
+          test -s package/evidence/e7-bbbc038.zip
+          test -s package/evidence/e6-e7-uncertainty-failure.zip
+          test -s package/evidence/clean-reproduction.zip
+
+      - name: Verify exact artifact metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request
+          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
+          expected={
+            os.environ['E6_ARTIFACT_ID']: {'run':34312833206,'digest':'sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34'},
+            os.environ['E7_ARTIFACT_ID']: {'run':34312920549,'digest':'sha256:e71df73427544700809d6cd2a094b33b572c3e7d835f754482a76061dd18ede7'},
+            os.environ['UNCERTAINTY_ARTIFACT_ID']: {'run':34312853905,'digest':'sha256:0cbef10c50d7c254a38bf2c865d20dcac4c420010171af70a44e0e266c85d6a7'},
+            os.environ['CLEAN_REPRO_ARTIFACT_ID']: {'run':34312877852,'digest':'sha256:68b2bfdee4dec46ab208daa4792870f7e16c309cf1b2dc6eb1ec46b509174b77'},
+          }
+          def get(aid):
+            req=urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(req) as h:return json.load(h)
+          records=[]
+          for aid, exp in expected.items():
+            o=get(aid)
+            assert not o['expired'], aid
+            assert int(o['workflow_run']['id']) == exp['run'], aid
+            assert o['digest'] == exp['digest'], aid
+            records.append({'artifact_id':int(aid),'name':o['name'],'workflow_run':exp['run'],'digest':o['digest'],'size_in_bytes':o['size_in_bytes']})
+          json.dump({'scientific_source_commit':os.environ['SCIENTIFIC_SOURCE_COMMIT'],'packaging_commit':os.environ['GITHUB_SHA'],'records':records},open('package/evidence_manifest.json','w'),indent=2)
+          PY
+
+      - name: Copy release-control documents
+        run: |
+          set -euo pipefail
+          cp docs/RELEASE_CHECKLIST.md package/RELEASE_CHECKLIST.md
+          cp docs/STATISTICAL_ANALYSIS_PLAN.md package/STATISTICAL_ANALYSIS_PLAN.md
+          cp docs/E6_ANNOTATION_EFFICIENCY_2026-09-17.md package/E6_ANNOTATION_EFFICIENCY_2026-09-17.md
+          cp docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md package/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md
+          cp docs/PROGRESS.md package/PROGRESS.md
+
+      - name: Create permanent package
+        run: |
+          set -euo pipefail
+          tar -czf "BioNuclei-${RELEASE_TAG}.tar.gz" package
+          sha256sum "BioNuclei-${RELEASE_TAG}.tar.gz" > "BioNuclei-${RELEASE_TAG}.tar.gz.sha256"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "BioNuclei-${RELEASE_TAG}.tar.gz" "BioNuclei-${RELEASE_TAG}.tar.gz.sha256" --clobber
+          else
+            gh release create "$RELEASE_TAG" "BioNuclei-${RELEASE_TAG}.tar.gz" "BioNuclei-${RELEASE_TAG}.tar.gz.sha256" --title "BioNuclei Permanent Evidence Package v1" --notes "Permanent evidence package pinned to the verified E6 aggregate, E7 BBBC038 validation, E6/E7 uncertainty/failure analysis, clean-environment reproduction, release-control documents, exact artifact digests, and scientific source commit. This package does not rewrite scientific evidence."
+          fi
