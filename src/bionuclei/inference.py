@@ -1,8 +1,10 @@
 """User-facing BioNuclei inference and deterministic result bundles."""
 from __future__ import annotations
 
+import gc
 import json
 import platform
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +18,17 @@ from skimage.measure import regionprops
 from .data import decode_instance_mask
 from .metrics import boundary_f1, dice_coefficient, iou_score
 from .models import BoundaryUNet
+
+# Render's free instance has a tight memory budget.  Keep CPU inference
+# single-threaded and serialize model construction/inference so repeated
+# browser clicks cannot load multiple Boundary U-Nets concurrently.
+_INFERENCE_LOCK = threading.Lock()
+try:
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+except RuntimeError:
+    # PyTorch may already have initialized its thread pools.
+    pass
 
 
 def _normalise(image: np.ndarray) -> np.ndarray:
@@ -78,10 +91,22 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
     image = np.asarray(tifffile.imread(input_path))
     if image.ndim != 2:
         raise ValueError(f"Expected a 2-D fluorescence image; got shape {image.shape}")
-    model = _load_model(checkpoint, device)
-    x = torch.from_numpy(_normalise(image)[None, None]).float().to(device)
-    with torch.no_grad():
-        instances = _split_instances(model(x))
+
+    # The model is deliberately loaded inside the process-wide lock. This
+    # prevents two authenticated /analyze jobs from simultaneously allocating
+    # model state and intermediate tensors on a 512 MiB Render instance.
+    with _INFERENCE_LOCK:
+        model = _load_model(checkpoint, device)
+        try:
+            x = torch.from_numpy(_normalise(image)[None, None]).float().to(device)
+            with torch.no_grad():
+                instances = _split_instances(model(x))
+        finally:
+            del x
+            del model
+            gc.collect()
+            if device == "cuda" and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     output.mkdir(parents=True, exist_ok=True)
     tifffile.imwrite(output / "segmentation_mask.tif", instances)
