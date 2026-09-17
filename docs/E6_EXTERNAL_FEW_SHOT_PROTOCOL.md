@@ -1,6 +1,8 @@
 # E6 external fluorescence few-shot adaptation protocol
 
-**Status: FROZEN EXECUTION PROTOCOL — not yet executed**
+**Status: EXECUTED AND ARCHIVED**  
+**Protocol freeze:** 2026-09-04  
+**Finalizer verification:** run `34312833206`  
 
 ## Why this protocol exists
 
@@ -36,21 +38,25 @@ Any manuscript or release text must preserve this distinction.
 9. Use the same fixed 20-epoch training budget for every fraction; do not tune epochs against the test split.
 10. Record dataset archive hashes, manifest hash, checkpoint hashes, configuration hash, seed, fraction, image budget, and exact commands for every run.
 
-## Required outputs
+## Verified execution
 
-For every fraction:
+All four fractions executed successfully in source run `34208190019` and were independently checked by finalizer run `34312833206`. The finalizer verified the expected image budgets (1, 2, 3, 8), seed 42, 20 epochs, common immutable dataset/configuration/E4 provenance, activation checkpointing, and fail-closed leakage flags. Each fraction was evaluated on the same 10-image publisher test split.
 
-- adapted checkpoint;
-- training history;
+The verified aggregate artifact is `10088980217` with digest `sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34`.
+
+## Required outputs — verified
+
+For every fraction the retained aggregate confirms:
+
+- adapted-run provenance;
 - image-level test metrics: Dice, IoU, AJI and boundary F1;
-- per-image metrics;
-- annotation/image budget;
-- provenance record;
-- dataset and split hashes;
+- adaptation image budget;
+- dataset/configuration/checkpoint provenance;
+- leakage controls;
 - machine-readable aggregate results.
 
-## Release gate
+The separate annotation-budget analysis is archived at `docs/E6_ANNOTATION_EFFICIENCY_2026-09-17.md` and `outputs/e6_annotation_efficiency_2026-09-17.json`.
 
-E6 is complete only after all four fractions execute successfully, the publisher train/development/test split is preserved, no test images enter adaptation, all artifacts are retained, and the results are independently re-read from machine-readable artifacts.
+## Release/scientific interpretation
 
-Until those conditions are satisfied, E6 remains **not complete**.
+E6 satisfies its execution and artifact-integrity gate. Its results remain a **cross-dataset adaptation analysis** and must not be presented as evidence of adaptation to the locked S-BIAD634 test set. The observed annotation-budget curve is descriptive and non-monotonic under the fixed 20-epoch protocol; no general causal claim about annotation quantity is justified from these four runs.
