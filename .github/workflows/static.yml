@@ -24,15 +24,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Validate public site files
+        run: |
+          test -f docs/index.html
+          test -f docs/assets/site.css
+          test -f docs/assets/home.css
+          test -f docs/assets/bionuclei-config.js
+          python -m compileall -q scripts/check_website.py
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
+
       - name: Upload public site
         uses: actions/upload-pages-artifact@v4
         with:
           path: './docs'
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
       - name: Verify deployed website
         env:
           SITE_URL: ${{ steps.deployment.outputs.page_url }}
