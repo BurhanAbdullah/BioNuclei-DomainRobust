@@ -29,6 +29,19 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root() -> dict[str, object]:
+    """Human/API-friendly service root used by Render probes and operators."""
+    return {
+        "service": "bionuclei-community-analyzer",
+        "version": "0.2.0",
+        "status": "online",
+        "health": "/health",
+        "algorithms": "/algorithms",
+        "authentication": "required for analysis and job access",
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, object]:
     try:
