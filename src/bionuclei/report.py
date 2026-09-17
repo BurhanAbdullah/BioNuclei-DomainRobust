@@ -1,69 +1,102 @@
-"""Detailed, deterministic BioNuclei report generation."""
+"""Concise BioNuclei report generation."""
 from __future__ import annotations
 
 import html
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 
+def _pdf_font() -> tuple[str, str]:
+    """Return regular and bold fonts, preferring a configured Times New Roman file."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        candidates = [
+            os.getenv("BIONUCLEI_TNR_FONT", ""),
+            "/usr/share/fonts/truetype/msttcorefonts/times.ttf",
+            "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf",
+            "/usr/share/fonts/truetype/msttcorefonts/timesbd.ttf",
+        ]
+        bold_candidates = [
+            os.getenv("BIONUCLEI_TNR_BOLD_FONT", ""),
+            "/usr/share/fonts/truetype/msttcorefonts/timesbd.ttf",
+            "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman_Bold.ttf",
+        ]
+        regular = next((p for p in candidates if p and Path(p).is_file()), None)
+        bold = next((p for p in bold_candidates if p and Path(p).is_file()), regular)
+        if regular:
+            pdfmetrics.registerFont(TTFont("BioNucleiTimes", regular))
+            if bold and bold != regular:
+                pdfmetrics.registerFont(TTFont("BioNucleiTimesBold", bold))
+            else:
+                pdfmetrics.registerFont(TTFont("BioNucleiTimesBold", regular))
+            return "BioNucleiTimes", "BioNucleiTimesBold"
+    except Exception:
+        pass
+    return "Times-Roman", "Times-Bold"
+
+
+def _build_pdf(payload: dict[str, Any], output_dir: Path) -> Path:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+
+    regular, bold = _pdf_font()
+    path = output_dir / "analysis_report.pdf"
+    reports = payload.get("reports", {})
+    morphology = reports.get("morphology", {})
+    intensity = reports.get("intensity", {})
+    plan = payload.get("adaptive_plan", {})
+    profile = plan.get("profile", {})
+    model = payload.get("model", {})
+    status = str(plan.get("status", "UNKNOWN"))
+    count = reports.get("nuclei_count", payload.get("n_instances", "Not available"))
+
+    doc = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=22 * mm, leftMargin=22 * mm, topMargin=20 * mm, bottomMargin=20 * mm)
+    title = ParagraphStyle("title", fontName=bold, fontSize=19, leading=23, alignment=TA_CENTER, spaceAfter=8)
+    heading = ParagraphStyle("heading", fontName=bold, fontSize=12, leading=15, spaceBefore=8, spaceAfter=5)
+    body = ParagraphStyle("body", fontName=regular, fontSize=10.5, leading=14, spaceAfter=4)
+    small = ParagraphStyle("small", fontName=regular, fontSize=8.5, leading=11)
+
+    story = [Paragraph("BioNuclei Analysis Report", title), Paragraph(status, ParagraphStyle("status", parent=body, alignment=TA_CENTER)), Spacer(1, 4)]
+    data = [
+        ["Nuclei detected", str(count)],
+        ["Image shape", str(profile.get("shape", "Not available"))],
+        ["Mean nucleus area", str(morphology.get("mean_area", "Not available"))],
+        ["Mean nuclear intensity", str(intensity.get("mean_nuclear_intensity", "Not available"))],
+    ]
+    table = Table(data, colWidths=[70 * mm, 75 * mm])
+    table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), regular), ("FONTNAME", (0, 0), (0, -1), bold), ("FONTSIZE", (0, 0), (-1, -1), 10), ("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story += [table, Paragraph("Model", heading), Paragraph(f"{html.escape(str(model.get('architecture', 'Boundary U Net')))}. Training reference: {html.escape(str(model.get('training_reference', 'BBBC039v1')))}.", body)]
+    warnings = plan.get("warnings", [])
+    if warnings:
+        story += [Paragraph("Quality notes", heading), Paragraph(" ".join(str(x).replace("–", " ").replace("—", " ").replace("-", " ") for x in warnings), body)]
+    story += [Spacer(1, 8), Paragraph("This report records the executed image analysis. It is not a clinical diagnosis. Accuracy metrics require suitable ground truth.", small)]
+    doc.build(story)
+    return path
+
+
 def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
-    """Write a self-contained HTML report plus machine-readable JSON summary."""
+    """Write concise HTML and PDF reports plus machine readable JSON."""
     plan = payload.get("adaptive_plan", {})
     profile = plan.get("profile", {})
     reports = payload.get("reports", {})
-    warnings = plan.get("warnings", [])
-    status = plan.get("status", "UNKNOWN")
     model = payload.get("model", {})
-    files = sorted(p.name for p in output_dir.iterdir() if p.is_file())
-    report_files = sorted(set(files) | {"analysis_report.json", "analysis_report.html"})
-
-    def esc(value: Any) -> str:
-        return html.escape(str(value))
-
-    warning_html = "".join(f"<li>{esc(w)}</li>" for w in warnings) or "<li>No input-quality warnings were triggered by the configured checks.</li>"
-    file_html = "".join(f"<li><code>{esc(name)}</code></li>" for name in report_files)
-    report_json = output_dir / "analysis_report.json"
-    report_html = output_dir / "analysis_report.html"
-
-    report = {
-        "report_version": "1.0",
-        "analysis_status": status,
-        "adaptive_plan": plan,
-        "model": model,
-        "results": payload,
-        "generated_files": report_files,
-        "scientific_interpretation": {
-            "model_training": "The uploaded image is used for inference; this analysis does not update model weights.",
-            "accuracy_metrics": "Dice/IoU/Boundary-F1/AJI are only valid when an appropriate ground-truth evaluation protocol is supplied.",
-            "domain_warning": "Input-quality warnings are diagnostic signals, not calibrated probabilities of correctness.",
-        },
-    }
-    report_json.write_text(json.dumps(report, indent=2) + "\n")
-
+    status = plan.get("status", "UNKNOWN")
     morphology = reports.get("morphology", {})
     intensity = reports.get("intensity", {})
-    nuclei_count = reports.get("nuclei_count", payload.get("n_instances", "—"))
-    html_doc = f"""<!doctype html>
-<html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>BioNuclei Analysis Report</title>
-<style>body{{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:980px;margin:40px auto;padding:0 20px;color:#17212b;line-height:1.55}}h1,h2{{line-height:1.1}}.hero{{padding:28px;border-radius:18px;background:#0d171e;color:white}}.status{{display:inline-block;padding:6px 10px;border-radius:999px;background:#24353f;color:#fff;font-weight:700;font-size:12px}}.grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}}.card{{padding:16px;border:1px solid #d8e0e5;border-radius:12px}}.muted{{color:#62717f}}.warn{{background:#fff7e6;border-left:4px solid #b77908;padding:14px 16px;border-radius:8px}}code{{background:#eef2f4;padding:2px 5px;border-radius:4px}}@media(max-width:700px){{.grid{{grid-template-columns:1fr}}}}</style>
-</head><body>
-<section class='hero'><div>BioNuclei · Detailed analysis</div><h1>What BioNuclei found in this image</h1><span class='status'>{esc(status)}</span><p>Adaptive workflow planning and deterministic scientific analysis. The image is analyzed with the configured checkpoint; model weights are not updated by this run.</p></section>
-<h2>Input profile</h2><div class='grid'>
-<div class='card'><b>Shape</b><div>{esc(profile.get('shape','—'))}</div></div>
-<div class='card'><b>Type</b><div>{esc(profile.get('dtype','—'))}</div></div>
-<div class='card'><b>Intensity</b><div>{esc(profile.get('min','—'))} → {esc(profile.get('p995','—'))}</div></div>
-</div>
-<h2>Analysis result</h2><div class='grid'>
-<div class='card'><b>Nuclei detected</b><div>{esc(nuclei_count)}</div></div>
-<div class='card'><b>Mean nucleus area</b><div>{esc(morphology.get('mean_area','—'))}</div></div>
-<div class='card'><b>Mean nuclear intensity</b><div>{esc(intensity.get('mean_nuclear_intensity','—'))}</div></div>
-</div>
-<h2>Adaptive checks</h2><div class='warn'><ul>{warning_html}</ul></div>
-<h2>Model</h2><div class='card'><b>{esc(model.get('architecture','Boundary U-Net'))}</b><p>{esc(model.get('training_reference','Training reference: BBBC039v1'))}</p><p>{esc(model.get('target','3-class background/interior/boundary prediction'))}</p></div>
-<h2>Generated files</h2><ul>{file_html}</ul>
-<h2>Scientific interpretation</h2><p class='muted'>This report describes the executed analysis and observed image properties. It does not turn input warnings into calibrated accuracy estimates, and it does not claim clinical or biological diagnosis.</p>
-</body></html>"""
+    nuclei_count = reports.get("nuclei_count", payload.get("n_instances", "Not available"))
+    report_json = output_dir / "analysis_report.json"
+    report_html = output_dir / "analysis_report.html"
+    report = {"report_version":"1.1","analysis_status":status,"adaptive_plan":plan,"model":model,"results":payload}
+    report_json.write_text(json.dumps(report, indent=2) + "\n")
+    esc=lambda v: html.escape(str(v))
+    html_doc=f"""<!doctype html><html><head><meta charset='utf-8'><title>BioNuclei Analysis Report</title><style>body{{font-family:'Times New Roman',Times,serif;max-width:760px;margin:40px auto;padding:0 24px;color:#111;line-height:1.45}}h1,h2{{font-family:'Times New Roman',Times,serif}}table{{border-collapse:collapse;width:100%}}td{{border:1px solid #bbb;padding:8px}}td:first-child{{font-weight:bold;width:45%}}.small{{font-size:11px}}</style></head><body><h1>BioNuclei Analysis Report</h1><p>{esc(status)}</p><table><tr><td>Nuclei detected</td><td>{esc(nuclei_count)}</td></tr><tr><td>Image shape</td><td>{esc(profile.get('shape','Not available'))}</td></tr><tr><td>Mean nucleus area</td><td>{esc(morphology.get('mean_area','Not available'))}</td></tr><tr><td>Mean nuclear intensity</td><td>{esc(intensity.get('mean_nuclear_intensity','Not available'))}</td></tr></table><h2>Model</h2><p>{esc(model.get('architecture','Boundary U Net'))}. Training reference: {esc(model.get('training_reference','BBBC039v1'))}.</p><p class='small'>This report records the executed image analysis. It is not a clinical diagnosis.</p></body></html>"""
     report_html.write_text(html_doc)
+    _build_pdf(payload, output_dir)
     return report_html
