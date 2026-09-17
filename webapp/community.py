@@ -21,6 +21,7 @@ import pandas as pd
 import tifffile
 
 from bionuclei.adaptive_agent import build_plan, to_dict
+from bionuclei.expert_agents import run_expert_agents
 from bionuclei.inference import predict
 from bionuclei.report import build_report
 from .app import _checkpoint
@@ -237,7 +238,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
 
         plan = build_plan(inference_input, analysis_modules)
-        (output).mkdir(parents=True, exist_ok=True)
+        output.mkdir(parents=True, exist_ok=True)
         (output / "adaptive_plan.json").write_text(json.dumps(to_dict(plan), indent=2) + "\n")
         if plan.status == "BLOCKED":
             raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
@@ -261,6 +262,9 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
                 "weights_updated_during_analysis": False,
             },
         })
+        expert = run_expert_agents(result)
+        result["expert_agents"] = expert
+        (output / "expert_agents.json").write_text(json.dumps(expert, indent=2) + "\n")
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
         (output / "community_input.json").write_text(json.dumps({"source_filename": original_name, "source_sha256": input_sha256, **input_metadata}, indent=2) + "\n")
         build_report(result, output)
@@ -320,7 +324,7 @@ def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
 
 
 def get_file(job_id: str, user_id: str, filename: str) -> Path:
-    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json", "community_input.json", "nuclei_analysis.csv", "nuclei_report.json", "morphology_report.json", "intensity_report.json", "adaptive_plan.json", "analysis_report.json", "analysis_report.html"}
+    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json", "community_input.json", "nuclei_analysis.csv", "nuclei_report.json", "morphology_report.json", "intensity_report.json", "adaptive_plan.json", "expert_agents.json", "analysis_report.pdf", "analysis_report.json", "analysis_report.html"}
     if filename not in allowed:
         raise ValueError("File is not a downloadable BioNuclei result")
     row = _get_job(job_id, user_id)
