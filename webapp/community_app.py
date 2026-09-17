@@ -10,75 +10,78 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
 from .app import _checkpoint, _png_data_url
-from .auth import authenticate
-from .community import MAX_UPLOAD_BYTES, create_job, get_archive, get_file, get_job, get_jobs_for_user
+from .auth import authenticate, authenticate_optional, create_guest_token
+from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
 
-app = FastAPI(title="BioNuclei Community Analyzer", version="0.2.0", description="Account based asynchronous public analysis service for BioNuclei.")
+app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.0", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
 def root():
-    return {"service":"bionuclei-community-analyzer","version":"0.2.0","status":"online","health":"/health","algorithms":"/algorithms","authentication":"required for analysis and job access"}
+    return {"service":"bionuclei-community-analyzer","version":"0.3.0","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
 
 @app.get("/health")
 def health():
     try: available=_checkpoint().is_file()
     except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":True}
+    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False}
 
 @app.get("/algorithms")
 def algorithms():
     return {"default":"auto","reports_available":[{"id":"nuclei","name":"Nuclei","status":"available"},{"id":"morphology","name":"Morphology","status":"available"},{"id":"intensity","name":"Intensity","status":"available"}]}
 
+@app.post("/guest-session")
+def guest_session():
+    return {"guest_token":create_guest_token(),"mode":"guest","persisted":False}
+
 @app.post("/analyze")
 async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research_consent:Annotated[bool,Form()]=False,algorithm_profile:Annotated[str,Form()]="auto",analysis_modules:Annotated[str,Form()]="nuclei,morphology,intensity",nd2_channel:Annotated[int,Form()]=0,nd2_time:Annotated[int,Form()]=0,nd2_z:Annotated[int,Form()]=0,nd2_field:Annotated[int,Form()]=0):
-    user=authenticate(request);data=await image.read(MAX_UPLOAD_BYTES+1)
+    user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
-    try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,research_consent,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
+    try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,False,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
-    return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","account":user.email or user.id,"research_consent":research_consent,"analysis_modules":modules}
+    return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
 
 @app.get("/jobs")
 def jobs(request:Request):
-    user=authenticate(request);return {"jobs":get_jobs_for_user(user.id)}
+    user=authenticate_optional(request);return {"jobs":get_jobs_for_user(user.id)}
 
 @app.get("/jobs/{job_id}")
 def job(request:Request,job_id:str):
-    user=authenticate(request);payload=get_job(job_id,user.id)
+    user=authenticate_optional(request);payload=get_job(job_id,user.id)
     if payload is None: raise HTTPException(status_code=404,detail="Analysis job not found")
     return payload
 
 @app.get("/jobs/{job_id}/preview/{filename}")
 def preview(request:Request,job_id:str,filename:str):
     if filename not in {"overlay.tif","segmentation_mask.tif"}: raise HTTPException(status_code=404,detail="Unsupported preview file")
-    user=authenticate(request)
+    user=authenticate_optional(request)
     try:
-        data_url=_png_data_url(get_file(job_id,user.id,filename));return Response(content=base64.b64decode(data_url.split(",",1)[1]),media_type="image/png",headers={"Cache-Control":"private, max-age=300"})
+        data_url=_png_data_url(get_file(job_id,user.id,filename));return Response(content=base64.b64decode(data_url.split(",",1)[1]),media_type="image/png",headers={"Cache-Control":"no-store"})
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
 
 @app.get("/jobs/{job_id}/download")
 def download(request:Request,job_id:str):
-    user=authenticate(request)
+    user=authenticate_optional(request)
     try: archive=get_archive(job_id,user.id)
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
-    return FileResponse(archive,media_type="application/zip",filename=f"bionuclei-{job_id}.zip")
+    return FileResponse(archive,media_type="application/zip",filename=f"bionuclei-{job_id}.zip",headers={"Cache-Control":"no-store"})
 
 @app.get("/jobs/{job_id}/files/{filename}")
 def result_file(request:Request,job_id:str,filename:str):
-    user=authenticate(request)
+    user=authenticate_optional(request)
     try: path=get_file(job_id,user.id,filename)
     except (FileNotFoundError,ValueError) as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     media="application/json" if filename.endswith(".json") else "text/csv" if filename.endswith(".csv") else "application/pdf" if filename.endswith(".pdf") else "image/tiff"
-    return FileResponse(path,media_type=media,filename=filename)
+    return FileResponse(path,media_type=media,filename=filename,headers={"Cache-Control":"no-store"})
 
-@app.delete("/jobs/{job_id}/retained-copy")
-def delete_retained_copy(request:Request,job_id:str):
-    user=authenticate(request)
-    from .community import delete_research_copy
-    try: deleted=delete_research_copy(job_id,user.id)
+@app.delete("/jobs/{job_id}")
+def remove_job(request:Request,job_id:str):
+    user=authenticate_optional(request)
+    try: deleted=delete_job(job_id,user.id)
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     return {"job_id":job_id,"deleted":deleted}
 
