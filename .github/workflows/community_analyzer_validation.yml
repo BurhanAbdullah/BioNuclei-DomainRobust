@@ -23,6 +23,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - name: Validate Python syntax
+        run: |
+          set -euo pipefail
+          python -m compileall -q webapp src
+          echo 'Python syntax: PASS'
       - name: Validate frontend configuration
         run: |
           set -euo pipefail
@@ -58,6 +63,7 @@ jobs:
           grep -q 'segmentation_mask.tif' webapp/community_app.py
           grep -q 'ALLOWED_UPLOAD_SUFFIXES' webapp/community.py
           grep -q 'purge_expired' webapp/community.py
+          grep -q 'DEFAULT_RESULT_RETENTION_HOURS' webapp/community.py
           echo 'Analysis/result contract: PASS'
 
   live:
@@ -89,6 +95,17 @@ jobs:
           grep -q 'guest_token' /tmp/guest.json
           grep -q '"persisted":false' /tmp/guest.json
           echo 'Render guest session: PASS'
+      - name: Check authorization boundaries
+        run: |
+          set -euo pipefail
+          code=$(curl --silent --output /tmp/jobs.json --write-out '%{http_code}' \
+            https://bionuclei-community-analyzer.onrender.com/jobs || true)
+          test "$code" = "401"
+          code=$(curl --silent --output /tmp/badguest.json --write-out '%{http_code}' \
+            -H 'X-BioNuclei-Guest-Token: deliberately-invalid-token' \
+            https://bionuclei-community-analyzer.onrender.com/jobs || true)
+          test "$code" = "401"
+          echo 'Authorization boundaries: PASS'
       - name: Check algorithm contract
         run: |
           set -euo pipefail
