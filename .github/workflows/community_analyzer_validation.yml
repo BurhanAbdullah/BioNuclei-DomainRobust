@@ -1,0 +1,80 @@
+name: Community Analyzer validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "webapp/community_app.py"
+      - "webapp/auth.py"
+      - "webapp/community.py"
+      - "docs/bionuclei-app.html"
+      - "docs/bionuclei-lab.html"
+      - "docs/assets/bionuclei-config.js"
+      - ".github/workflows/community_analyzer_validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Community analyzer contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate frontend configuration
+        run: |
+          set -euo pipefail
+          grep -q 'bionuclei-community-analyzer.onrender.com' docs/assets/bionuclei-config.js
+          grep -q 'supabaseUrl:' docs/assets/bionuclei-config.js
+          grep -q 'supabasePublishableKey:' docs/assets/bionuclei-config.js
+          grep -q 'bionuclei-app.html' docs/bionuclei-lab.html
+          echo 'Frontend integration contract: PASS'
+      - name: Validate authentication contract
+        run: |
+          set -euo pipefail
+          grep -q 'SUPABASE_URL' webapp/auth.py
+          grep -q 'SUPABASE_PUBLISHABLE_KEY' webapp/auth.py
+          grep -q 'Bearer ' webapp/auth.py
+          grep -q 'authenticate(request)' webapp/community_app.py
+          echo 'Authentication contract: PASS'
+      - name: Validate public analysis contract
+        run: |
+          set -euo pipefail
+          grep -q '@app.post("/analyze")' webapp/community_app.py
+          grep -q '@app.get("/jobs")' webapp/community_app.py
+          grep -q '@app.get("/jobs/{job_id}")' webapp/community_app.py
+          grep -q 'overlay.tif' webapp/community_app.py
+          grep -q 'segmentation_mask.tif' webapp/community_app.py
+          echo 'Analysis/result contract: PASS'
+
+  live:
+    name: Live Render endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check service root
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://bionuclei-community-analyzer.onrender.com/ > /tmp/root.json
+          grep -q '"status":"online"' /tmp/root.json
+          echo 'Render root: PASS'
+      - name: Check service health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://bionuclei-community-analyzer.onrender.com/health > /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+          grep -q '"account_required":true' /tmp/health.json
+          echo 'Render health: PASS'
+      - name: Check algorithm contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://bionuclei-community-analyzer.onrender.com/algorithms > /tmp/algorithms.json
+          grep -q 'nuclei' /tmp/algorithms.json
+          grep -q 'morphology' /tmp/algorithms.json
+          grep -q 'intensity' /tmp/algorithms.json
+          echo 'Render algorithms: PASS'
