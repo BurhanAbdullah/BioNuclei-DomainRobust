@@ -1,0 +1,61 @@
+{
+  "analysis": "E6_annotation_efficiency",
+  "status": "verified_from_finalizer_log",
+  "source_run_id": 34208190019,
+  "finalizer_run_id": 34312833206,
+  "test_images_per_fraction": 10,
+  "fractions": [
+    {
+      "label": "01pct",
+      "fraction": 0.01,
+      "n_adaptation_images": 1,
+      "dice": 0.13607142250851784,
+      "iou": 0.07432262000803161,
+      "aji": 0.06828015795369319,
+      "boundary_f1": 0.13518997606836944
+    },
+    {
+      "label": "05pct",
+      "fraction": 0.05,
+      "n_adaptation_images": 2,
+      "dice": 0.11829147444322459,
+      "iou": 0.06358041947486176,
+      "aji": 0.058361371460702416,
+      "boundary_f1": 0.1272411183392474
+    },
+    {
+      "label": "10pct",
+      "fraction": 0.1,
+      "n_adaptation_images": 3,
+      "dice": 0.1118780581994763,
+      "iou": 0.0598069240912293,
+      "aji": 0.05309619635005578,
+      "boundary_f1": 0.1321588496739608
+    },
+    {
+      "label": "25pct",
+      "fraction": 0.25,
+      "n_adaptation_images": 8,
+      "dice": 0.1109081900011915,
+      "iou": 0.05924639645279371,
+      "aji": 0.055425747318879094,
+      "boundary_f1": 0.15108178509867853
+    }
+  ],
+  "interpretation": {
+    "primary_metric": "aji",
+    "primary_metric_change_1_to_8_images": -0.012854410635394095,
+    "primary_metric_relative_change_percent_1_to_8_images": -18.82731888229158,
+    "note": "This is a descriptive annotation-budget analysis, not evidence that additional annotation is harmful in general. The four E6 runs use the same frozen 20-epoch budget and are evaluated on the same 10-image publisher test split. Because E6 is cross-dataset adaptation to Aitslab-bioimaging1, these results must not be interpreted as adaptation performance on the locked S-BIAD634 test set. No causal or monotonicity claim is made."
+  },
+  "provenance": {
+    "finalizer_artifact": "10088980217",
+    "finalizer_artifact_digest": "sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34",
+    "source_commit": "e5d76f279e4a2d9be0159357853fd21319cd0d1e",
+    "seed": 42,
+    "epochs": 20,
+    "adaptation_images": [1, 2, 3, 8],
+    "test_images": 10,
+    "locked_s_biad634_test_used_for_adaptation": false
+  }
+}
