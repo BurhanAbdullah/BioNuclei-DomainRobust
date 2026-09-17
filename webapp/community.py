@@ -134,17 +134,7 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
-        return {
-            "input_format": "ND2",
-            "reader": "nd2",
-            "reader_version": getattr(nd2, "__version__", "unknown"),
-            "source_shape": list(shape),
-            "source_sizes": sizes,
-            "source_axes": axes,
-            "selected_indices": selected,
-            "selected_plane_shape": list(plane.shape),
-            "conversion": "ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline",
-        }
+        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline"}
 
 
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
@@ -163,7 +153,6 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     if mask.shape != image.shape:
         raise ValueError(f"Image and predicted mask shapes differ: {image.shape} != {mask.shape}")
     from skimage.measure import regionprops_table
-
     properties = ["label", "area", "centroid", "bbox"]
     if "morphology" in modules:
         properties += ["perimeter", "eccentricity", "solidity", "major_axis_length", "minor_axis_length"]
@@ -174,27 +163,15 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     if "morphology" in modules and not frame.empty:
         frame["circularity"] = np.where(frame["perimeter"] > 0, 4.0 * np.pi * frame["area"] / (frame["perimeter"] ** 2), np.nan)
     frame.to_csv(output / "nuclei_analysis.csv", index=False)
-
     nuclei_count = int(len(frame))
     summary: dict[str, object] = {"nuclei_count": nuclei_count, "modules": sorted(modules), "measurement_file": "nuclei_analysis.csv"}
     if "morphology" in modules:
-        summary["morphology"] = {
-            "mean_area": float(frame["area"].mean()) if nuclei_count else None,
-            "median_area": float(frame["area"].median()) if nuclei_count else None,
-            "mean_perimeter": float(frame["perimeter"].mean()) if nuclei_count else None,
-            "mean_eccentricity": float(frame["eccentricity"].mean()) if nuclei_count else None,
-            "mean_solidity": float(frame["solidity"].mean()) if nuclei_count else None,
-            "mean_circularity": float(frame["circularity"].mean()) if nuclei_count else None,
-        }
+        summary["morphology"] = {"mean_area":float(frame["area"].mean()) if nuclei_count else None,"median_area":float(frame["area"].median()) if nuclei_count else None,"mean_perimeter":float(frame["perimeter"].mean()) if nuclei_count else None,"mean_eccentricity":float(frame["eccentricity"].mean()) if nuclei_count else None,"mean_solidity":float(frame["solidity"].mean()) if nuclei_count else None,"mean_circularity":float(frame["circularity"].mean()) if nuclei_count else None}
         (output / "morphology_report.json").write_text(json.dumps(summary["morphology"], indent=2) + "\n")
     if "intensity" in modules:
-        summary["intensity"] = {
-            "mean_nuclear_intensity": float(frame["mean_intensity"].mean()) if nuclei_count else None,
-            "median_nuclear_intensity": float(frame["mean_intensity"].median()) if nuclei_count else None,
-            "mean_max_intensity": float(frame["max_intensity"].mean()) if nuclei_count else None,
-        }
+        summary["intensity"] = {"mean_nuclear_intensity":float(frame["mean_intensity"].mean()) if nuclei_count else None,"median_nuclear_intensity":float(frame["mean_intensity"].median()) if nuclei_count else None,"mean_max_intensity":float(frame["max_intensity"].mean()) if nuclei_count else None}
         (output / "intensity_report.json").write_text(json.dumps(summary["intensity"], indent=2) + "\n")
-    (output / "nuclei_report.json").write_text(json.dumps({"nuclei_count": nuclei_count, "modules": sorted(modules)}, indent=2) + "\n")
+    (output / "nuclei_report.json").write_text(json.dumps({"nuclei_count":nuclei_count,"modules":sorted(modules)}, indent=2) + "\n")
     return summary
 
 
@@ -207,45 +184,28 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         raw = image_path.read_bytes()
         input_sha256 = hashlib.sha256(raw).hexdigest()
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
-
         plan = build_plan(inference_input, analysis_modules)
         output.mkdir(parents=True, exist_ok=True)
         (output / "adaptive_plan.json").write_text(json.dumps(to_dict(plan), indent=2) + "\n")
         if plan.status == "BLOCKED":
             raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
-
         _set_job(job_id, status="running")
         with INFERENCE_LOCK:
             result = predict(inference_input, checkpoint, output, device="cpu")
             gc.collect()
         report_summary = _extended_reports(inference_input, output, analysis_modules)
-        result.update({
-            "analysis_profile": algorithm_profile,
-            "analysis_modules": sorted(analysis_modules),
-            "scientific_execution": True,
-            "input_sha256": input_sha256,
-            "source_filename": original_name,
-            "input_metadata": input_metadata,
-            "reports": report_summary,
-            "adaptive_plan": to_dict(plan),
-            "model": {
-                "architecture": "Boundary U-Net",
-                "prediction_target": ["background", "nuclear interior", "nuclear boundary"],
-                "training_reference": "BBBC039v1",
-                "weights_updated_during_analysis": False,
-            },
-        })
+        result.update({"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"BBBC039v1","weights_updated_during_analysis":False}})
         expert = run_expert_agents(result)
         result["expert_agents"] = expert
         (output / "expert_agents.json").write_text(json.dumps(expert, indent=2) + "\n")
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
-        (output / "community_input.json").write_text(json.dumps({"source_filename": original_name, "source_sha256": input_sha256, **input_metadata}, indent=2) + "\n")
+        (output / "community_input.json").write_text(json.dumps({"source_filename":original_name,"source_sha256":input_sha256,**input_metadata}, indent=2) + "\n")
         build_report(result, output)
         _archive(job_id)
         expiry = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
-        _set_job(job_id, status="completed", expires_at=expiry.isoformat(), input_sha256=input_sha256, input_name=original_name, result_json=json.dumps(result), retained_copy=0, research_consent=0)
+        _set_job(job_id,status="completed",expires_at=expiry.isoformat(),input_sha256=input_sha256,input_name=original_name,retained_copy=0,research_consent=0)
     except Exception as exc:
-        _set_job(job_id, status="failed", error=f"{type(exc).__name__}: {exc}")
+        _set_job(job_id,status="failed",error=f"{type(exc).__name__}: {exc}")
     finally:
         image_path.unlink(missing_ok=True)
         (root / "input_plane.tif").unlink(missing_ok=True)
@@ -273,69 +233,63 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     input_path.write_bytes(data)
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
     with DB_LOCK, _db() as conn:
-        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id, "queued", _now().isoformat(), _now().isoformat(), expires.isoformat(), user_id, original_name, 0, 0, algorithm_profile, ",".join(sorted(modules))))
+        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
         conn.commit()
-    threading.Thread(target=_run, args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules), kwargs={"channel": channel, "time": time, "z": z, "field": field}, daemon=True).start()
+    threading.Thread(target=_run,args=(job_id,user_id,input_path,original_name,False,algorithm_profile,modules),kwargs={"channel":channel,"time":time,"z":z,"field":field},daemon=True).start()
     return job_id
 
 
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
-    return {"job_id": row["id"], "status": row["status"], "created_at": row["created_at"], "updated_at": row["updated_at"], "expires_at": row["expires_at"], "input_name": row["input_name"], "input_sha256": row["input_sha256"], "research_consent": False, "retained_copy": False, "algorithm_profile": row["algorithm_profile"], "analysis_modules": row["analysis_modules"].split(",") if row["analysis_modules"] else [], "result": result, "error": row["error"], "downloads": {"zip": f"/jobs/{row['id']}/download", "results": f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
+    return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
 
 
 def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
-    row = _get_job(job_id, user_id)
-    return serialize(row) if row else None
+    return serialize(_get_job(job_id,user_id)) if _get_job(job_id,user_id) else None
 
 
 def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
     with DB_LOCK, _db() as conn:
-        rows = conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,)).fetchall()
+        rows=conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",(user_id,)).fetchall()
     return [serialize(row) for row in rows]
 
 
-def get_file(job_id: str, user_id: str, filename: str) -> Path:
-    allowed = {"segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json", "provenance.json", "community_input.json", "nuclei_analysis.csv", "nuclei_report.json", "morphology_report.json", "intensity_report.json", "adaptive_plan.json", "expert_agents.json", "analysis_report.pdf", "analysis_report.json", "analysis_report.html"}
-    if filename not in allowed:
-        raise ValueError("File is not a downloadable BioNuclei result")
-    row = _get_job(job_id, user_id)
-    if not row or row["status"] != "completed":
-        raise FileNotFoundError(job_id)
-    path = _job_dir(job_id) / "results" / filename
-    if not path.is_file():
-        raise FileNotFoundError(filename)
+def get_file(job_id: str,user_id: str,filename: str) -> Path:
+    allowed={"segmentation_mask.tif","overlay.tif","measurements.csv","results.json","provenance.json","community_input.json","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","adaptive_plan.json","expert_agents.json","analysis_report.pdf","analysis_report.json","analysis_report.html"}
+    if filename not in allowed: raise ValueError("File is not a downloadable BioNuclei result")
+    row=_get_job(job_id,user_id)
+    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
+    path=_job_dir(job_id)/"results"/filename
+    if not path.is_file(): raise FileNotFoundError(filename)
     return path
 
 
-def get_archive(job_id: str, user_id: str) -> Path:
-    row = _get_job(job_id, user_id)
-    if not row or row["status"] != "completed":
-        raise FileNotFoundError(job_id)
+def get_archive(job_id: str,user_id: str) -> Path:
+    row=_get_job(job_id,user_id)
+    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
     return _archive(job_id)
 
 
-def delete_job(job_id: str, user_id: str) -> bool:
-    row = _get_job(job_id, user_id)
-    if row is None:
-        raise FileNotFoundError(job_id)
-    shutil.rmtree(_job_dir(job_id), ignore_errors=True)
-    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+def delete_job(job_id: str,user_id: str) -> bool:
+    row=_get_job(job_id,user_id)
+    if row is None: raise FileNotFoundError(job_id)
+    shutil.rmtree(_job_dir(job_id),ignore_errors=True)
+    (JOB_ROOT/f"{job_id}.zip").unlink(missing_ok=True)
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id))
+        conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?",(job_id,user_id))
         conn.commit()
     return True
 
 
 def purge_expired() -> int:
-    removed = 0
-    now = _now()
+    removed=0
+    now=_now()
     with DB_LOCK, _db() as conn:
-        rows = conn.execute("SELECT id FROM jobs WHERE expires_at < ?", (now.isoformat(),)).fetchall()
+        rows=conn.execute("SELECT id FROM jobs WHERE expires_at < ?",(now.isoformat(),)).fetchall()
         for row in rows:
-            shutil.rmtree(_job_dir(row["id"]), ignore_errors=True)
-            (JOB_ROOT / f"{row['id']}.zip").unlink(missing_ok=True)
-            conn.execute("DELETE FROM jobs WHERE id = ?", (row["id"],))
+            shutil.rmtree(_job_dir(row["id"]),ignore_errors=True)
+            (JOB_ROOT/f"{row['id']}.zip").unlink(missing_ok=True)
+            conn.execute("DELETE FROM jobs WHERE id = ?",(row["id"],))
             removed += 1
         conn.commit()
     return removed
@@ -346,8 +300,8 @@ def _cleanup_loop() -> None:
         try:
             purge_expired()
         except Exception as exc:
-            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}", flush=True)
+            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}",flush=True)
         time.sleep(300)
 
 
-threading.Thread(target=_cleanup_loop, name="bionuclei-expiry-cleaner", daemon=True).start()
+threading.Thread(target=_cleanup_loop,name="bionuclei-expiry-cleaner",daemon=True).start()
