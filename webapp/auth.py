@@ -1,13 +1,15 @@
-"""Minimal Supabase bearer-token verification for the Community Analyzer.
+"""Supabase bearer-token and ephemeral guest authentication for the analyzer.
 
-The browser uses Supabase Auth for account creation/sign-in. The server never
-receives a password; it validates the user's access token against Supabase Auth
-and uses the returned immutable user id as the owner of analysis jobs.
+Account users are verified through Supabase Auth. Guest users receive a random
+per-browser job token that is never persisted by the server as plaintext and is
+used only to scope their transient analysis job.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ from fastapi import HTTPException, Request
 class AuthenticatedUser:
     id: str
     email: str | None
+    guest: bool = False
 
 
 def _config() -> tuple[str, str]:
@@ -50,4 +53,25 @@ def authenticate(request: Request) -> AuthenticatedUser:
     user_id = payload.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid account session")
-    return AuthenticatedUser(id=str(user_id), email=payload.get("email"))
+    return AuthenticatedUser(id=str(user_id), email=payload.get("email"), guest=False)
+
+
+def create_guest_token() -> str:
+    """Create a high-entropy bearer token for one transient guest session."""
+    return secrets.token_urlsafe(32)
+
+
+def authenticate_guest(request: Request) -> AuthenticatedUser:
+    """Authenticate an ephemeral guest using X-BioNuclei-Guest-Token."""
+    token = request.headers.get("X-BioNuclei-Guest-Token", "").strip()
+    if len(token) < 32:
+        raise HTTPException(status_code=401, detail="Missing or invalid guest session token")
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return AuthenticatedUser(id=f"guest:{digest}", email=None, guest=True)
+
+
+def authenticate_optional(request: Request) -> AuthenticatedUser:
+    """Use an account session when present, otherwise an ephemeral guest token."""
+    if request.headers.get("Authorization", "").startswith("Bearer "):
+        return authenticate(request)
+    return authenticate_guest(request)
