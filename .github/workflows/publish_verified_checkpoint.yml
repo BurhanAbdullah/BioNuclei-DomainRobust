@@ -1,0 +1,59 @@
+name: Publish Verified BBBC039 Checkpoint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish_verified_checkpoint.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified baseline artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          gh run download 33768426630 -R "$GITHUB_REPOSITORY" -n bbbc039-baseline-33768426630 -D artifact
+          CKPT="$(find artifact -type f -name last.pt | head -n 1)"
+          test -n "$CKPT"
+          cp "$CKPT" bionuclei_bbbc039.pt
+
+      - name: Verify artifact and checkpoint identity
+        run: |
+          set -euo pipefail
+          test "$(sha256sum bionuclei_bbbc039.pt | cut -d' ' -f1)" = "$(python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          p=Path('bionuclei_bbbc039.pt')
+          print(hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+          )"
+          echo "checkpoint_bytes=$(stat -c '%s' bionuclei_bbbc039.pt)"
+          sha256sum bionuclei_bbbc039.pt
+
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view checkpoint-bbbc039-v1 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release checkpoint-bbbc039-v1 already exists; leaving it unchanged."
+          else
+            gh release create checkpoint-bbbc039-v1 bionuclei_bbbc039.pt \
+              -R "$GITHUB_REPOSITORY" \
+              --title "BioNuclei BBBC039 v1" \
+              --notes "Permanent public checkpoint promoted from verified CI baseline run 33768426630. The source artifact was verified by the research evidence ledger; this release provides a non-expiring distribution point for the public service."
+          fi
+
+      - name: Record release asset hash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view checkpoint-bbbc039-v1 -R "$GITHUB_REPOSITORY" --json tagName,assets
