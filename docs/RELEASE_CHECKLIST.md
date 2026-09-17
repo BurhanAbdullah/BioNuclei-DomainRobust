@@ -33,6 +33,7 @@ This is the final gate before calling the repository paper-ready. Checkboxes are
 - [x] Ablations completed.
 - [x] Strong baselines completed.
 - [x] Few-shot protocol completed (E6 aggregate artifact from finalizer run `34312833206`; four standardized fractions from source run `34208190019`).
+- [x] E6 annotation-budget/efficiency analysis completed and archived from the verified aggregate evidence (`docs/E6_ANNOTATION_EFFICIENCY_2026-09-17.md`).
 - [x] Independent external validation completed (E7 run `34312920549`).
 - [x] Statistical analysis completed for the executed E6/E7 evidence chain (uncertainty/failure artifact from run `34312853905`).
 - [x] Uncertainty/failure analysis completed for the executed E6/E7 evidence chain (10,000 bootstrap resamples; retained artifact `10088988731`).
