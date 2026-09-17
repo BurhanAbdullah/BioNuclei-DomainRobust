@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-CHECKPOINT_PATH="${BIONUCLEI_CHECKPOINT:-/opt/models/bionuclei.pt}"
+CHECKPOINT_PATH="${BIONUCLEI_CHECKPOINT:-/tmp/bionuclei-model/bionuclei.pt}"
 if [ ! -f "$CHECKPOINT_PATH" ] && [ -n "${BIONUCLEI_CHECKPOINT_URL:-}" ]; then
     echo "bionuclei: fetching checkpoint" >&2
     mkdir -p "$(dirname "$CHECKPOINT_PATH")"
@@ -19,7 +19,7 @@ urllib.request.urlretrieve(url, tmp)
 actual = hashlib.sha256(tmp.read_bytes()).hexdigest()
 if expected and actual != expected:
     tmp.unlink(missing_ok=True)
-    raise SystemExit(f"FATAL checkpoint hash mismatch: expected={expected} actual={actual}
+    raise SystemExit(f"FATAL checkpoint hash mismatch: expected={expected} actual={actual}")
 tmp.replace(destination)
 print(f"checkpoint_sha256={actual}")
 PY
@@ -30,4 +30,5 @@ if [ ! -f "$CHECKPOINT_PATH" ]; then
     exit 1
 fi
 
+export BIONUCLEI_CHECKPOINT="$CHECKPOINT_PATH"
 exec uvicorn webapp.community_app:app --host 0.0.0.0 --port "${PORT:-8000}"
