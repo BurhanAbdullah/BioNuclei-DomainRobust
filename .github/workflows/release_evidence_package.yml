@@ -1,6 +1,8 @@
 name: Permanent evidence package
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - name: Download exact retained artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -31,11 +32,7 @@ jobs:
           gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${E7_ARTIFACT_ID}/zip" > package/evidence/e7-bbbc038.zip
           gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${UNCERTAINTY_ARTIFACT_ID}/zip" > package/evidence/e6-e7-uncertainty-failure.zip
           gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CLEAN_REPRO_ARTIFACT_ID}/zip" > package/evidence/clean-reproduction.zip
-          test -s package/evidence/e6-aggregate.zip
-          test -s package/evidence/e7-bbbc038.zip
-          test -s package/evidence/e6-e7-uncertainty-failure.zip
-          test -s package/evidence/clean-reproduction.zip
-
+          for f in package/evidence/*.zip; do test -s "$f"; done
       - name: Verify exact artifact metadata
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,7 +59,6 @@ jobs:
             records.append({'artifact_id':int(aid),'name':o['name'],'workflow_run':exp['run'],'digest':o['digest'],'size_in_bytes':o['size_in_bytes']})
           json.dump({'scientific_source_commit':os.environ['SCIENTIFIC_SOURCE_COMMIT'],'packaging_commit':os.environ['GITHUB_SHA'],'records':records},open('package/evidence_manifest.json','w'),indent=2)
           PY
-
       - name: Copy release-control documents
         run: |
           set -euo pipefail
@@ -71,13 +67,11 @@ jobs:
           cp docs/E6_ANNOTATION_EFFICIENCY_2026-09-17.md package/E6_ANNOTATION_EFFICIENCY_2026-09-17.md
           cp docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md package/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md
           cp docs/PROGRESS.md package/PROGRESS.md
-
       - name: Create permanent package
         run: |
           set -euo pipefail
           tar -czf "BioNuclei-${RELEASE_TAG}.tar.gz" package
           sha256sum "BioNuclei-${RELEASE_TAG}.tar.gz" > "BioNuclei-${RELEASE_TAG}.tar.gz.sha256"
-
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
