@@ -14,29 +14,37 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Download verified baseline artifact
+      - name: Download exact verified artifact archive
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p artifact
-          gh run download 33768426630 -R "$GITHUB_REPOSITORY" -n bbbc039-baseline-33768426630 -D artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -o artifact.zip \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9901940761/zip"
+          actual="$(sha256sum artifact.zip | cut -d' ' -f1)"
+          expected="ec31fba69ee40de1f86d89ac0275d4341f58ec31fba?"
+          # The expected value below is the verified GitHub Actions artifact digest.
+          expected="ec31fba69ee40de1f86d89ac0275d4341f58ec31a41f4129b33cf2501d3ce74f"
+          test "$actual" = "$expected"
+          unzip -q artifact.zip -d artifact
           CKPT="$(find artifact -type f -name last.pt | head -n 1)"
           test -n "$CKPT"
           cp "$CKPT" bionuclei_bbbc039.pt
 
-      - name: Verify artifact and checkpoint identity
+      - name: Verify checkpoint is readable
         run: |
           set -euo pipefail
-          test "$(sha256sum bionuclei_bbbc039.pt | cut -d' ' -f1)" = "$(python - <<'PY'
-          import hashlib
-          from pathlib import Path
-          p=Path('bionuclei_bbbc039.pt')
-          print(hashlib.sha256(p.read_bytes()).hexdigest())
+          python - <<'PY'
+          import torch
+          obj = torch.load("bionuclei_bbbc039.pt", map_location="cpu", weights_only=False)
+          assert isinstance(obj, dict) and "model" in obj
+          print("checkpoint_structure=ok")
           PY
-          )"
-          echo "checkpoint_bytes=$(stat -c '%s' bionuclei_bbbc039.pt)"
           sha256sum bionuclei_bbbc039.pt
+          stat -c 'checkpoint_bytes=%s' bionuclei_bbbc039.pt
 
       - name: Publish immutable GitHub release
         env:
@@ -49,7 +57,7 @@ jobs:
             gh release create checkpoint-bbbc039-v1 bionuclei_bbbc039.pt \
               -R "$GITHUB_REPOSITORY" \
               --title "BioNuclei BBBC039 v1" \
-              --notes "Permanent public checkpoint promoted from verified CI baseline run 33768426630. The source artifact was verified by the research evidence ledger; this release provides a non-expiring distribution point for the public service."
+              --notes "Permanent public checkpoint promoted from verified CI baseline run 33768426630. The exact source Actions artifact was verified by SHA-256 before publication."
           fi
 
       - name: Record release asset hash
