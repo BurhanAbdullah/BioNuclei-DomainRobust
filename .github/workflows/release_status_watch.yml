@@ -1,8 +1,7 @@
 name: Release status watch
 
-# Lightweight watcher only. It does not retrain or alter evidence. It checks
-# that the pinned release artifacts still exist and that their producing runs
-# remain recorded. The full ECC-style audit remains push/manual driven.
+# Lightweight watcher. It checks the currently pinned scientific evidence chain;
+# it does not retrain, regenerate, or rewrite scientific evidence.
 
 on:
   schedule:
@@ -13,6 +12,12 @@ permissions:
   contents: read
   actions: read
 
+env:
+  E6_ARTIFACT_ID: "10088980217"
+  E7_ARTIFACT_ID: "10089229809"
+  UNCERTAINTY_ARTIFACT_ID: "10088988731"
+  CLEAN_REPRO_ARTIFACT_ID: "10089022008"
+
 jobs:
   status:
     runs-on: ubuntu-latest
@@ -20,28 +25,33 @@ jobs:
       - name: Check pinned evidence state
         env:
           GH_TOKEN: ${{ github.token }}
-          E6_ARTIFACT_ID: "10088871204"
-          E7_ARTIFACT_ID: "10088666629"
-          UNCERTAINTY_ARTIFACT_ID: "10088937486"
         run: |
           set -euo pipefail
           python - <<'PY'
           import json, os, urllib.request
-          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
+          repo=os.environ['GITHUB_REPOSITORY']
+          token=os.environ['GH_TOKEN']
           ids={
             'E6 aggregate':os.environ['E6_ARTIFACT_ID'],
             'E7 BBBC038':os.environ['E7_ARTIFACT_ID'],
             'uncertainty/failure':os.environ['UNCERTAINTY_ARTIFACT_ID'],
+            'clean reproduction':os.environ['CLEAN_REPRO_ARTIFACT_ID'],
+          }
+          expected={
+            os.environ['E6_ARTIFACT_ID']: 34312833206,
+            os.environ['E7_ARTIFACT_ID']: 34312920549,
+            os.environ['UNCERTAINTY_ARTIFACT_ID']: 34312853905,
+            os.environ['CLEAN_REPRO_ARTIFACT_ID']: 34312877852,
           }
           def get(url):
             req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
             with urllib.request.urlopen(req) as h:return json.load(h)
           for label, aid in ids.items():
             obj=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
-            state='EXPIRED' if obj['expired'] else 'LIVE'
+            assert not obj['expired'], f'{label}: expired'
+            assert obj['size_in_bytes'] > 0, f'{label}: empty'
             run=(obj.get('workflow_run') or {}).get('id')
-            print(f'{label}: {state}; artifact={aid}; run={run}; digest={obj.get("digest")}')
-            assert not obj['expired'], label
-            assert run, label
+            assert int(run)==expected[aid], (label, run, expected[aid])
+            print(f'{label}: LIVE; artifact={aid}; run={run}; digest={obj.get("digest")}')
           print('status watch: PASS')
           PY
