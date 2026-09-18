@@ -8,7 +8,11 @@ on:
       - "webapp/auth.py"
       - "webapp/community.py"
       - "docs/bionuclei-app.html"
+      - "docs/bionuclei.html"
+      - "docs/bionuclei-analysis.html"
+      - "docs/bionuclei-formats.html"
       - "docs/bionuclei-lab.html"
+      - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-config.js"
       - ".github/workflows/community_analyzer_validation.yml"
   workflow_dispatch:
@@ -38,7 +42,17 @@ jobs:
           grep -q 'data-access-tab="signup"' docs/bionuclei-app.html
           grep -q 'data-access-tab="signin"' docs/bionuclei-app.html
           grep -q 'data-access-tab="guest"' docs/bionuclei-app.html
-          grep -q 'X-BioNuclei-Guest-Token' docs/bionuclei-app.html
+          grep -q 'id="analyzeButton"' docs/bionuclei-app.html
+          grep -q 'id="resultPanel"' docs/bionuclei-app.html
+          grep -q 'X-BioNuclei-Guest-Token' docs/assets/bionuclei-analyzer.js
+          grep -q '/guest-session' docs/assets/bionuclei-analyzer.js
+          grep -q '/analyze' docs/assets/bionuclei-analyzer.js
+          grep -q '/jobs/' docs/assets/bionuclei-analyzer.js
+          grep -q 'nuclei_analysis.csv' docs/assets/bionuclei-analyzer.js
+          grep -q 'segmentation_mask.tif' docs/assets/bionuclei-analyzer.js
+          grep -q 'localStorage' docs/assets/bionuclei-analyzer.js && exit 1 || true
+          grep -q 'indexedDB' docs/assets/bionuclei-analyzer.js && exit 1 || true
+          node --check docs/assets/bionuclei-analyzer.js
           echo 'Frontend integration contract: PASS'
       - name: Validate authentication and privacy contract
         run: |
