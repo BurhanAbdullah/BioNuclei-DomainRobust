@@ -7,6 +7,15 @@
 <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/site.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.viewer{position:relative;width:100%;overflow:hidden;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:#05090d;touch-action:none}
+.viewer img{display:block;width:100%;height:auto;max-width:none;min-height:220px;object-fit:contain}
+.viewer canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+.viewer:after{content:'Drag to draw a temporary ROI';position:absolute;right:12px;bottom:10px;padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.68);color:#fff;font-size:.72rem;pointer-events:none}
+#maskPreview{width:100%;height:auto;min-height:220px;object-fit:contain;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:#05090d}
+#measurementTools{margin-top:16px}.tab{cursor:pointer}.tab.is-active{background:var(--accent);color:var(--text-on-dark);border-color:var(--accent)}
+@media(max-width:800px){.viewer img,#maskPreview{min-height:160px}.viewer:after{font-size:.65rem}}
+</style>
 </head>
 <body>
 <nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="bionuclei.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Analysis workspace</small></span></a><div class="nav-links"></div><div class="nav-cta"><a class="btn small primary" href="bionuclei.html">Overview</a><button id="signout" class="nav-toggle" type="button" hidden>Sign out</button><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button></div></div></nav>
