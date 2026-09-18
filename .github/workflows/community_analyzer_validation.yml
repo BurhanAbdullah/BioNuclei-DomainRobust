@@ -50,8 +50,8 @@ jobs:
           grep -q '/jobs/' docs/assets/bionuclei-analyzer.js
           grep -q 'nuclei_analysis.csv' docs/assets/bionuclei-analyzer.js
           grep -q 'segmentation_mask.tif' docs/assets/bionuclei-analyzer.js
-          grep -q 'localStorage' docs/assets/bionuclei-analyzer.js && exit 1 || true
-          grep -q 'indexedDB' docs/assets/bionuclei-analyzer.js && exit 1 || true
+          ! grep -qi 'localStorage' docs/assets/bionuclei-analyzer.js
+          ! grep -qi 'indexedDB' docs/assets/bionuclei-analyzer.js
           node --check docs/assets/bionuclei-analyzer.js
           echo 'Frontend integration contract: PASS'
       - name: Validate authentication and privacy contract
