@@ -104,6 +104,15 @@ def _archive(job_id: str) -> Path:
     return archive
 
 
+def _cleanup_failed_job(job_id: str, root: Path) -> None:
+    """Remove every transient artifact and its metadata after a failed job."""
+    shutil.rmtree(root, ignore_errors=True)
+    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    with DB_LOCK, _db() as conn:
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.commit()
+
+
 def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> dict[str, object]:
     """Read a Nikon ND2 and deterministically extract one 2-D YX plane."""
     try:
@@ -205,7 +214,11 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         expiry = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
         _set_job(job_id,status="completed",expires_at=expiry.isoformat(),input_sha256=input_sha256,input_name=original_name,retained_copy=0,research_consent=0)
     except Exception as exc:
-        _set_job(job_id,status="failed",error=f"{type(exc).__name__}: {exc}")
+        try:
+            _cleanup_failed_job(job_id, root)
+        except Exception as cleanup_exc:
+            print(f"bionuclei failure cleanup warning for {job_id}: {type(cleanup_exc).__name__}: {cleanup_exc}",flush=True)
+        print(f"bionuclei job {job_id} failed: {type(exc).__name__}: {exc}",flush=True)
     finally:
         image_path.unlink(missing_ok=True)
         (root / "input_plane.tif").unlink(missing_ok=True)
