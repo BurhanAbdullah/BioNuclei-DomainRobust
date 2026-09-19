@@ -239,25 +239,63 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     return job_id
 
 
+def _remove_expired_job(job_id: str, user_id: str | None = None) -> None:
+    """Atomically remove expired transient artifacts and job metadata."""
+    shutil.rmtree(_job_dir(job_id), ignore_errors=True)
+    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    with DB_LOCK, _db() as conn:
+        if user_id is None:
+            conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        else:
+            conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id))
+        conn.commit()
+
+
+def _live_owned_job(job_id: str, user_id: str) -> sqlite3.Row | None:
+    """Return an owned, unexpired job and enforce expiry before any access."""
+    row = _get_job(job_id, user_id)
+    if row is None:
+        return None
+    try:
+        expired = datetime.fromisoformat(row["expires_at"]) <= _now()
+    except (TypeError, ValueError):
+        expired = True
+    if expired:
+        _remove_expired_job(job_id, user_id)
+        return None
+    return row
+
+
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
 
 
 def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
-    return serialize(_get_job(job_id,user_id)) if _get_job(job_id,user_id) else None
+    row = _live_owned_job(job_id, user_id)
+    return serialize(row) if row else None
 
 
 def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
     with DB_LOCK, _db() as conn:
         rows=conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",(user_id,)).fetchall()
-    return [serialize(row) for row in rows]
+    live_rows: list[sqlite3.Row] = []
+    for row in rows:
+        try:
+            expired = datetime.fromisoformat(row["expires_at"]) <= _now()
+        except (TypeError, ValueError):
+            expired = True
+        if expired:
+            _remove_expired_job(row["id"], user_id)
+        else:
+            live_rows.append(row)
+    return [serialize(row) for row in live_rows]
 
 
 def get_file(job_id: str,user_id: str,filename: str) -> Path:
     allowed={"segmentation_mask.tif","overlay.tif","measurements.csv","results.json","provenance.json","community_input.json","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","adaptive_plan.json","expert_agents.json","analysis_report.pdf","analysis_report.json","analysis_report.html"}
     if filename not in allowed: raise ValueError("File is not a downloadable BioNuclei result")
-    row=_get_job(job_id,user_id)
+    row=_live_owned_job(job_id,user_id)
     if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
     path=_job_dir(job_id)/"results"/filename
     if not path.is_file(): raise FileNotFoundError(filename)
@@ -265,7 +303,7 @@ def get_file(job_id: str,user_id: str,filename: str) -> Path:
 
 
 def get_archive(job_id: str,user_id: str) -> Path:
-    row=_get_job(job_id,user_id)
+    row=_live_owned_job(job_id,user_id)
     if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
     return _archive(job_id)
 
