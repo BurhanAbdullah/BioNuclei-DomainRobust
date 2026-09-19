@@ -1,0 +1,33 @@
+name: Analyzer failure cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "webapp/community.py"
+      - "tests/test_community_failure_cleanup.py"
+      - ".github/workflows/analyzer_failure_cleanup.yml"
+  pull_request:
+    paths:
+      - "webapp/community.py"
+      - "tests/test_community_failure_cleanup.py"
+      - ".github/workflows/analyzer_failure_cleanup.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  failure-cleanup:
+    name: Failure artifact cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install package and web test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test,web]'
+      - name: Run deterministic failure cleanup tests
+        run: pytest -q tests/test_community_failure_cleanup.py
