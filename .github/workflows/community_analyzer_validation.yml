@@ -13,6 +13,7 @@ on:
       - "docs/bionuclei-formats.html"
       - "docs/bionuclei-lab.html"
       - "docs/assets/bionuclei-analyzer.js"
+      - "docs/assets/bionuclei-progress.js"
       - "docs/assets/bionuclei-config.js"
       - ".github/workflows/community_analyzer_validation.yml"
   workflow_dispatch:
@@ -38,6 +39,7 @@ jobs:
           grep -q 'bionuclei-community-analyzer.onrender.com' docs/assets/bionuclei-config.js
           grep -q 'supabaseUrl:' docs/assets/bionuclei-config.js
           grep -q 'supabasePublishableKey:' docs/assets/bionuclei-config.js
+          grep -q 'bionuclei-progress.js' docs/assets/bionuclei-config.js
           grep -q 'bionuclei-app.html' docs/bionuclei-lab.html
           grep -q 'data-access-tab="signup"' docs/bionuclei-app.html
           grep -q 'data-access-tab="signin"' docs/bionuclei-app.html
@@ -53,6 +55,7 @@ jobs:
           ! grep -qi 'localStorage' docs/assets/bionuclei-analyzer.js
           ! grep -qi 'indexedDB' docs/assets/bionuclei-analyzer.js
           node --check docs/assets/bionuclei-analyzer.js
+          node --check docs/assets/bionuclei-progress.js
           echo 'Frontend integration contract: PASS'
       - name: Validate authentication and privacy contract
         run: |
