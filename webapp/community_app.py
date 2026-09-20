@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -12,15 +13,45 @@ from fastapi.responses import FileResponse, Response
 
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
+from . import community as community_service
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
 
-app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.2", description="Transient public image analysis service with optional account history.")
+
+def _failure_cleanup(job_id: str, root):
+    """Delete transient artifacts but keep a queryable failed-job record.
+
+    The previous implementation deleted the database row on worker failure. A
+    browser polling that job then received 404 and could only report a generic
+    connection interruption. Keeping a minimal failed row makes the API tell
+    the truth while still removing the uploaded image and derived artifacts.
+    The detailed exception remains in server logs.
+    """
+    shutil.rmtree(root, ignore_errors=True)
+    (community_service.JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    with community_service.DB_LOCK, community_service._db() as conn:
+        conn.execute(
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+            (
+                "failed",
+                "Analysis worker failed before producing a complete result. Please retry the analysis.",
+                community_service._now().isoformat(),
+                job_id,
+            ),
+        )
+        conn.commit()
+
+
+# community._run resolves this helper through its module globals. Replace only
+# the failure cleanup behavior; the scientific pipeline itself is unchanged.
+community_service._cleanup_failed_job = _failure_cleanup
+
+app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
 def root():
-    return {"service":"bionuclei-community-analyzer","version":"0.3.2","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
+    return {"service":"bionuclei-community-analyzer","version":"0.3.3","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
 
 @app.get("/health")
 def health():
@@ -78,6 +109,7 @@ def progress(request:Request,job_id:str):
         ("expert_review", "5 · Expert evidence review", "Evidence-constrained specialist agents are reviewing the measured result.", 84),
         ("packaging", "6 · Report packaging", "The report and downloadable analysis package are being assembled.", 94),
         ("completed", "7 · Complete", "Analysis complete. The report is ready to download.", 100),
+        ("failed", "Analysis failed", "The server-side analysis job failed. No transient input/result artifacts were retained.", 0),
     ]
     phase = status if status in {name for name, *_ in stages} else "queued"
     if output.exists():
@@ -86,7 +118,8 @@ def progress(request:Request,job_id:str):
         elif (output / "segmentation_mask.tif").is_file(): phase = "measuring"
         elif (output / "adaptive_plan.json").is_file(): phase = "running" if status == "running" else "planning"
     if status == "completed": phase = "completed"
-    if status not in {"completed","planning","running"} and not output.exists(): phase = "queued"
+    if status == "failed": phase = "failed"
+    if status not in {"completed","failed","planning","running"} and not output.exists(): phase = "queued"
     selected = next(item for item in stages if item[0] == phase)
     return {"job_id":job_id,"status":status,"phase":phase,"label":selected[1],"message":selected[2],"progress":selected[3],"pipeline_truth_source":"filesystem artifacts plus job status","expert_agents_started":(output / "expert_agents.json").is_file() if output.exists() else False,"report_ready":(output / "analysis_report.pdf").is_file() if output.exists() else False}
 
