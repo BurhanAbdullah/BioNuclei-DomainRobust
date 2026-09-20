@@ -53,19 +53,25 @@ def _expiry_instant(payload: dict[str, object]) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Analysis job has an invalid expiry timestamp") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
 
 
 def _ensure_live_job(job_id: str, user_id: str) -> dict[str, object]:
-    """Enforce expiry at read time, before returning job metadata or artifacts."""
+    """Enforce expiry at read time, failing closed on malformed expiry metadata."""
     payload = get_job(job_id, user_id)
     if payload is None:
         raise FileNotFoundError("Analysis job not found")
-    expires_at = _expiry_instant(payload)
+    try:
+        expires_at = _expiry_instant(payload)
+    except ValueError:
+        try:
+            delete_job(job_id, user_id)
+        finally:
+            raise FileNotFoundError("Analysis job has invalid expiry metadata")
     if expires_at is not None and expires_at <= datetime.now(timezone.utc):
         try:
             delete_job(job_id, user_id)
