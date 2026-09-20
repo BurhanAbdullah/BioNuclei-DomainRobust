@@ -9,6 +9,7 @@
     const workspace = document.getElementById('workspace');
     const runMsg = document.getElementById('runMsg');
     const analyzeButton = document.getElementById('analyzeButton');
+    const guestButton = document.getElementById('guestButton');
     if (!workspace || !runMsg || !analyzeButton) return;
 
     let panel = document.getElementById('analysisProgress');
@@ -34,6 +35,7 @@
     const bar = document.getElementById('progressBar');
     const steps = document.getElementById('progressSteps');
     const stages = [
+      ['guest_ready', 'Ready for image upload', 5],
       ['queued', '1 · Queued', 12],
       ['planning', '2 · Quality & planning', 24],
       ['running', '3 · Boundary U-Net inference', 52],
@@ -52,6 +54,22 @@
       detail.textContent = detailText || 'Analysis is running. Keep this tab open until the report is ready.';
       bar.style.width = `${current[2]}%`;
       steps.innerHTML = stages.map(([key, label], i) => `<div style="margin:4px 0;opacity:${i <= idx ? 1 : .42}">${i <= idx ? '✓' : '○'} ${escapeHtml(label)}</div>`).join('');
+    }
+
+    if (guestButton) {
+      guestButton.addEventListener('click', () => {
+        render('queued', 'Starting the disposable guest session…');
+        const started = Date.now();
+        const check = () => {
+          if (!workspace.hidden) {
+            render('guest_ready', 'Guest session ready. Select a TIFF or Nikon ND2 file, then press Analyze image.');
+            return;
+          }
+          if (Date.now() - started < 15000) window.setTimeout(check, 250);
+          else render('queued', 'Guest session did not become ready. Check the analyzer connection and try again.');
+        };
+        window.setTimeout(check, 250);
+      }, { capture: true });
     }
 
     analyzeButton.addEventListener('click', () => {
