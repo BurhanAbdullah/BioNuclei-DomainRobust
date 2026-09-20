@@ -1,5 +1,7 @@
 (() => {
   'use strict';
+  if (window.__BIONUCLEI_PROGRESS_BOOTED) return;
+  window.__BIONUCLEI_PROGRESS_BOOTED = true;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -56,6 +58,14 @@
       steps.innerHTML = stages.map(([key, label], i) => `<div style="margin:4px 0;opacity:${i <= idx ? 1 : .42}">${i <= idx ? '✓' : '○'} ${escapeHtml(label)}</div>`).join('');
     }
 
+    function renderFailure(text) {
+      panel.hidden = false;
+      title.textContent = 'Analysis connection lost';
+      detail.textContent = text || 'The analyzer service stopped responding before the report was ready. Retry the analysis; no report was downloaded.';
+      bar.style.width = '100%';
+      steps.innerHTML = stages.map(([key, label], i) => `<div style="margin:4px 0;opacity:${i < 3 ? 1 : .42}">${i < 3 ? '✓' : '○'} ${escapeHtml(label)}</div>`).join('');
+    }
+
     if (guestButton) {
       guestButton.addEventListener('click', () => {
         render('queued', 'Starting the disposable guest session…');
@@ -66,7 +76,7 @@
             return;
           }
           if (Date.now() - started < 15000) window.setTimeout(check, 250);
-          else render('queued', 'Guest session did not become ready. Check the analyzer connection and try again.');
+          else renderFailure('Guest session did not become ready within 15 seconds. Check the analyzer service and retry.');
         };
         window.setTimeout(check, 250);
       }, { capture: true });
@@ -82,20 +92,18 @@
       const match = text.match(/Analysis status:\s*([a-z_]+)/i);
       if (match) render(match[1], text.replace(/\s+/g, ' ').trim());
       else if (/Uploading|queued|polling/i.test(text)) render('queued', text.replace(/\s+/g, ' ').trim());
-      else if (/failed|error|could not/i.test(text)) {
-        panel.hidden = false;
-        title.textContent = 'Analysis stopped';
-        detail.textContent = text.replace(/\s+/g, ' ').trim();
-        bar.style.width = '100%';
-      }
+      else if (/Failed to fetch|NetworkError|Load failed/i.test(text)) renderFailure('The browser could not reach the analyzer service. The job may have been interrupted by a service restart; retry after the service is available.');
+      else if (/failed|error|could not/i.test(text)) renderFailure(text.replace(/\s+/g, ' ').trim());
     });
     observer.observe(runMsg, { childList: true, subtree: true, characterData: true });
 
     const resultPanel = document.getElementById('resultPanel');
-    const resultObserver = new MutationObserver(() => {
-      if (!resultPanel.hidden) render('completed', 'Segmentation, measurements and specialist evidence review are complete. Your report is ready to download.');
-    });
-    resultObserver.observe(resultPanel, { attributes: true, attributeFilter: ['hidden'] });
+    if (resultPanel) {
+      const resultObserver = new MutationObserver(() => {
+        if (!resultPanel.hidden) render('completed', 'Segmentation, measurements and specialist evidence review are complete. Your report is ready to download.');
+      });
+      resultObserver.observe(resultPanel, { attributes: true, attributeFilter: ['hidden'] });
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
