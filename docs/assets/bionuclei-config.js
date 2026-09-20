@@ -25,3 +25,12 @@ window.BIONUCLEI_CONFIG = {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
 }());
+
+/* Load the visible progress layer before the main analyzer. Cache-busting keeps
+ * GitHub Pages from serving a stale progress script after a deployment. */
+(function () {
+  var script = document.createElement('script');
+  script.src = 'assets/bionuclei-progress.js?v=20260920';
+  script.async = false;
+  document.head.appendChild(script);
+}());
