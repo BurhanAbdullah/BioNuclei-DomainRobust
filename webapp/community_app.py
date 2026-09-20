@@ -14,13 +14,13 @@ from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
 
-app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.1", description="Transient public image analysis service with optional account history.")
+app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.2", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
 def root():
-    return {"service":"bionuclei-community-analyzer","version":"0.3.1","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
+    return {"service":"bionuclei-community-analyzer","version":"0.3.2","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
 
 @app.get("/health")
 def health():
@@ -43,7 +43,7 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
     try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,False,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
-    return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
+    return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","progress":f"/jobs/{job_id}/progress","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
 
 @app.get("/jobs")
 def jobs(request:Request):
@@ -53,9 +53,6 @@ def jobs(request:Request):
 def job(request:Request,job_id:str):
     user=authenticate_optional(request);payload=get_job(job_id,user.id)
     if payload is None: raise HTTPException(status_code=404,detail="Analysis job not found")
-    # Older analyzer jobs may have results.json on disk but no DB result_json field.
-    # Hydrate the status response from the owned result artifact without persisting
-    # another copy of the scientific result in the job metadata table.
     if payload.get("status")=="completed" and payload.get("result") is None:
         try:
             result_path=get_file(job_id,user.id,"results.json")
@@ -63,6 +60,35 @@ def job(request:Request,job_id:str):
         except (FileNotFoundError,ValueError,json.JSONDecodeError,OSError):
             pass
     return payload
+
+@app.get("/jobs/{job_id}/progress")
+def progress(request:Request,job_id:str):
+    """Return truthful fine-grained progress derived from actual pipeline artifacts."""
+    user=authenticate_optional(request)
+    payload=get_job(job_id,user.id)
+    if payload is None: raise HTTPException(status_code=404,detail="Analysis job not found")
+    root = __import__("webapp.community", fromlist=["_job_dir"])._job_dir(job_id)
+    output = root / "results"
+    status = str(payload.get("status") or "queued").lower()
+    stages = [
+        ("queued", "1 · Analysis started", "Analysis job accepted and waiting for execution.", 12),
+        ("planning", "2 · Quality & planning", "Input-quality gate and adaptive analysis plan are running.", 24),
+        ("running", "3 · Boundary U-Net inference", "Boundary U-Net is generating the nuclear prediction.", 52),
+        ("measuring", "4 · Instance measurements", "Detected nuclei are being separated and measured.", 68),
+        ("expert_review", "5 · Expert evidence review", "Evidence-constrained specialist agents are reviewing the measured result.", 84),
+        ("packaging", "6 · Report packaging", "The report and downloadable analysis package are being assembled.", 94),
+        ("completed", "7 · Complete", "Analysis complete. The report is ready to download.", 100),
+    ]
+    phase = status if status in {name for name, *_ in stages} else "queued"
+    if output.exists():
+        if (output / "expert_agents.json").is_file(): phase = "packaging" if status != "completed" else "completed"
+        elif (output / "nuclei_analysis.csv").is_file(): phase = "expert_review"
+        elif (output / "segmentation_mask.tif").is_file(): phase = "measuring"
+        elif (output / "adaptive_plan.json").is_file(): phase = "running" if status == "running" else "planning"
+    if status == "completed": phase = "completed"
+    if status not in {"completed","planning","running"} and not output.exists(): phase = "queued"
+    selected = next(item for item in stages if item[0] == phase)
+    return {"job_id":job_id,"status":status,"phase":phase,"label":selected[1],"message":selected[2],"progress":selected[3],"pipeline_truth_source":"filesystem artifacts plus job status","expert_agents_started":(output / "expert_agents.json").is_file() if output.exists() else False,"report_ready":(output / "analysis_report.pdf").is_file() if output.exists() else False}
 
 @app.get("/jobs/{job_id}/preview/{filename}")
 def preview(request:Request,job_id:str,filename:str):
