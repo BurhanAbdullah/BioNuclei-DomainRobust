@@ -15,6 +15,7 @@ on:
       - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-progress.js"
       - "docs/assets/bionuclei-config.js"
+      - "docs/assets/bionuclei-ui-guard.js"
       - ".github/workflows/community_analyzer_validation.yml"
   workflow_dispatch:
 
@@ -40,6 +41,7 @@ jobs:
           grep -q 'supabaseUrl:' docs/assets/bionuclei-config.js
           grep -q 'supabasePublishableKey:' docs/assets/bionuclei-config.js
           grep -q 'bionuclei-progress.js' docs/assets/bionuclei-config.js
+          grep -q 'bionuclei-ui-guard.js' docs/assets/bionuclei-config.js
           grep -q 'bionuclei-app.html' docs/bionuclei-lab.html
           grep -q 'data-access-tab="signup"' docs/bionuclei-app.html
           grep -q 'data-access-tab="signin"' docs/bionuclei-app.html
@@ -52,10 +54,13 @@ jobs:
           grep -q '/jobs/' docs/assets/bionuclei-analyzer.js
           grep -q 'nuclei_analysis.csv' docs/assets/bionuclei-analyzer.js
           grep -q 'segmentation_mask.tif' docs/assets/bionuclei-analyzer.js
+          grep -q 'new DataTransfer' docs/assets/bionuclei-ui-guard.js
+          grep -q 'selectedFile' docs/assets/bionuclei-ui-guard.js
           ! grep -qi 'localStorage' docs/assets/bionuclei-analyzer.js
           ! grep -qi 'indexedDB' docs/assets/bionuclei-analyzer.js
           node --check docs/assets/bionuclei-analyzer.js
           node --check docs/assets/bionuclei-progress.js
+          node --check docs/assets/bionuclei-ui-guard.js
           echo 'Frontend integration contract: PASS'
       - name: Validate authentication and privacy contract
         run: |
@@ -76,7 +81,9 @@ jobs:
           grep -q '@app.post("/analyze")' webapp/community_app.py
           grep -q '@app.get("/jobs")' webapp/community_app.py
           grep -q '@app.get("/jobs/{job_id}")' webapp/community_app.py
+          grep -q '@app.get("/jobs/{job_id}/progress")' webapp/community_app.py
           grep -q '@app.delete("/jobs/{job_id}")' webapp/community_app.py
+          grep -q '"progress"' webapp/community_app.py
           grep -q 'overlay.tif' webapp/community_app.py
           grep -q 'segmentation_mask.tif' webapp/community_app.py
           grep -q 'ALLOWED_UPLOAD_SUFFIXES' webapp/community.py
