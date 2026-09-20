@@ -32,11 +32,11 @@ window.BIONUCLEI_CONFIG = {
   function load() {
     if (window.__BIONUCLEI_PROGRESS_BOOTED) return;
     var script = document.createElement('script');
-    script.src = 'assets/bionuclei-progress.js?v=20260920-3';
+    script.src = 'assets/bionuclei-progress.js?v=20260920-4';
     script.async = false;
     document.body.appendChild(script);
     var guard = document.createElement('script');
-    guard.src = 'assets/bionuclei-ui-guard.js?v=20260920-1';
+    guard.src = 'assets/bionuclei-ui-guard.js?v=20260920-2';
     guard.async = false;
     document.body.appendChild(guard);
   }
