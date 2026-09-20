@@ -9,10 +9,23 @@
     const el = $(id);
     if (el) el.innerHTML = `<div class="note">${String(text).replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}</div>`;
   };
+  let selectedFile = null;
   const setFileReady = (file) => {
+    selectedFile = file || null;
     const button = $('analyzeButton');
     if (button) button.disabled = !file;
     if (file) note('runMsg', `${file.name} is ready. Press Analyze image to start the disposable analysis job.`);
+  };
+  const restoreFileIfNeeded = () => {
+    const input = $('image');
+    if (!input || !selectedFile || input.files?.length) return;
+    try {
+      const transfer = new DataTransfer();
+      transfer.items.add(selectedFile);
+      input.files = transfer.files;
+    } catch (_) {
+      /* Some browsers forbid assigning FileList; the original analyzer remains authoritative. */
+    }
   };
   function boot() {
     if (window.__BIONUCLEI_UI_GUARD_BOOTED) return;
@@ -25,14 +38,18 @@
     input.addEventListener('change', () => {
       const file = input.files && input.files[0];
       if (!file) {
+        selectedFile = null;
         analyze.disabled = true;
         return;
       }
       setFileReady(file);
     }, { capture: true });
     analyze.addEventListener('click', () => {
+      restoreFileIfNeeded();
       const file = input.files && input.files[0];
-      if (!file) {
+      if (!file && selectedFile) restoreFileIfNeeded();
+      const effectiveFile = input.files && input.files[0];
+      if (!effectiveFile) {
         analyze.disabled = true;
         note('runMsg', 'No file is attached to the browser upload control. Choose the TIFF/ND2 again, then press Analyze image once.');
         return;
@@ -41,14 +58,18 @@
       note('runMsg', 'Analysis started. Uploading the image to the disposable analysis job…');
     }, { capture: true });
     clear?.addEventListener('click', () => {
+      selectedFile = null;
       analyze.disabled = true;
       note('runMsg', 'Selected file removed. Choose a TIFF/ND2 image to begin.');
     }, { capture: true });
     window.setInterval(() => {
-      if (!input.files?.length && $('fileInfo')?.hidden === false && !window.__BIONUCLEI_ANALYSIS_ACTIVE) {
+      if (selectedFile && !input.files?.length && $('fileInfo')?.hidden === false && !window.__BIONUCLEI_ANALYSIS_ACTIVE) {
+        restoreFileIfNeeded();
+      }
+      if (!input.files?.length && !selectedFile && !window.__BIONUCLEI_ANALYSIS_ACTIVE) {
         analyze.disabled = true;
       }
-    }, 1000);
+    }, 500);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
