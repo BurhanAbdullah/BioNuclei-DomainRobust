@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import shutil
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -45,6 +46,44 @@ def _failure_cleanup(job_id: str, root):
 # the failure cleanup behavior; the scientific pipeline itself is unchanged.
 community_service._cleanup_failed_job = _failure_cleanup
 
+
+def _expiry_instant(payload: dict[str, object]) -> datetime | None:
+    value = payload.get("expires_at")
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _ensure_live_job(job_id: str, user_id: str) -> dict[str, object]:
+    """Enforce expiry at read time, before returning job metadata or artifacts."""
+    payload = get_job(job_id, user_id)
+    if payload is None:
+        raise FileNotFoundError("Analysis job not found")
+    expires_at = _expiry_instant(payload)
+    if expires_at is not None and expires_at <= datetime.now(timezone.utc):
+        try:
+            delete_job(job_id, user_id)
+        finally:
+            raise FileNotFoundError("Analysis job has expired")
+    return payload
+
+
+def _ensure_live_file(job_id: str, user_id: str, filename: str):
+    _ensure_live_job(job_id, user_id)
+    return get_file(job_id, user_id, filename)
+
+
+def _ensure_live_archive(job_id: str, user_id: str):
+    _ensure_live_job(job_id, user_id)
+    return get_archive(job_id, user_id)
+
+
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
@@ -82,11 +121,14 @@ def jobs(request:Request):
 
 @app.get("/jobs/{job_id}")
 def job(request:Request,job_id:str):
-    user=authenticate_optional(request);payload=get_job(job_id,user.id)
-    if payload is None: raise HTTPException(status_code=404,detail="Analysis job not found")
+    user=authenticate_optional(request)
+    try:
+        payload=_ensure_live_job(job_id,user.id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404,detail=str(exc)) from exc
     if payload.get("status")=="completed" and payload.get("result") is None:
         try:
-            result_path=get_file(job_id,user.id,"results.json")
+            result_path=_ensure_live_file(job_id,user.id,"results.json")
             payload["result"]=json.loads(result_path.read_text(encoding="utf-8"))
         except (FileNotFoundError,ValueError,json.JSONDecodeError,OSError):
             pass
@@ -96,8 +138,10 @@ def job(request:Request,job_id:str):
 def progress(request:Request,job_id:str):
     """Return truthful fine-grained progress derived from actual pipeline artifacts."""
     user=authenticate_optional(request)
-    payload=get_job(job_id,user.id)
-    if payload is None: raise HTTPException(status_code=404,detail="Analysis job not found")
+    try:
+        payload=_ensure_live_job(job_id,user.id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404,detail=str(exc)) from exc
     root = __import__("webapp.community", fromlist=["_job_dir"])._job_dir(job_id)
     output = root / "results"
     status = str(payload.get("status") or "queued").lower()
@@ -128,21 +172,21 @@ def preview(request:Request,job_id:str,filename:str):
     if filename not in {"overlay.tif","segmentation_mask.tif"}: raise HTTPException(status_code=404,detail="Unsupported preview file")
     user=authenticate_optional(request)
     try:
-        data_url=_png_data_url(get_file(job_id,user.id,filename));return Response(content=base64.b64decode(data_url.split(",",1)[1]),media_type="image/png",headers={"Cache-Control":"no-store"})
+        data_url=_png_data_url(_ensure_live_file(job_id,user.id,filename));return Response(content=base64.b64decode(data_url.split(",",1)[1]),media_type="image/png",headers={"Cache-Control":"no-store"})
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
 
 @app.get("/jobs/{job_id}/download")
 def download(request:Request,job_id:str):
     user=authenticate_optional(request)
-    try: archive=get_archive(job_id,user.id)
+    try: archive=_ensure_live_archive(job_id,user.id)
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     return FileResponse(archive,media_type="application/zip",filename=f"bionuclei-{job_id}.zip",headers={"Cache-Control":"no-store"})
 
 @app.get("/jobs/{job_id}/files/{filename}")
 def result_file(request:Request,job_id:str,filename:str):
     user=authenticate_optional(request)
-    try: path=get_file(job_id,user.id,filename)
+    try: path=_ensure_live_file(job_id,user.id,filename)
     except (FileNotFoundError,ValueError) as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     media="application/json" if filename.endswith(".json") else "text/csv" if filename.endswith(".csv") else "application/pdf" if filename.endswith(".pdf") else "image/tiff"
     return FileResponse(path,media_type=media,filename=filename,headers={"Cache-Control":"no-store"})
@@ -150,7 +194,9 @@ def result_file(request:Request,job_id:str,filename:str):
 @app.delete("/jobs/{job_id}")
 def remove_job(request:Request,job_id:str):
     user=authenticate_optional(request)
-    try: deleted=delete_job(job_id,user.id)
+    try:
+        _ensure_live_job(job_id,user.id)
+        deleted=delete_job(job_id,user.id)
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     return {"job_id":job_id,"deleted":deleted}
 
