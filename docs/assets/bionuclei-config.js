@@ -32,7 +32,7 @@ window.BIONUCLEI_CONFIG = {
   function load() {
     if (window.__BIONUCLEI_PROGRESS_BOOTED) return;
     var script = document.createElement('script');
-    script.src = 'assets/bionuclei-progress.js?v=20260920-5';
+    script.src = 'assets/bionuclei-progress.js?v=20260920-6';
     script.async = false;
     document.body.appendChild(script);
     var guard = document.createElement('script');
