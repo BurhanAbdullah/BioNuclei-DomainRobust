@@ -30,7 +30,14 @@ def _seed_job(module, job_id: str, user_id: str, root: Path) -> Path:
     return input_path
 
 
-def test_inference_failure_removes_all_transient_artifacts(community, monkeypatch):
+def _assert_failed_job_preserved_for_query(module, job_id: str, user_id: str) -> None:
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == "Analysis worker failed before producing a complete result. Please retry the analysis."
+
+
+def test_inference_failure_removes_transient_artifacts_but_preserves_failed_status(community, monkeypatch):
     module = community
     job_id = "failure-inference"
     user_id = "guest:test"
@@ -70,10 +77,10 @@ def test_inference_failure_removes_all_transient_artifacts(community, monkeypatc
 
     assert not root.exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
-    assert module._get_job(job_id, user_id) is None
+    _assert_failed_job_preserved_for_query(module, job_id, user_id)
 
 
-def test_report_failure_removes_transient_results_and_metadata(community, monkeypatch):
+def test_report_failure_removes_transient_results_but_preserves_failed_status(community, monkeypatch):
     module = community
     job_id = "failure-report"
     user_id = "guest:test"
@@ -95,7 +102,6 @@ def test_report_failure_removes_transient_results_and_metadata(community, monkey
     monkeypatch.setattr(module.gc, "collect", lambda: None)
     monkeypatch.setattr(module, "_extended_reports", lambda *_args: {"nuclei_count": 1})
     monkeypatch.setattr(module, "run_expert_agents", lambda result: {"status": "ok"})
-    monkeypatch.setattr(module, "build_report", lambda _result, output: (output / "analysis_report.pdf").write_bytes(b"pdf"))
     monkeypatch.setattr(module, "_archive", lambda job: (module.JOB_ROOT / f"{job}.zip").write_bytes(b"archive") or module.JOB_ROOT / f"{job}.zip")
 
     def fail_report(_result, _output):
@@ -119,4 +125,4 @@ def test_report_failure_removes_transient_results_and_metadata(community, monkey
 
     assert not root.exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
-    assert module._get_job(job_id, user_id) is None
+    _assert_failed_job_preserved_for_query(module, job_id, user_id)
