@@ -9,8 +9,8 @@ window.BIONUCLEI_CONFIG = {
 };
 
 /* Fail-visible bootstrap: the analyzer must never leave a user wondering
- * whether the Guest action registered. This is deliberately UI-only; the
- * actual session is still created by bionuclei-analyzer.js. */
+ * whether the Guest action registered. The actual session is still created
+ * by bionuclei-analyzer.js. */
 (function () {
   function boot() {
     var button = document.getElementById('guestButton');
@@ -26,11 +26,16 @@ window.BIONUCLEI_CONFIG = {
   else boot();
 }());
 
-/* Load the visible progress layer before the main analyzer. Cache-busting keeps
- * GitHub Pages from serving a stale progress script after a deployment. */
+/* The progress layer is loaded after the DOM is available so its event
+ * handlers cannot race the analyzer page initialization. */
 (function () {
-  var script = document.createElement('script');
-  script.src = 'assets/bionuclei-progress.js?v=20260920';
-  script.async = false;
-  document.head.appendChild(script);
+  function load() {
+    if (window.__BIONUCLEI_PROGRESS_BOOTED) return;
+    var script = document.createElement('script');
+    script.src = 'assets/bionuclei-progress.js?v=20260920-2';
+    script.async = false;
+    document.body.appendChild(script);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load, { once: true });
+  else load();
 }());
