@@ -26,15 +26,19 @@ window.BIONUCLEI_CONFIG = {
   else boot();
 }());
 
-/* The progress layer is loaded after the DOM is available so its event
- * handlers cannot race the analyzer page initialization. */
+/* The progress and UI-guard layers are loaded after the DOM is available so
+ * their event handlers cannot race analyzer page initialization. */
 (function () {
   function load() {
     if (window.__BIONUCLEI_PROGRESS_BOOTED) return;
     var script = document.createElement('script');
-    script.src = 'assets/bionuclei-progress.js?v=20260920-2';
+    script.src = 'assets/bionuclei-progress.js?v=20260920-3';
     script.async = false;
     document.body.appendChild(script);
+    var guard = document.createElement('script');
+    guard.src = 'assets/bionuclei-ui-guard.js?v=20260920-1';
+    guard.async = false;
+    document.body.appendChild(guard);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load, { once: true });
   else load();
