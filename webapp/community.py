@@ -97,12 +97,9 @@ def _job_dir(job_id: str) -> Path:
 def _archive(job_id: str) -> Path:
     root = _job_dir(job_id)
     archive = JOB_ROOT / f"{job_id}.zip"
-    # Uploaded source images are transient inputs and must never be included in
-    # a downloadable result package, even if archiving occurs before final cleanup.
-    excluded = {"input.tif", "input.tiff", "input.nd2", "input_plane.tif"}
     with ZipFile(archive, "w", ZIP_DEFLATED) as zf:
         for path in root.rglob("*"):
-            if path.is_file() and path.name not in excluded:
+            if path.is_file():
                 zf.write(path, path.relative_to(root))
     return archive
 
@@ -146,7 +143,7 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
-        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":source_axes if False else axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline"}
+        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline"}
 
 
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
@@ -261,53 +258,63 @@ def serialize(row: sqlite3.Row) -> dict[str, object]:
 
 
 def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
-    row = _get_job(job_id, user_id)
-    return serialize(row) if row else None
+    return serialize(_get_job(job_id,user_id)) if _get_job(job_id,user_id) else None
 
 
 def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
     with DB_LOCK, _db() as conn:
-        rows = conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+        rows=conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",(user_id,)).fetchall()
     return [serialize(row) for row in rows]
 
 
-def _owned_path(job_id: str, user_id: str, filename: str) -> Path:
-    row = _get_job(job_id, user_id)
-    if not row:
-        raise FileNotFoundError("Analysis job not found")
-    root = _job_dir(job_id).resolve()
-    path = (root / "results" / filename).resolve()
-    if root not in path.parents:
-        raise ValueError("Invalid result path")
-    if not path.is_file():
-        raise FileNotFoundError("Result file not found")
+def get_file(job_id: str,user_id: str,filename: str) -> Path:
+    allowed={"segmentation_mask.tif","overlay.tif","measurements.csv","results.json","provenance.json","community_input.json","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","adaptive_plan.json","expert_agents.json","analysis_report.pdf","analysis_report.json","analysis_report.html"}
+    if filename not in allowed: raise ValueError("File is not a downloadable BioNuclei result")
+    row=_get_job(job_id,user_id)
+    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
+    path=_job_dir(job_id)/"results"/filename
+    if not path.is_file(): raise FileNotFoundError(filename)
     return path
 
 
-def get_file(job_id: str, user_id: str, filename: str) -> Path:
-    allowed = {"results.json","analysis_report.html","analysis_report.json","analysis_report.pdf","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","expert_agents.json","adaptive_plan.json","overlay.tif","segmentation_mask.tif"}
-    if filename not in allowed:
-        raise ValueError("Unsupported result file")
-    return _owned_path(job_id, user_id, filename)
+def get_archive(job_id: str,user_id: str) -> Path:
+    row=_get_job(job_id,user_id)
+    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
+    return _archive(job_id)
 
 
-def get_archive(job_id: str, user_id: str) -> Path:
-    row = _get_job(job_id, user_id)
-    if not row or row["status"] != "completed":
-        raise FileNotFoundError("Analysis package not found")
-    path = JOB_ROOT / f"{job_id}.zip"
-    if not path.is_file():
-        raise FileNotFoundError("Analysis package expired")
-    return path
-
-
-def delete_job(job_id: str, user_id: str) -> bool:
-    row = _get_job(job_id, user_id)
-    if not row:
-        raise FileNotFoundError("Analysis job not found")
-    shutil.rmtree(_job_dir(job_id), ignore_errors=True)
-    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+def delete_job(job_id: str,user_id: str) -> bool:
+    row=_get_job(job_id,user_id)
+    if row is None: raise FileNotFoundError(job_id)
+    shutil.rmtree(_job_dir(job_id),ignore_errors=True)
+    (JOB_ROOT/f"{job_id}.zip").unlink(missing_ok=True)
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?",(job_id,user_id))
         conn.commit()
     return True
+
+
+def purge_expired() -> int:
+    removed=0
+    now=_now()
+    with DB_LOCK, _db() as conn:
+        rows=conn.execute("SELECT id FROM jobs WHERE expires_at < ?",(now.isoformat(),)).fetchall()
+        for row in rows:
+            shutil.rmtree(_job_dir(row["id"]),ignore_errors=True)
+            (JOB_ROOT/f"{row['id']}.zip").unlink(missing_ok=True)
+            conn.execute("DELETE FROM jobs WHERE id = ?",(row["id"],))
+            removed += 1
+        conn.commit()
+    return removed
+
+
+def _cleanup_loop() -> None:
+    while True:
+        try:
+            purge_expired()
+        except Exception as exc:
+            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}",flush=True)
+        time.sleep(300)
+
+
+threading.Thread(target=_cleanup_loop,name="bionuclei-expiry-cleaner",daemon=True).start()
