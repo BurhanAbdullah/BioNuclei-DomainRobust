@@ -564,7 +564,7 @@ def remove_job(request: Request, job_id: str):
     return {"job_id": job_id, "deleted": True}
 
 
-@app.function(image=image, secrets=[modal.Secret.from_name("bionuclei-supabase")])
+@app.function(image=image, secrets=[modal.Secret.from_name("bionuclei-supabase")], volumes={"/data": VOLUME})
 @modal.asgi_app()
 def web():
     return api
