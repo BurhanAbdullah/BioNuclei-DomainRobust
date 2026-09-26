@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from bionuclei.report import build_report
@@ -24,7 +25,7 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
     }
     build_report(payload, tmp_path)
     html = (tmp_path / "analysis_report.html").read_text()
-    data = (tmp_path / "analysis_report.json").read_text()
+    data = json.loads((tmp_path / "analysis_report.json").read_text())
     assert "model weights are not updated" in html
     assert "BBBC039v1" in html
-    assert "analysis_report.json" in data
+    assert data["model"]["training_reference"] == "BBBC039v1"
