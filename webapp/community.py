@@ -283,6 +283,19 @@ def get_archive(job_id: str,user_id: str) -> Path:
     return _archive(job_id)
 
 
+def delete_research_copy(job_id: str, user_id: str) -> bool:
+    """Clear the optional research-retention state for the owning user only."""
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    with DB_LOCK, _db() as conn:
+        cursor = conn.execute(
+            "UPDATE jobs SET retained_copy = 0, research_consent = 0, updated_at = ? WHERE id = ? AND user_id = ?",
+            (_now().isoformat(), job_id, user_id),
+        )
+        conn.commit()
+    return cursor.rowcount == 1
+
 def delete_job(job_id: str,user_id: str) -> bool:
     row=_get_job(job_id,user_id)
     if row is None: raise FileNotFoundError(job_id)

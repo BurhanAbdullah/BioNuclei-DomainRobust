@@ -64,3 +64,30 @@ def test_purge_expired_removes_job(isolated_jobs):
         conn.commit()
     assert isolated_jobs.purge_expired() == 1
     assert not root.exists()
+
+def test_delete_research_copy_rejects_wrong_owner_and_clears_state(isolated_jobs):
+    job_id = "retained"
+    with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,input_name,retained_copy,research_consent,algorithm_profile,user_id,result_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id,
+                "completed",
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+                "2099-01-02T00:00:00+00:00",
+                "x.tif",
+                1,
+                1,
+                "auto",
+                "owner-1",
+                '{"nuclei_count": 3}',
+            ),
+        )
+        conn.commit()
+    with pytest.raises(FileNotFoundError):
+        isolated_jobs.delete_research_copy(job_id, "owner-2")
+    assert isolated_jobs.delete_research_copy(job_id, "owner-1") is True
+    with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
+        row = conn.execute("SELECT retained_copy,research_consent,result_json,user_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    assert tuple(row) == (0, 0, '{"nuclei_count": 3}', "owner-1")
