@@ -212,7 +212,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         build_report(result, output)
         _archive(job_id)
         expiry = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
-        _set_job(job_id,status="completed",expires_at=expiry.isoformat(),input_sha256=input_sha256,input_name=original_name,retained_copy=0,research_consent=0)
+        _set_job(job_id,status="completed",expires_at=expiry.isoformat(),input_sha256=input_sha256,input_name=original_name,retained_copy=0,research_consent=0,result_json=json.dumps(result))
     except Exception as exc:
         try:
             _cleanup_failed_job(job_id, root)
