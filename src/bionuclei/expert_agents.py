@@ -47,6 +47,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     plan = results.get("adaptive_plan", {})
     morphology = reports.get("morphology", {})
     intensity = reports.get("intensity", {})
+    raw_profile = plan.get("profile", {}) or {}
     findings: list[AgentFinding] = []
 
     findings.append(AgentFinding(
@@ -64,9 +65,13 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         tuple(f"{k}: {v}" for k, v in morphology.items()),
         ("Morphology alone does not establish a biological mechanism or phenotype.",),
     ))
+    intensity_observations = [f"{k}: {v}" for k, v in intensity.items()]
+    for key in ("dtype", "min", "p01", "median", "p995", "max", "saturation_fraction"):
+        if key in raw_profile:
+            intensity_observations.append(f"Raw input profile {key}: {raw_profile[key]}")
     findings.append(AgentFinding(
         "intensity_agent",
-        tuple(f"{k}: {v}" for k, v in intensity.items()),
+        tuple(intensity_observations),
         ("Fluorescence intensity depends on acquisition, staining, exposure, background, and normalization.",),
     ))
     findings.append(AgentFinding(
@@ -93,7 +98,19 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     return {
         "agent_version": "1.0",
         "agents": [
-            {"agent": f.agent, "observations": list(f.observations), "limitations": list(f.limitations)}
+            {
+                "agent": f.agent,
+                "observations": list(f.observations),
+                "limitations": list(f.limitations),
+                # Compatibility summary for the current browser UI. The structured
+                # arrays remain authoritative and are also consumed by reports.
+                "summary": (
+                    "Observations: "
+                    + ("; ".join(f.observations) if f.observations else "No structured observations returned.")
+                    + " Limitations: "
+                    + ("; ".join(f.limitations) if f.limitations else "No limitations supplied.")
+                ),
+            }
             for f in findings
         ],
         "training_status": training_manifest_status(results.get("agent_training_manifest")),
