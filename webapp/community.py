@@ -105,11 +105,19 @@ def _archive(job_id: str) -> Path:
 
 
 def _cleanup_failed_job(job_id: str, root: Path) -> None:
-    """Remove every transient artifact and its metadata after a failed job."""
+    """Remove transient artifacts while retaining a truthful failed-job record."""
     shutil.rmtree(root, ignore_errors=True)
     (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.execute(
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+            (
+                "failed",
+                "Analysis worker failed before producing a complete result. Please retry the analysis.",
+                _now().isoformat(),
+                job_id,
+            ),
+        )
         conn.commit()
 
 
