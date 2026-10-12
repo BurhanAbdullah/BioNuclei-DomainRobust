@@ -8,6 +8,9 @@ import pytest
 
 @pytest.fixture
 def community(tmp_path, monkeypatch):
+    # Import the production API module first so its failure-cleanup integration
+    # hook is installed on webapp.community before exercising _run() directly.
+    import webapp.community_app  # noqa: F401
     import webapp.community as module
 
     monkeypatch.setattr(module, "JOB_ROOT", tmp_path / "jobs")
