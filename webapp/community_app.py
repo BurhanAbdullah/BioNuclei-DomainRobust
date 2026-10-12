@@ -10,6 +10,7 @@ from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
@@ -22,8 +23,8 @@ def _failure_cleanup(job_id: str, root):
 
     The previous implementation deleted the database row on worker failure. A
     browser polling that job then received 404 and could only report a generic
-    connection interruption. Keeping a minimal failed row makes the API tell
-    the truth while still removing the uploaded image and derived artifacts.
+    connection interruption. Keeping a minimal failed row makes the API tell the
+    truth while still removing the uploaded image and derived artifacts.
     The detailed exception remains in server logs.
     """
     shutil.rmtree(root, ignore_errors=True)
@@ -41,9 +42,30 @@ def _failure_cleanup(job_id: str, root):
         conn.commit()
 
 
-# community._run resolves this helper through its module globals. Replace only
-# the failure cleanup behavior; the scientific pipeline itself is unchanged.
+def _archive_without_transient_input(job_id: str):
+    """Create a result ZIP containing derived artifacts only.
+
+    The job directory also contains the uploaded source image and, for ND2,
+    the extracted transient plane. Neither is part of the downloadable result
+    bundle. This wrapper is installed at the public-service composition boundary
+    so the Render/community path enforces the same privacy invariant as the
+    Modal implementation.
+    """
+    root = community_service._job_dir(job_id)
+    archive = community_service.JOB_ROOT / f"{job_id}.zip"
+    excluded = {"input.tif", "input.tiff", "input.nd2", "input_plane.tif"}
+    with ZipFile(archive, "w", ZIP_DEFLATED) as zf:
+        for path in root.rglob("*"):
+            if path.is_file() and path.name not in excluded:
+                zf.write(path, path.relative_to(root))
+    return archive
+
+
+# community._run resolves these helpers through its module globals. Replace
+# only the public-service failure cleanup and archive behavior; the scientific
+# pipeline itself is unchanged.
 community_service._cleanup_failed_job = _failure_cleanup
+community_service._archive = _archive_without_transient_input
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
