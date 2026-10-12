@@ -358,13 +358,98 @@
     const shape = result.image_shape || result.input_metadata?.selected_plane_shape;
     $('resultShape').textContent = Array.isArray(shape) ? shape.join(' × ') : '2-D plane';
     $('reportCount').textContent = Array.isArray(result.analysis_modules) ? result.analysis_modules.length : 0;
-    $('agentDetails').innerHTML = '';
-    const agents = result.expert_agents?.findings || result.expert_agents?.agents || [];
-    if (Array.isArray(agents)) agents.slice(0, 8).forEach(agent => {
-      const node = document.createElement('div');
-      node.textContent = `${agent.agent || agent.name || 'Specialist'}: ${agent.statement || agent.finding || agent.summary || 'Evidence reviewed'}`;
-      $('agentDetails').appendChild(node);
-    });
+    const agentContainer = $('agentDetails');
+    agentContainer.replaceChildren();
+    const expertReport = result.expert_agents || {};
+    const agents = Array.isArray(expertReport.agents)
+      ? expertReport.agents
+      : (Array.isArray(expertReport.findings) ? expertReport.findings : []);
+    const appendList = (parent, label, values) => {
+      if (!values.length) return;
+      const heading = document.createElement('h5');
+      heading.textContent = label;
+      parent.appendChild(heading);
+      const list = document.createElement('ul');
+      values.forEach(value => {
+        const item = document.createElement('li');
+        item.textContent = value && typeof value === 'object' ? JSON.stringify(value) : String(value);
+        list.appendChild(item);
+      });
+      parent.appendChild(list);
+    };
+    if (agents.length) {
+      agents.slice(0, 8).forEach(agent => {
+        const card = document.createElement('section');
+        card.className = 'agent-finding';
+        const title = document.createElement('h4');
+        title.textContent = agent.agent || agent.name || 'Specialist';
+        card.appendChild(title);
+        const status = agent.status ?? agent.execution_status;
+        const statusLine = document.createElement('p');
+        statusLine.textContent = status == null
+          ? 'Per-agent execution status is not included in this result schema.'
+          : `Execution status: ${String(status)}`;
+        card.appendChild(statusLine);
+        const observations = Array.isArray(agent.observations)
+          ? agent.observations
+          : [agent.statement ?? agent.finding ?? agent.summary].filter(value => value != null && String(value).trim() !== '');
+        appendList(card, 'Observed evidence', observations);
+        appendList(card, 'Limitations', Array.isArray(agent.limitations) ? agent.limitations : []);
+        const references = Array.isArray(agent.evidence_references)
+          ? agent.evidence_references
+          : (Array.isArray(agent.evidence_refs) ? agent.evidence_refs : []);
+        appendList(card, 'Evidence references', references);
+        const digest = agent.evidence_digest || agent.evidence_sha256 || agent.sha256;
+        if (digest) {
+          const digestLine = document.createElement('p');
+          digestLine.textContent = `Evidence SHA-256: ${String(digest)}`;
+          card.appendChild(digestLine);
+        } else {
+          const evidenceNote = document.createElement('p');
+          evidenceNote.textContent = 'Per-agent evidence references and digests are not included in this result schema.';
+          card.appendChild(evidenceNote);
+        }
+        agentContainer.appendChild(card);
+      });
+    } else {
+      const empty = document.createElement('p');
+      empty.textContent = 'No specialist findings were returned for this job. Do not treat this result as specialist-reviewed.';
+      agentContainer.appendChild(empty);
+    }
+    if (typeof expertReport.evidence_policy === 'string' && expertReport.evidence_policy.trim()) {
+      const policy = document.createElement('p');
+      policy.textContent = expertReport.evidence_policy;
+      agentContainer.appendChild(policy);
+    }
+    const profile = result.adaptive_plan?.profile;
+    if (profile && typeof profile === 'object') {
+      const card = document.createElement('section');
+      card.className = 'raw-image-profile';
+      const title = document.createElement('h4');
+      title.textContent = 'Computed raw-image intensity profile';
+      card.appendChild(title);
+      const fields = [
+        ['Shape', Array.isArray(profile.shape) ? profile.shape.join(' × ') : profile.shape],
+        ['Data type', profile.dtype],
+        ['Minimum', profile.min],
+        ['1st percentile', profile.p01],
+        ['Median', profile.median],
+        ['99.5th percentile', profile.p995],
+        ['Maximum', profile.max],
+        ['Mean', profile.mean],
+        ['Standard deviation', profile.std],
+        ['Saturation fraction', profile.saturation_fraction],
+        ['Zero fraction', profile.zero_fraction],
+        ['All values finite', profile.finite]
+      ];
+      fields.forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const line = document.createElement('p');
+        line.textContent = `${label}: ${String(value)}`;
+        card.appendChild(line);
+      });
+      agentContainer.appendChild(card);
+    }
 
     try {
       previewUrls.forEach(URL.revokeObjectURL);
