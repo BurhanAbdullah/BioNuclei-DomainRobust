@@ -7,6 +7,8 @@ on:
       - "webapp/community_app.py"
       - "webapp/auth.py"
       - "webapp/community.py"
+      - "src/bionuclei/expert_agents.py"
+      - "tests/test_expert_agents_evidence.py"
       - "docs/bionuclei-app.html"
       - "docs/bionuclei.html"
       - "docs/bionuclei-analysis.html"
@@ -34,6 +36,11 @@ jobs:
           set -euo pipefail
           python -m compileall -q webapp src
           echo 'Python syntax: PASS'
+      - name: Test deterministic specialist evidence contract
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pytest
+          PYTHONPATH=src python -m pytest -q tests/test_expert_agents_evidence.py
       - name: Validate frontend configuration
         run: |
           set -euo pipefail
