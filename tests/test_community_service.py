@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -27,15 +28,16 @@ def test_delete_research_copy_requires_existing_job(isolated_jobs):
 
 def test_serialize_contains_consent_and_retention_fields(isolated_jobs):
     job_id = "example"
+    now = isolated_jobs._now()
     with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
         conn.execute(
             "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,input_name,retained_copy,research_consent,algorithm_profile,user_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 "queued",
-                "2026-01-01T00:00:00+00:00",
-                "2026-01-01T00:00:00+00:00",
-                "2026-01-02T00:00:00+00:00",
+                (now - timedelta(minutes=1)).isoformat(),
+                now.isoformat(),
+                (now + timedelta(hours=1)).isoformat(),
                 "x.tif",
                 0,
                 0,
