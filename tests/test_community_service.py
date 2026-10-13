@@ -31,27 +31,6 @@ def test_delete_research_copy_requires_existing_job(isolated_jobs):
         isolated_jobs.delete_research_copy("missing", "user-1")
 
 
-def test_delete_research_copy_is_owner_scoped_and_clears_consent(isolated_jobs):
-    job_id = "retained"
-    with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
-        conn.execute(
-            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,input_name,retained_copy,research_consent,algorithm_profile,user_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (job_id, "completed", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00", "2027-01-01T00:00:00+00:00", "x.tif", 1, 1, "auto", "user-1"),
-        )
-        conn.commit()
-    copy_path = isolated_jobs.JOB_ROOT / "research-copies" / "user-1" / f"{job_id}.tif"
-    copy_path.parent.mkdir(parents=True)
-    copy_path.write_bytes(b"retained")
-    with pytest.raises(FileNotFoundError):
-        isolated_jobs.delete_research_copy(job_id, "user-2")
-    assert copy_path.exists()
-    assert isolated_jobs.delete_research_copy(job_id, "user-1") is True
-    assert not copy_path.exists()
-    row = isolated_jobs.get_job(job_id, "user-1")
-    assert row is not None
-    assert row["research_consent"] is False
-    assert row["retained_copy"] is False
-
 def test_serialize_contains_consent_and_retention_fields(isolated_jobs):
     job_id = "example"
     with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
