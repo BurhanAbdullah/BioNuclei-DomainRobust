@@ -137,18 +137,70 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         ("input_sha256", "analysis_modules", "reports"),
     ))
 
-    return {
-        "agent_version": "1.0",
+    agent_outputs: list[dict[str, Any]] = []
+    for finding in findings:
+        evidence_references, evidence_sha256 = _evidence_for(results, finding.evidence_references)
+        missing_references = [
+            reference for reference in finding.evidence_references
+            if reference not in evidence_references
+        ]
+        # Do not label a reviewer complete when any declared evidence is absent.
+        status = "completed" if evidence_references and not missing_references else "incomplete"
+        agent_outputs.append({
+            "agent": finding.agent,
+            "status": status,
+            "observations": list(finding.observations),
+            "limitations": list(finding.limitations),
+            "evidence_references": evidence_references,
+            "missing_evidence_references": missing_references,
+            "evidence_sha256": evidence_sha256,
+        })
+
+    input_sha256 = results.get("input_sha256")
+    input_hash_valid = (
+        isinstance(input_sha256, str)
+        and len(input_sha256) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in input_sha256)
+    )
+    completed_count = sum(agent["status"] == "completed" for agent in agent_outputs)
+    execution_payload = {
+        "agent_version": "1.1",
+        "input_sha256": input_sha256 if input_hash_valid else None,
         "agents": [
             {
-                "agent": f.agent,
-                "observations": list(f.observations),
-                "limitations": list(f.limitations),
-                "evidence_references": (evidence := _evidence_for(results, f.evidence_references))[0],
-                "evidence_sha256": evidence[1],
+                "agent": agent["agent"],
+                "status": agent["status"],
+                "evidence_references": agent["evidence_references"],
+                "evidence_sha256": agent["evidence_sha256"],
+                "missing_evidence_references": agent["missing_evidence_references"],
             }
-            for f in findings
+            for agent in agent_outputs
         ],
+    }
+    execution_sha256 = hashlib.sha256(
+        json.dumps(
+            execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()
+    all_complete = input_hash_valid and completed_count == len(agent_outputs)
+
+    return {
+        "agent_version": "1.1",
+        "execution": {
+            "status": "completed" if all_complete else "incomplete",
+            "input_sha256": input_sha256 if input_hash_valid else None,
+            "agent_count": len(agent_outputs),
+            "completed_agent_count": completed_count,
+            "incomplete_agents": [
+                agent["agent"] for agent in agent_outputs if agent["status"] != "completed"
+            ],
+            "execution_sha256": execution_sha256,
+        },
+        "agents": agent_outputs,
         "training_status": training_manifest_status(results.get("agent_training_manifest")),
-        "evidence_policy": "Agents interpret measured evidence; they do not invent measurements or training provenance.",
+        "evidence_policy": (
+            "Deterministic reviewers interpret measured evidence; they do not invent "
+            "measurements or training provenance. A reviewer is incomplete when any "
+            "declared evidence reference is missing or the input hash is invalid."
+        ),
     }
