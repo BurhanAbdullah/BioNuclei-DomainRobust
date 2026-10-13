@@ -302,6 +302,38 @@ def delete_job(job_id: str,user_id: str) -> bool:
     return True
 
 
+
+def delete_research_copy(job_id: str, user_id: str) -> bool:
+    """Delete a user's explicitly retained research copy and clear its consent.
+
+    This function is deliberately ownership-scoped: a caller can only remove
+    a copy attached to a job owned by the supplied user. No job/result artifacts
+    are deleted by this operation.
+    """
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    if not row["research_consent"] or not row["retained_copy"]:
+        raise FileNotFoundError(job_id)
+
+    copy_path = JOB_ROOT / "research-copies" / user_id / f"{job_id}.tif"
+    try:
+        copy_path.unlink()
+    except FileNotFoundError:
+        # Missing retained file is treated as an already-removed copy; the
+        # metadata is still cleared below to prevent stale consent state.
+        pass
+
+    with DB_LOCK, _db() as conn:
+        conn.execute(
+            "UPDATE jobs SET retained_copy = 0, research_consent = 0, updated_at = ? "
+            "WHERE id = ? AND user_id = ?",
+            (_now().isoformat(), job_id, user_id),
+        )
+        conn.commit()
+    return True
+
+
 def purge_expired() -> int:
     removed=0
     now=_now()
