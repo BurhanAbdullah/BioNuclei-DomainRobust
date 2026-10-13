@@ -25,6 +25,12 @@ def test_delete_research_copy_requires_existing_job(isolated_jobs):
         isolated_jobs.delete_research_copy("missing", "user-1")
 
 
+
+def test_delete_research_copy_requires_existing_job(isolated_jobs):
+    with pytest.raises(FileNotFoundError):
+        isolated_jobs.delete_research_copy("missing", "user-1")
+
+
 def test_serialize_contains_consent_and_retention_fields(isolated_jobs):
     job_id = "example"
     with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:

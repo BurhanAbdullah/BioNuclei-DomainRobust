@@ -105,11 +105,19 @@ def _archive(job_id: str) -> Path:
 
 
 def _cleanup_failed_job(job_id: str, root: Path) -> None:
-    """Remove every transient artifact and its metadata after a failed job."""
+    """Remove transient artifacts while retaining a truthful failed-job record."""
     shutil.rmtree(root, ignore_errors=True)
     (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.execute(
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+            (
+                "failed",
+                "Analysis worker failed before producing a complete result. Please retry the analysis.",
+                _now().isoformat(),
+                job_id,
+            ),
+        )
         conn.commit()
 
 
@@ -293,6 +301,24 @@ def delete_job(job_id: str,user_id: str) -> bool:
         conn.commit()
     return True
 
+
+
+def delete_research_copy(job_id: str, user_id: str) -> bool:
+    """Reject research-copy deletion unless the service actually owns such a copy.
+
+    The current service intentionally retains no source-image copies: upload
+    bytes are transient and completed jobs set both consent and retention false.
+    This guard prevents stale metadata from being mistaken for a retained file.
+    """
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    if not row["research_consent"] or not row["retained_copy"]:
+        raise FileNotFoundError(job_id)
+
+    # No research-copy creation path is currently supported. Do not invent a
+    # filesystem location or delete unrelated artifacts based on stale flags.
+    raise FileNotFoundError(job_id)
 
 def purge_expired() -> int:
     removed=0
