@@ -162,6 +162,7 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     if mask.shape != image.shape:
         raise ValueError(f"Image and predicted mask shapes differ: {image.shape} != {mask.shape}")
     from skimage.measure import regionprops_table
+    from scipy.spatial import cKDTree
     properties = ["label", "area", "centroid", "bbox"]
     if "morphology" in modules:
         properties += ["perimeter", "eccentricity", "solidity", "major_axis_length", "minor_axis_length"]
@@ -171,9 +172,30 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     frame = pd.DataFrame(table)
     if "morphology" in modules and not frame.empty:
         frame["circularity"] = np.where(frame["perimeter"] > 0, 4.0 * np.pi * frame["area"] / (frame["perimeter"] ** 2), np.nan)
+    spatial_summary: dict[str, object] = {
+        "instance_count": int(len(frame)),
+        "unit": "pixels",
+        "mean_nearest_neighbor_distance_px": None,
+        "median_nearest_neighbor_distance_px": None,
+        "min_nearest_neighbor_distance_px": None,
+        "max_nearest_neighbor_distance_px": None,
+    }
+    if len(frame) >= 2:
+        centroids = frame[["centroid-0", "centroid-1"]].to_numpy(dtype=float)
+        nearest = cKDTree(centroids).query(centroids, k=2)[0][:, 1]
+        frame["nearest_neighbor_distance_px"] = nearest
+        spatial_summary.update({
+            "mean_nearest_neighbor_distance_px": float(np.mean(nearest)),
+            "median_nearest_neighbor_distance_px": float(np.median(nearest)),
+            "min_nearest_neighbor_distance_px": float(np.min(nearest)),
+            "max_nearest_neighbor_distance_px": float(np.max(nearest)),
+        })
+    else:
+        frame["nearest_neighbor_distance_px"] = np.nan
     frame.to_csv(output / "nuclei_analysis.csv", index=False)
     nuclei_count = int(len(frame))
-    summary: dict[str, object] = {"nuclei_count": nuclei_count, "modules": sorted(modules), "measurement_file": "nuclei_analysis.csv"}
+    summary: dict[str, object] = {"nuclei_count": nuclei_count, "modules": sorted(modules), "measurement_file": "nuclei_analysis.csv", "spatial": spatial_summary}
+    (output / "spatial_report.json").write_text(json.dumps(spatial_summary, indent=2) + "\n")
     if "morphology" in modules:
         summary["morphology"] = {"mean_area":float(frame["area"].mean()) if nuclei_count else None,"median_area":float(frame["area"].median()) if nuclei_count else None,"mean_perimeter":float(frame["perimeter"].mean()) if nuclei_count else None,"mean_eccentricity":float(frame["eccentricity"].mean()) if nuclei_count else None,"mean_solidity":float(frame["solidity"].mean()) if nuclei_count else None,"mean_circularity":float(frame["circularity"].mean()) if nuclei_count else None}
         (output / "morphology_report.json").write_text(json.dumps(summary["morphology"], indent=2) + "\n")
@@ -202,13 +224,16 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         with INFERENCE_LOCK:
             result = predict(inference_input, checkpoint, output, device="cpu")
             gc.collect()
+        _set_job(job_id, status="measuring")
         report_summary = _extended_reports(inference_input, output, analysis_modules)
-        result.update({"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"BBBC039v1","weights_updated_during_analysis":False}})
+        result.update({"job_id":job_id,"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"Not established","weights_updated_during_analysis":False}})
+        _set_job(job_id, status="expert_review")
         expert = run_expert_agents(result)
         result["expert_agents"] = expert
         (output / "expert_agents.json").write_text(json.dumps(expert, indent=2) + "\n")
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
         (output / "community_input.json").write_text(json.dumps({"source_filename":original_name,"source_sha256":input_sha256,**input_metadata}, indent=2) + "\n")
+        _set_job(job_id, status="packaging")
         build_report(result, output)
         _archive(job_id)
         expiry = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)

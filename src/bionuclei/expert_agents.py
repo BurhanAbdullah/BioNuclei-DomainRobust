@@ -76,6 +76,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     plan = results.get("adaptive_plan", {})
     morphology = reports.get("morphology", {})
     intensity = reports.get("intensity", {})
+    spatial = reports.get("spatial", {})
     profile = plan.get("profile", {})
     profile_keys = (
         "shape", "dtype", "min", "p01", "median", "p995", "max", "mean", "std",
@@ -112,11 +113,18 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         ("Fluorescence intensity depends on acquisition, staining, exposure, background, and normalization.",),
         ("reports.intensity", "adaptive_plan.profile"),
     ))
+    spatial_observations: list[str] = []
+    if isinstance(spatial, dict):
+        mean_distance = spatial.get("mean_nearest_neighbor_distance_px")
+        if mean_distance is None:
+            spatial_observations.append("Nearest-neighbour distance summary is unavailable for fewer than two measured instances or missing centroids.")
+        else:
+            spatial_observations.append(f"Mean nearest-neighbour distance: {mean_distance} pixels.")
     findings.append(AgentFinding(
         "population_agent",
-        (f"Population size available for analysis: {reports.get('nuclei_count', 'Not available')} nuclei.",),
+        (f"Population size available for analysis: {reports.get('nuclei_count', 'Not available')} nuclei.", *spatial_observations),
         ("Population comparisons require appropriate experimental controls and biological replicates.",),
-        ("reports.nuclei_count",),
+        ("reports.nuclei_count", "reports.spatial.instance_count", "reports.spatial.mean_nearest_neighbor_distance_px"),
     ))
     findings.append(AgentFinding(
         "biological_interpretation_agent",
@@ -128,13 +136,13 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         "scientific_review_agent",
         ("All report conclusions must remain traceable to recorded measurements and quality checks.",),
         ("Unsupported confidence, invented training provenance, and unmeasured biological claims are prohibited.",),
-        ("input_sha256", "adaptive_plan", "reports"),
+        ("input_sha256", "adaptive_plan", "reports", "reports.spatial"),
     ))
     findings.append(AgentFinding(
         "report_agent",
         ("The report should preserve the analysis provenance and specialist findings.",),
         (),
-        ("input_sha256", "analysis_modules", "reports"),
+        ("input_sha256", "analysis_modules", "reports", "reports.spatial"),
     ))
 
     agent_outputs: list[dict[str, Any]] = []
@@ -163,10 +171,13 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         and all(character in "0123456789abcdefABCDEF" for character in input_sha256)
     )
     completed_count = sum(agent["status"] == "completed" for agent in agent_outputs)
+    job_id = results.get("job_id")
+    job_id_valid = isinstance(job_id, str) and bool(job_id.strip())
     training_status = training_manifest_status(results.get("agent_training_manifest"))
     execution_payload = {
         "agent_version": "1.1",
-        "job_id": results.get("job_id"),
+        "job_id": job_id if job_id_valid else None,
+        "job_id_valid": job_id_valid,
         "input_sha256": input_sha256 if input_hash_valid else None,
         "input_hash_valid": input_hash_valid,
         "agents": [
@@ -188,8 +199,10 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
         ).encode("utf-8")
     ).hexdigest()
-    all_complete = input_hash_valid and completed_count == len(agent_outputs)
+    all_complete = input_hash_valid and job_id_valid and completed_count == len(agent_outputs)
     incomplete_reasons = []
+    if not job_id_valid:
+        incomplete_reasons.append("missing_or_invalid_job_id")
     if not input_hash_valid:
         incomplete_reasons.append("missing_or_invalid_input_sha256")
     if completed_count != len(agent_outputs):
@@ -199,7 +212,8 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         "agent_version": "1.1",
         "execution": {
             "status": "completed" if all_complete else "incomplete",
-            "job_id": results.get("job_id"),
+            "job_id": job_id if job_id_valid else None,
+            "job_id_valid": job_id_valid,
             "input_sha256": input_sha256 if input_hash_valid else None,
             "input_hash_valid": input_hash_valid,
             "incomplete_reasons": incomplete_reasons,
