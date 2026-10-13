@@ -163,32 +163,46 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         and all(character in "0123456789abcdefABCDEF" for character in input_sha256)
     )
     completed_count = sum(agent["status"] == "completed" for agent in agent_outputs)
+    training_status = training_manifest_status(results.get("agent_training_manifest"))
     execution_payload = {
         "agent_version": "1.1",
+        "job_id": results.get("job_id"),
         "input_sha256": input_sha256 if input_hash_valid else None,
+        "input_hash_valid": input_hash_valid,
         "agents": [
             {
                 "agent": agent["agent"],
                 "status": agent["status"],
+                "observations": agent["observations"],
+                "limitations": agent["limitations"],
                 "evidence_references": agent["evidence_references"],
                 "evidence_sha256": agent["evidence_sha256"],
                 "missing_evidence_references": agent["missing_evidence_references"],
             }
             for agent in agent_outputs
         ],
+        "training_status": training_status,
     }
     execution_sha256 = hashlib.sha256(
         json.dumps(
-            execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
         ).encode("utf-8")
     ).hexdigest()
     all_complete = input_hash_valid and completed_count == len(agent_outputs)
+    incomplete_reasons = []
+    if not input_hash_valid:
+        incomplete_reasons.append("missing_or_invalid_input_sha256")
+    if completed_count != len(agent_outputs):
+        incomplete_reasons.append("one_or_more_reviewers_missing_declared_evidence")
 
     return {
         "agent_version": "1.1",
         "execution": {
             "status": "completed" if all_complete else "incomplete",
+            "job_id": results.get("job_id"),
             "input_sha256": input_sha256 if input_hash_valid else None,
+            "input_hash_valid": input_hash_valid,
+            "incomplete_reasons": incomplete_reasons,
             "agent_count": len(agent_outputs),
             "completed_agent_count": completed_count,
             "incomplete_agents": [
@@ -197,7 +211,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             "execution_sha256": execution_sha256,
         },
         "agents": agent_outputs,
-        "training_status": training_manifest_status(results.get("agent_training_manifest")),
+        "training_status": training_status,
         "evidence_policy": (
             "Deterministic reviewers interpret measured evidence; they do not invent "
             "measurements or training provenance. A reviewer is incomplete when any "
