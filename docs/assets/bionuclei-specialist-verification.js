@@ -1,7 +1,3 @@
-/* Browser-side verification of the server-produced specialist artifact.
- * This checks job/input binding and internal evidence-manifest consistency.
- * It is not a substitute for scientific validation of the underlying model.
- */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.BIONUCLEI_SPECIALIST_VERIFICATION = factory();
@@ -21,20 +17,16 @@
   const SHA256 = /^[a-f0-9]{64}$/i;
 
   function stableJson(value) {
-    if (value === null || typeof value === "string" || typeof value === "boolean") {
-      return JSON.stringify(value);
-    }
+    if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
     if (typeof value === "number") {
-      if (!Number.isFinite(value)) throw new TypeError("Non-finite number in execution manifest");
+      if (!Number.isFinite(value)) throw new TypeError("Non-finite number in specialist payload");
       return JSON.stringify(value);
     }
     if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
     if (value && typeof value === "object") {
-      return "{" + Object.keys(value).sort().map(key =>
-        JSON.stringify(key) + ":" + stableJson(value[key])
-      ).join(",") + "}";
+      return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + stableJson(value[key])).join(",") + "}";
     }
-    throw new TypeError("Unsupported value in execution manifest");
+    throw new TypeError("Unsupported value in specialist payload");
   }
 
   async function sha256Hex(text, cryptoApi) {
@@ -46,20 +38,24 @@
   function resolveReference(root, reference) {
     let value = root;
     for (const key of String(reference).split(".")) {
-      if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, key)) {
-        return { found: false };
-      }
+      if (!value || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, key)) return { found: false };
       value = value[key];
     }
     return { found: true, value };
   }
 
   function fail(reason) {
-    return { ok: false, reason, artifact: null };
+    return { ok: false, reason: reason, artifact: null };
   }
 
-  async function verifySpecialistArtifact({ job, result, embedded, fetchJson, cryptoApi }) {
+  async function verifySpecialistArtifact(options) {
     try {
+      const job = options && options.job;
+      const result = options && options.result;
+      const embedded = options && options.embedded;
+      const fetchJson = options && options.fetchJson;
+      const cryptoApi = (options && options.cryptoApi) || root.crypto;
+
       if (!job || typeof job.job_id !== "string" || !job.job_id.trim()) return fail("missing job identifier");
       if (!result || typeof result !== "object") return fail("completed job has no structured result");
       if (typeof fetchJson !== "function") return fail("artifact fetch is unavailable");
@@ -78,7 +74,17 @@
       if (!execution || execution.status !== "completed") return fail("server marked specialist execution incomplete");
       if (execution.job_id !== jobId || execution.job_id_valid !== true) return fail("specialist execution is bound to a different or invalid job");
       if (execution.input_sha256 !== inputHash || execution.input_hash_valid !== true) return fail("specialist execution is bound to a different or invalid input");
+      if (typeof execution.execution_payload_json !== "string" || !execution.execution_payload_json) return fail("canonical execution payload is missing");
       if (!SHA256.test(String(execution.execution_sha256 || ""))) return fail("execution digest is missing or malformed");
+
+      const computedExecutionDigest = await sha256Hex(execution.execution_payload_json, cryptoApi);
+      if (computedExecutionDigest !== execution.execution_sha256) return fail("execution digest does not match the exact canonical payload bytes");
+      let canonicalPayload;
+      try {
+        canonicalPayload = JSON.parse(execution.execution_payload_json);
+      } catch (_) {
+        return fail("canonical execution payload is not valid JSON");
+      }
 
       const agents = artifact.agents;
       if (!Array.isArray(agents) || agents.length !== EXPECTED_AGENTS.size) return fail("expected eight specialist reviewers");
@@ -90,29 +96,46 @@
         if (!Array.isArray(agent.observations) || !Array.isArray(agent.limitations)) return fail("reviewer observations or limitations are malformed");
         if (!Array.isArray(agent.evidence_references) || agent.evidence_references.length === 0) return fail("reviewer has no evidence references");
         if (!Array.isArray(agent.missing_evidence_references) || agent.missing_evidence_references.length !== 0) return fail("reviewer declares missing evidence");
+        if (typeof agent.evidence_payload !== "string" || !agent.evidence_payload) return fail("reviewer canonical evidence bytes are missing");
         if (!SHA256.test(String(agent.evidence_sha256 || ""))) return fail("reviewer evidence digest is missing or malformed");
+        const computedEvidenceDigest = await sha256Hex(agent.evidence_payload, cryptoApi);
+        if (computedEvidenceDigest !== agent.evidence_sha256) return fail("reviewer evidence digest does not match exact evidence bytes: " + agent.agent);
+
+        let evidencePayload;
+        try {
+          evidencePayload = JSON.parse(agent.evidence_payload);
+        } catch (_) {
+          return fail("reviewer evidence payload is not valid JSON: " + agent.agent);
+        }
+        const evidenceKeys = Object.keys(evidencePayload).sort();
+        const references = agent.evidence_references.slice().sort();
+        if (stableJson(evidenceKeys) !== stableJson(references)) return fail("reviewer evidence keys do not match declared references: " + agent.agent);
         for (const reference of agent.evidence_references) {
-          if (typeof reference !== "string" || !resolveReference(result, reference).found) {
-            return fail("unresolved computed-evidence reference: " + String(reference));
+          const resolved = resolveReference(result, reference);
+          if (!resolved.found) return fail("unresolved computed-evidence reference: " + reference);
+          if (stableJson(evidencePayload[reference]) !== stableJson(resolved.value)) return fail("evidence payload differs from computed result: " + reference);
+        }
+
+        if (!Array.isArray(agent.quantitative_claims)) return fail("structured quantitative claims are missing: " + agent.agent);
+        for (const claim of agent.quantitative_claims) {
+          if (!claim || typeof claim.reference !== "string" || typeof claim.unit !== "string") return fail("malformed quantitative claim: " + agent.agent);
+          const resolved = resolveReference(result, claim.reference);
+          if (!resolved.found || typeof resolved.value !== "number" || !Number.isFinite(resolved.value)) {
+            return fail("quantitative claim does not resolve to a finite computed number: " + claim.reference);
+          }
+          if (stableJson(claim.value) !== stableJson(resolved.value)) return fail("quantitative claim value differs from computed result: " + claim.reference);
+          if (!agent.evidence_references.some(reference => claim.reference === reference || claim.reference.indexOf(reference + ".") === 0)) {
+            return fail("quantitative claim is not covered by declared evidence: " + claim.reference);
           }
         }
       }
       if (seen.size !== EXPECTED_AGENTS.size) return fail("one or more expected reviewers are absent");
-      if (execution.agent_count !== agents.length || execution.completed_agent_count !== agents.length) {
-        return fail("execution reviewer counts do not match the artifact");
-      }
-      if (!Array.isArray(execution.incomplete_agents) || execution.incomplete_agents.length !== 0) {
-        return fail("execution manifest lists incomplete reviewers");
-      }
-      if (!artifact.training_status || typeof artifact.training_status !== "object") {
-        return fail("training provenance status is absent");
-      }
-      if (artifact.training_status.verified !== true && artifact.training_status.claim_allowed !== false) {
-        return fail("unverified training provenance is not explicitly disallowed");
-      }
+      if (execution.agent_count !== agents.length || execution.completed_agent_count !== agents.length) return fail("execution reviewer counts do not match the artifact");
+      if (!Array.isArray(execution.incomplete_agents) || execution.incomplete_agents.length !== 0) return fail("execution manifest lists incomplete reviewers");
+      if (!artifact.training_status || typeof artifact.training_status !== "object") return fail("training provenance status is absent");
+      if (artifact.training_status.verified !== true && artifact.training_status.claim_allowed !== false) return fail("unverified training provenance is not explicitly disallowed");
 
-      // Match src/bionuclei/expert_agents.py's execution-payload contract.
-      const payload = {
+      const expectedPayload = {
         agent_version: "1.1",
         job_id: execution.job_id,
         job_id_valid: execution.job_id_valid,
@@ -125,17 +148,18 @@
           limitations: agent.limitations,
           evidence_references: agent.evidence_references,
           evidence_sha256: agent.evidence_sha256,
+          evidence_payload: agent.evidence_payload,
+          quantitative_claims: agent.quantitative_claims,
           missing_evidence_references: agent.missing_evidence_references
         })),
         training_status: artifact.training_status
       };
-      const computed = await sha256Hex(stableJson(payload), cryptoApi || root.crypto);
-      if (computed !== execution.execution_sha256) return fail("execution digest does not match the artifact contents");
-      return { ok: true, reason: "Job, input, reviewers, evidence references, and execution digest verified", artifact };
+      if (stableJson(canonicalPayload) !== stableJson(expectedPayload)) return fail("canonical execution payload differs from the artifact contents");
+      return { ok: true, reason: "Job/input binding, exact execution bytes, per-reviewer evidence bytes, and quantitative claims verified", artifact: artifact };
     } catch (error) {
       return fail(error && error.message ? error.message : "specialist artifact verification failed");
     }
   }
 
-  return { verifySpecialistArtifact, stableJson };
+  return { verifySpecialistArtifact: verifySpecialistArtifact, stableJson: stableJson };
 });
