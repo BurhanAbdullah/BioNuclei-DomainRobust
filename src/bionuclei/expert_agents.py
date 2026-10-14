@@ -130,15 +130,30 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         "shape", "dtype", "min", "p01", "median", "p995", "max", "mean", "std",
         "saturation_fraction", "zero_fraction", "finite",
     )
-    profile_observations = tuple(
-        [f"Raw image dtype: {profile['dtype']}"]
-        if isinstance(profile, dict) and isinstance(profile.get("dtype"), str)
-        else []
-    ) + (
-        ("Raw-image intensity statistics are provided as structured quantitative claims.",)
-        if isinstance(profile, dict) and any(key in profile for key in profile_keys if key not in {"shape", "dtype", "finite"})
-        else ()
-    )
+    profile_observations_list: list[str] = []
+    if isinstance(profile, dict):
+        if isinstance(profile.get("dtype"), str):
+            profile_observations_list.append(f"Raw image dtype: {profile['dtype']}")
+        shape = profile.get("shape")
+        if (
+            isinstance(shape, (list, tuple))
+            and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in shape)
+        ):
+            profile_observations_list.append(
+                "Raw image shape: " + "x".join(str(value) for value in shape)
+            )
+        for key in (
+            "min", "p01", "median", "p995", "max", "mean", "std",
+            "saturation_fraction", "zero_fraction",
+        ):
+            value = profile.get(key)
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+            ):
+                profile_observations_list.append(f"Raw image {key}: {value}")
+    profile_observations = tuple(profile_observations_list)
     findings: list[AgentFinding] = []
 
     findings.append(AgentFinding(
@@ -167,13 +182,30 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     ))
     spatial_observations: list[str] = []
     if isinstance(spatial, dict):
-        if spatial.get("mean_nearest_neighbor_distance_px") is None:
-            spatial_observations.append("Nearest-neighbour distance summary is unavailable for fewer than two measured instances or missing centroids.")
+        distance = spatial.get("mean_nearest_neighbor_distance_px")
+        if (
+            isinstance(distance, (int, float))
+            and not isinstance(distance, bool)
+            and math.isfinite(float(distance))
+        ):
+            spatial_observations.append(
+                f"Mean nearest-neighbour distance: {float(distance)} pixels."
+            )
+        elif distance is None:
+            spatial_observations.append(
+                "Nearest-neighbour distance summary is unavailable for fewer than two measured instances or missing centroids."
+            )
         else:
-            spatial_observations.append("Nearest-neighbour distance summaries are provided as structured quantitative claims.")
+            spatial_observations.append(
+                "Nearest-neighbour distance summary is invalid; no numeric claim is reported."
+            )
+    population_observations = ["Population size is provided as a structured quantitative claim."]
+    nuclei_count = reports.get("nuclei_count")
+    if isinstance(nuclei_count, int) and not isinstance(nuclei_count, bool) and nuclei_count >= 0:
+        population_observations.insert(0, f"Population size: {nuclei_count} nuclei.")
     findings.append(AgentFinding(
         "population_agent",
-        ("Population size is provided as a structured quantitative claim.", *spatial_observations),
+        (*population_observations, *spatial_observations),
         ("Population comparisons require appropriate experimental controls and biological replicates.",),
         ("reports.nuclei_count", "reports.spatial.instance_count", "reports.spatial.mean_nearest_neighbor_distance_px"),
     ))
