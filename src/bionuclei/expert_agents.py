@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -49,25 +50,72 @@ def training_manifest_status(manifest: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _evidence_for(results: dict[str, Any], references: tuple[str, ...]) -> tuple[list[str], str | None]:
-    """Hash only evidence fields that actually exist in the deterministic result."""
+def _resolve_reference(results: dict[str, Any], reference: str) -> tuple[bool, Any]:
+    value: Any = results
+    for key in reference.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return False, None
+        value = value[key]
+    return True, value
+
+
+def _evidence_for(
+    results: dict[str, Any], references: tuple[str, ...]
+) -> tuple[list[str], str | None, str | None]:
+    """Return exact evidence bytes so browser verification never reserializes floats."""
     evidence: dict[str, Any] = {}
     for reference in references:
-        value: Any = results
-        found = True
-        for key in reference.split("."):
-            if not isinstance(value, dict) or key not in value:
-                found = False
-                break
-            value = value[key]
+        found, value = _resolve_reference(results, reference)
         if found:
             evidence[reference] = value
     if not evidence:
-        return [], None
+        return [], None, None
     payload = json.dumps(
         evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
-    ).encode("utf-8")
-    return list(evidence), hashlib.sha256(payload).hexdigest()
+    )
+    payload_bytes = payload.encode("utf-8")
+    return list(evidence), hashlib.sha256(payload_bytes).hexdigest(), payload
+
+
+def _numeric_claims(
+    results: dict[str, Any], references: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Expose numeric evidence as typed claims tied to exact result paths."""
+    claims: dict[str, dict[str, Any]] = {}
+
+    def visit(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key in sorted(value):
+                visit(value[key], f"{path}.{key}")
+            return
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return
+        if isinstance(value, float) and not math.isfinite(value):
+            return
+        field = path.rsplit(".", 1)[-1]
+        if field == "shape":
+            return
+        if field in {"nuclei_count", "instance_count"}:
+            unit = "nuclei"
+        elif field.endswith("_px") or "distance_px" in field or "perimeter" in field:
+            unit = "pixels"
+        elif "area" in field:
+            unit = "pixels^2"
+        elif field.endswith("_fraction"):
+            unit = "fraction"
+        elif "adaptive_plan.profile." in path and field in {"min", "p01", "median", "p995", "max", "mean", "std"}:
+            unit = "raw_intensity_units"
+        elif "intensity" in field:
+            unit = "raw_intensity_units"
+        else:
+            unit = "unitless"
+        claims[path] = {"reference": path, "value": value, "unit": unit}
+
+    for reference in references:
+        found, value = _resolve_reference(results, reference)
+        if found:
+            visit(value, reference)
+    return [claims[path] for path in sorted(claims)]
 
 
 def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
@@ -83,9 +131,13 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         "saturation_fraction", "zero_fraction", "finite",
     )
     profile_observations = tuple(
-        f"Raw image {key}: {profile[key]}"
-        for key in profile_keys
-        if isinstance(profile, dict) and key in profile
+        [f"Raw image dtype: {profile['dtype']}"]
+        if isinstance(profile, dict) and isinstance(profile.get("dtype"), str)
+        else []
+    ) + (
+        ("Raw-image intensity statistics are provided as structured quantitative claims.",)
+        if isinstance(profile, dict) and any(key in profile for key in profile_keys if key not in {"shape", "dtype", "finite"})
+        else ()
     )
     findings: list[AgentFinding] = []
 
@@ -97,32 +149,31 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     ))
     findings.append(AgentFinding(
         "segmentation_quality_agent",
-        (f"Detected nuclei: {reports.get('nuclei_count', 'Not available')}.",),
+        ("The detected instance count is provided as a structured quantitative claim.",),
         ("Segmentation quality should be interpreted together with the CNN diagnostics and visual overlay.",),
         ("reports.nuclei_count", "adaptive_plan.cnn_pattern_check"),
     ))
     findings.append(AgentFinding(
         "morphology_agent",
-        tuple(f"{k}: {v}" for k, v in morphology.items()),
+        ("Morphology summaries are provided as structured quantitative claims.",),
         ("Morphology alone does not establish a biological mechanism or phenotype.",),
         ("reports.morphology",),
     ))
     findings.append(AgentFinding(
         "intensity_agent",
-        tuple([*(f"{k}: {v}" for k, v in intensity.items()), *profile_observations]),
+        tuple([*profile_observations, "Nuclear intensity summaries are provided as structured quantitative claims."]),
         ("Fluorescence intensity depends on acquisition, staining, exposure, background, and normalization.",),
         ("reports.intensity", "adaptive_plan.profile"),
     ))
     spatial_observations: list[str] = []
     if isinstance(spatial, dict):
-        mean_distance = spatial.get("mean_nearest_neighbor_distance_px")
-        if mean_distance is None:
+        if spatial.get("mean_nearest_neighbor_distance_px") is None:
             spatial_observations.append("Nearest-neighbour distance summary is unavailable for fewer than two measured instances or missing centroids.")
         else:
-            spatial_observations.append(f"Mean nearest-neighbour distance: {mean_distance} pixels.")
+            spatial_observations.append("Nearest-neighbour distance summaries are provided as structured quantitative claims.")
     findings.append(AgentFinding(
         "population_agent",
-        (f"Population size available for analysis: {reports.get('nuclei_count', 'Not available')} nuclei.", *spatial_observations),
+        ("Population size is provided as a structured quantitative claim.", *spatial_observations),
         ("Population comparisons require appropriate experimental controls and biological replicates.",),
         ("reports.nuclei_count", "reports.spatial.instance_count", "reports.spatial.mean_nearest_neighbor_distance_px"),
     ))
@@ -147,7 +198,8 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
 
     agent_outputs: list[dict[str, Any]] = []
     for finding in findings:
-        evidence_references, evidence_sha256 = _evidence_for(results, finding.evidence_references)
+        evidence_references, evidence_sha256, evidence_payload = _evidence_for(results, finding.evidence_references)
+        quantitative_claims = _numeric_claims(results, finding.evidence_references)
         missing_references = [
             reference for reference in finding.evidence_references
             if reference not in evidence_references
@@ -162,6 +214,8 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             "evidence_references": evidence_references,
             "missing_evidence_references": missing_references,
             "evidence_sha256": evidence_sha256,
+            "evidence_payload": evidence_payload,
+            "quantitative_claims": quantitative_claims,
         })
 
     input_sha256 = results.get("input_sha256")
@@ -188,17 +242,18 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
                 "limitations": agent["limitations"],
                 "evidence_references": agent["evidence_references"],
                 "evidence_sha256": agent["evidence_sha256"],
+                "evidence_payload": agent["evidence_payload"],
+                "quantitative_claims": agent["quantitative_claims"],
                 "missing_evidence_references": agent["missing_evidence_references"],
             }
             for agent in agent_outputs
         ],
         "training_status": training_status,
     }
-    execution_sha256 = hashlib.sha256(
-        json.dumps(
-            execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
-        ).encode("utf-8")
-    ).hexdigest()
+    execution_payload_json = json.dumps(
+        execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    execution_sha256 = hashlib.sha256(execution_payload_json.encode("utf-8")).hexdigest()
     all_complete = input_hash_valid and job_id_valid and completed_count == len(agent_outputs)
     incomplete_reasons = []
     if not job_id_valid:
@@ -223,6 +278,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
                 agent["agent"] for agent in agent_outputs if agent["status"] != "completed"
             ],
             "execution_sha256": execution_sha256,
+            "execution_payload_json": execution_payload_json,
         },
         "agents": agent_outputs,
         "training_status": training_status,
