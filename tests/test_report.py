@@ -27,4 +27,5 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
     data = (tmp_path / "analysis_report.json").read_text()
     assert "model weights are not updated" in html.lower()
     assert "Not established" in html
+    assert "BBBC039v1" not in html
     assert "analysis_report.json" in data
