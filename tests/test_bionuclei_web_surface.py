@@ -1,52 +1,50 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "docs" / "bionuclei.html"
-ASSET = ROOT / "docs" / "assets" / "bionuclei-microscopy-illustration.svg"
-UPLOAD_JS = ROOT / "docs" / "assets" / "bionuclei-upload.js"
-SITE_JS = ROOT / "docs" / "assets" / "site.js"
+DOCS = ROOT / "docs"
+PAGE = DOCS / "bionuclei.html"
+APP = DOCS / "bionuclei-app.html"
+ASSET = DOCS / "assets" / "bionuclei-microscopy-illustration.svg"
 
 
 def test_bionuclei_product_page_has_local_visual_and_core_sections() -> None:
     html = PAGE.read_text(encoding="utf-8")
-    assert ASSET.is_file(), "BioNuclei microscopy illustration asset is missing"
+    assert ASSET.is_file()
     assert 'src="assets/bionuclei-microscopy-illustration.svg"' in html
-    assert 'id="what"' in html
-    assert 'id="model"' in html
-    assert 'id="analyze"' in html
-    assert 'id="outputs"' in html
+    for section_id in ["what", "model", "analyze", "outputs"]:
+        assert f'id="{section_id}"' in html
     assert "Boundary U-Net" in html
-    assert "2-D fluorescence" in html
-    assert "measurements + provenance" in html.lower()
+    assert "2-D analysis plane" in html
+    assert "measurements" in html.lower()
+    assert "provenance" in html.lower()
     assert "synthetic illustration" in html.lower()
     assert "No biological diagnosis" in html
 
 
 def test_bionuclei_product_page_does_not_claim_the_illustration_is_benchmark_data() -> None:
     html = PAGE.read_text(encoding="utf-8").lower()
-    marker = "bionuclei-microscopy-illustration.svg"
-    pos = html.find(marker)
+    pos = html.find("bionuclei-microscopy-illustration.svg")
     assert pos >= 0
     context = html[pos : pos + 1400]
     assert "not benchmark data" in context
     assert "not used as evidence" in context
 
 
-def test_bionuclei_upload_experience_has_visible_state_and_nd2_support() -> None:
-    html = PAGE.read_text(encoding="utf-8")
-    js = UPLOAD_JS.read_text(encoding="utf-8")
-    site_js = SITE_JS.read_text(encoding="utf-8")
-    assert UPLOAD_JS.is_file(), "BioNuclei upload UX helper is missing"
-    assert "bionuclei-upload.js" in site_js
-    assert ".nd2,.tif,.tiff" in js
-    assert "Uploading " in js
-    assert "Analysis complete" in js
-    assert "no live BioNuclei API is configured" in js.lower()
-    assert "document.readyState" in js
+def test_active_upload_experience_runs_and_displays_verified_specialist_output() -> None:
+    html = APP.read_text(encoding="utf-8")
+    for script in ['src="assets/bionuclei-config.js"', 'src="assets/bionuclei-specialist-verification.js"',
+                   'src="assets/bionuclei-analyzer.js"']:
+        assert script in html
+    for text in ['accept=".tif,.tiff,.nd2"', 'id="analyzeButton"', 'id="agentDetails"', 'id="resultPanel"',
+                 "Upload microscopy image", "Analyzed overlay", "Segmentation mask", "Expert analysis layer",
+                 "Download complete report", "Delete analysis data now"]:
+        assert text in html
+    config = (DOCS / "assets" / "bionuclei-config.js").read_text(encoding="utf-8")
+    assert "https://bionuclei-community-analyzer.onrender.com" in config
 
 
-def test_main_ecosystem_homepage_is_not_edited_by_bionuclei_visual_change() -> None:
-    # The product visual belongs only to the dedicated BioNuclei page.
-    homepage = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
-    assert "bionuclei-microscopy-illustration.svg" not in homepage
+def test_main_homepage_links_to_product_and_labels_visual_as_illustrative() -> None:
+    homepage = (DOCS / "index.html").read_text(encoding="utf-8")
+    assert 'href="bionuclei.html"' in homepage
+    assert "Illustrative fluorescence microscopy field used as a product visual" in homepage
+    assert "Open Lab" in homepage
