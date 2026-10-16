@@ -45,7 +45,9 @@ def test_community_page_has_explicit_research_consent():
     html = read("bionuclei-community.html")
     assert "Optional research contribution" in html
     assert "explicitly agree" in html
-    assert "Research retention is opt-in" in html
+    assert "Without the research checkbox" in html
+    assert "does not retain a research copy" in html
+    assert "optional and separate from running the analysis" in html
 
 
 def test_bionuclei_overview_is_concise_and_user_facing():
