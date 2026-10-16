@@ -5,7 +5,11 @@ from pathlib import Path
 from zipfile import ZipFile
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import tifffile
+
+from bionuclei.adaptive_agent import CNNPatternCheck
 
 from bionuclei.expert_agents import run_expert_agents
 
@@ -271,3 +275,87 @@ def test_unverified_training_reference_cannot_be_published_as_verified(community
     artifact = run_expert_agents(result)
     with pytest.raises(ValueError, match="must be labeled Not established"):
         community._validate_specialist_artifact(result, artifact)
+
+
+def test_uint16_service_path_executes_specialists_from_computed_measurements(community, monkeypatch):
+    """Exercise job/report/agent wiring with real TIFF/QC/measurement code and deterministic test inference."""
+    module = community
+    job_id = "e2e-512-uint16-specialists"
+    user_id = "guest:e2e"
+    root = module._job_dir(job_id)
+    input_path = _seed_job(module, job_id, user_id, root)
+
+    image = np.full((512, 512), 512, dtype=np.uint16)
+    yy, xx = np.ogrid[:512, :512]
+    circles = [(100, 100, 18, 4096), (100, 180, 16, 8192), (220, 280, 20, 16384), (360, 160, 17, 32768)]
+    mask = np.zeros((512, 512), dtype=np.int32)
+    for label, (cy, cx, radius, intensity) in enumerate(circles, start=1):
+        disk = (yy - cy) ** 2 + (xx - cx) ** 2 <= radius ** 2
+        image[disk] = intensity
+        mask[disk] = label
+    image[0, 0] = np.uint16(65535)
+    tifffile.imwrite(input_path, image)
+
+    checkpoint = root / "checkpoint.pt"
+    checkpoint.write_bytes(b"test-only checkpoint placeholder")
+    monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(
+        "bionuclei.adaptive_agent.cnn_pattern_check",
+        lambda _path: CNNPatternCheck(True, "Boundary U Net", 0.04, 0.95, 0.1, 4, "PASS", ()),
+    )
+    monkeypatch.setattr(module.gc, "collect", lambda: None)
+
+    def deterministic_test_inference(inference_input, _checkpoint, output, device="cpu"):
+        measured_image = tifffile.imread(inference_input)
+        assert measured_image.dtype == np.uint16
+        assert int(measured_image.max()) == 65535
+        tifffile.imwrite(output / "segmentation_mask.tif", mask)
+        overlay = np.repeat((measured_image.astype(np.float64) / 65535 * 255).astype(np.uint8)[..., None], 3, axis=2)
+        tifffile.imwrite(output / "overlay.tif", overlay)
+        return {"n_instances": int(mask.max()), "image_shape": list(measured_image.shape)}
+
+    monkeypatch.setattr(module, "predict", deterministic_test_inference)
+    module._run(
+        job_id, user_id, input_path, "e2e-512-uint16.tif", False, "auto",
+        {"nuclei", "morphology", "intensity"}, channel=0, time=0, z=0, field=0,
+    )
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "completed"
+    assert row["retained_copy"] == 0 and row["research_consent"] == 0
+    assert not input_path.exists()
+
+    result_path = root / "results" / "results.json"
+    artifact_path = root / "results" / "expert_agents.json"
+    assert result_path.is_file() and artifact_path.is_file()
+    result = __import__("json").loads(result_path.read_text(encoding="utf-8"))
+    artifact = __import__("json").loads(artifact_path.read_text(encoding="utf-8"))
+
+    profile = result["adaptive_plan"]["profile"]
+    assert profile["shape"] == [512, 512] and profile["dtype"] == "uint16" and profile["max"] == 65535
+    assert result["scientific_execution"] is True
+    assert result["model"]["weights_updated_during_analysis"] is False
+    assert result["model"]["training_reference"] == "Not established"
+    assert result["reports"]["nuclei_count"] == 4
+    mean_intensity = result["reports"]["intensity"]["mean_nuclear_intensity"]
+    assert mean_intensity > 255
+
+    execution = artifact["execution"]
+    assert execution["status"] == "completed" and execution["job_id"] == job_id
+    assert execution["input_sha256"] == result["input_sha256"]
+    assert execution["agent_count"] == 8 and execution["completed_agent_count"] == 8
+    assert execution["incomplete_agents"] == []
+    assert artifact["training_status"]["verified"] is False
+    assert artifact["training_status"]["claim_allowed"] is False
+
+    intensity_agent = next(agent for agent in artifact["agents"] if agent["agent"] == "intensity_agent")
+    assert intensity_agent["status"] == "completed"
+    assert "Raw image max: 65535" in intensity_agent["observations"]
+    assert any(claim["reference"] == "adaptive_plan.profile.max" and claim["value"] == 65535 for claim in intensity_agent["quantitative_claims"])
+    assert any(claim["reference"] == "reports.intensity.mean_nuclear_intensity" and claim["value"] == mean_intensity for claim in intensity_agent["quantitative_claims"])
+
+    with ZipFile(module._archive(job_id)) as archive:
+        names = set(archive.namelist())
+        for required in ("results/analysis_report.html", "results/analysis_report.pdf", "results/expert_agents.json", "results/nuclei_analysis.csv", "results/segmentation_mask.tif", "results/overlay.tif"):
+            assert required in names
+        assert not any(name.endswith("input.tif") or name.endswith("input_plane.tif") or "e2e-512-uint16.tif" in name for name in names)

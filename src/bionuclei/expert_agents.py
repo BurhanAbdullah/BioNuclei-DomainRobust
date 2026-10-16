@@ -119,124 +119,224 @@ def _numeric_claims(
 
 
 def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
-    """Generate evidence constrained findings from existing quantitative results."""
-    reports = results.get("reports", {})
-    plan = results.get("adaptive_plan", {})
-    morphology = reports.get("morphology", {})
-    intensity = reports.get("intensity", {})
-    spatial = reports.get("spatial", {})
-    profile = plan.get("profile", {})
-    profile_keys = (
-        "shape", "dtype", "min", "p01", "median", "p995", "max", "mean", "std",
-        "saturation_fraction", "zero_fraction", "finite",
-    )
-    profile_observations_list: list[str] = []
-    if isinstance(profile, dict):
-        if isinstance(profile.get("dtype"), str):
-            profile_observations_list.append(f"Raw image dtype: {profile['dtype']}")
-        shape = profile.get("shape")
-        if (
-            isinstance(shape, (list, tuple))
-            and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in shape)
-        ):
-            profile_observations_list.append(
-                "Raw image shape: " + "x".join(str(value) for value in shape)
-            )
-        for key in (
-            "min", "p01", "median", "p995", "max", "mean", "std",
-            "saturation_fraction", "zero_fraction",
-        ):
-            value = profile.get(key)
-            if (
-                isinstance(value, (int, float))
-                and not isinstance(value, bool)
-                and math.isfinite(float(value))
-            ):
-                profile_observations_list.append(f"Raw image {key}: {value}")
-    profile_observations = tuple(profile_observations_list)
-    findings: list[AgentFinding] = []
+    """Execute deterministic specialist reviewers over this job's computed evidence.
 
-    findings.append(AgentFinding(
-        "image_quality_agent",
-        (f"Analysis status: {plan.get('status', 'UNKNOWN')}.",),
-        tuple(plan.get("warnings", [])),
-        ("adaptive_plan.status", "adaptive_plan.warnings", "adaptive_plan.profile"),
-    ))
+    Each reviewer derives observations from measured result/QC fields and records
+    exact evidence references. These are rule-based reviewers, not generative
+    biological interpretation and not a claim of model training.
+    """
+    def is_number(value: Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+    def display_number(value: Any) -> str:
+        if is_number(value) and float(value).is_integer():
+            return str(int(value))
+        return str(value)
+
+    reports = results.get("reports")
+    reports = reports if isinstance(reports, dict) else {}
+    plan = results.get("adaptive_plan")
+    plan = plan if isinstance(plan, dict) else {}
+    morphology = reports.get("morphology")
+    morphology = morphology if isinstance(morphology, dict) else {}
+    intensity = reports.get("intensity")
+    intensity = intensity if isinstance(intensity, dict) else {}
+    spatial = reports.get("spatial")
+    spatial = spatial if isinstance(spatial, dict) else {}
+    profile = plan.get("profile")
+    profile = profile if isinstance(profile, dict) else {}
+    cnn = plan.get("cnn_pattern_check")
+    cnn = cnn if isinstance(cnn, dict) else {}
+    raw_warnings = plan.get("warnings", [])
+    warnings = [str(item) for item in raw_warnings] if isinstance(raw_warnings, (list, tuple)) else []
+    raw_modules = results.get("analysis_modules", [])
+    modules = [str(item) for item in raw_modules] if isinstance(raw_modules, (list, tuple)) else []
+
+    profile_observations: list[str] = []
+    if isinstance(profile.get("dtype"), str):
+        profile_observations.append(f"Raw image dtype: {profile['dtype']}")
+    shape = profile.get("shape")
+    if isinstance(shape, (list, tuple)) and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in shape):
+        profile_observations.append("Raw image shape: " + "x".join(str(value) for value in shape))
+    for key in ("min", "p01", "median", "p995", "max", "mean", "std", "saturation_fraction", "zero_fraction"):
+        value = profile.get(key)
+        if is_number(value):
+            profile_observations.append(f"Raw image {key}: {display_number(value)}")
+    if is_number(profile.get("min")) and is_number(profile.get("max")):
+        profile_observations.append(f"Raw image dynamic range: {display_number(profile['max'] - profile['min'])} raw intensity units.")
+    if profile.get("dtype") == "uint16" and is_number(profile.get("max")) and profile["max"] > 255:
+        profile_observations.append(f"Raw uint16 intensities exceed the 8-bit range; maximum recorded value: {display_number(profile['max'])}.")
+
+    nuclei_count = reports.get("nuclei_count", results.get("n_instances"))
+    count_valid = isinstance(nuclei_count, int) and not isinstance(nuclei_count, bool) and nuclei_count >= 0
+    cnn_observations: list[str] = []
+    if cnn:
+        if isinstance(cnn.get("status"), str):
+            cnn_observations.append(f"CNN pattern-gate status: {cnn['status']}.")
+        for key, label in (("foreground_fraction", "CNN foreground fraction"), ("mean_class_confidence", "CNN mean class confidence"), ("mean_entropy", "CNN mean entropy")):
+            value = cnn.get(key)
+            if is_number(value):
+                cnn_observations.append(f"{label}: {display_number(value)}.")
+        if isinstance(cnn.get("connected_components"), int) and not isinstance(cnn.get("connected_components"), bool):
+            cnn_observations.append(f"CNN foreground connected components: {cnn['connected_components']}.")
+
+    image_observations = [f"Analysis status: {plan.get('status', 'UNKNOWN')}."]
+    image_observations.extend(profile_observations)
+    if profile.get("finite") is False:
+        image_observations.append("The raw image profile marks the input as containing non-finite values.")
+    if not profile_observations:
+        image_observations.append("No structured raw-image profile was available for this job.")
+    findings: list[AgentFinding] = [
+        AgentFinding(
+            "image_quality_agent",
+            tuple(image_observations),
+            tuple(warnings) or ("No QC warnings were emitted; visual inspection is still recommended.",),
+            ("adaptive_plan.status", "adaptive_plan.warnings", "adaptive_plan.profile", "adaptive_plan.cnn_pattern_check"),
+        ),
+    ]
+
+    segmentation_observations: list[str] = []
+    segmentation_observations.append(f"Measured nuclear instance count: {nuclei_count}." if count_valid else "A valid measured nuclear instance count is unavailable.")
+    segmentation_observations.extend(cnn_observations)
+    if count_valid and nuclei_count == 0:
+        segmentation_observations.append("No nuclear instances were detected; object-level summaries may be unavailable.")
+    reported_instances = results.get("n_instances")
+    if count_valid and isinstance(reported_instances, int) and not isinstance(reported_instances, bool):
+        if reported_instances != nuclei_count:
+            segmentation_observations.append(f"Instance-count consistency warning: inference reported {reported_instances}, measurements reported {nuclei_count}.")
+        else:
+            segmentation_observations.append("Inference and measurement instance counts agree.")
     findings.append(AgentFinding(
         "segmentation_quality_agent",
-        ("The detected instance count is provided as a structured quantitative claim.",),
-        ("Segmentation quality should be interpreted together with the CNN diagnostics and visual overlay.",),
-        ("reports.nuclei_count", "adaptive_plan.cnn_pattern_check"),
+        tuple(segmentation_observations),
+        ("The foreground count is not an accuracy metric; no per-upload ground-truth comparison was performed.",
+         "Review the returned mask and overlay before interpreting the detected instances."),
+        ("reports.nuclei_count", "adaptive_plan.cnn_pattern_check", "reports.spatial.instance_count"),
     ))
+
+    morphology_observations: list[str] = []
+    for key, label, unit in (
+        ("mean_area", "Measured mean area", "pixels^2"),
+        ("median_area", "Measured median area", "pixels^2"),
+        ("mean_perimeter", "Measured mean perimeter", "pixels"),
+        ("mean_eccentricity", "Measured mean eccentricity", "unitless"),
+        ("mean_solidity", "Measured mean solidity", "unitless"),
+        ("mean_circularity", "Measured mean circularity", "unitless"),
+    ):
+        value = morphology.get(key)
+        if is_number(value):
+            morphology_observations.append(f"{label}: {display_number(value)} {unit}.")
+    if not morphology_observations:
+        morphology_observations.append("No finite morphology summary was produced for this run.")
     findings.append(AgentFinding(
         "morphology_agent",
-        ("Morphology summaries are provided as structured quantitative claims.",),
-        ("Morphology alone does not establish a biological mechanism or phenotype.",),
-        ("reports.morphology",),
+        tuple(morphology_observations),
+        ("Morphology describes measured geometry only; it does not establish a biological mechanism or phenotype.",),
+        ("reports.morphology", "reports.nuclei_count"),
     ))
+
+    intensity_observations = list(profile_observations)
+    intensity_value_count = 0
+    for key, label in (
+        ("mean_nuclear_intensity", "Measured mean nuclear intensity"),
+        ("median_nuclear_intensity", "Measured median nuclear intensity"),
+        ("mean_max_intensity", "Mean per-instance maximum intensity"),
+    ):
+        value = intensity.get(key)
+        if is_number(value):
+            intensity_observations.append(f"{label}: {display_number(value)} raw intensity units.")
+            intensity_value_count += 1
+    if intensity_value_count == 0:
+        intensity_observations.append("No finite per-nucleus intensity summary was produced; confirm that instances were detected and the intensity module ran.")
     findings.append(AgentFinding(
         "intensity_agent",
-        tuple([*profile_observations, "Nuclear intensity summaries are provided as structured quantitative claims."]),
-        ("Fluorescence intensity depends on acquisition, staining, exposure, background, and normalization.",),
+        tuple(intensity_observations),
+        ("Fluorescence intensity depends on acquisition, staining, exposure, background, detector response, and segmentation boundaries.",),
         ("reports.intensity", "adaptive_plan.profile"),
     ))
-    spatial_observations: list[str] = []
-    if isinstance(spatial, dict):
-        distance = spatial.get("mean_nearest_neighbor_distance_px")
-        if (
-            isinstance(distance, (int, float))
-            and not isinstance(distance, bool)
-            and math.isfinite(float(distance))
-        ):
-            spatial_observations.append(
-                f"Mean nearest-neighbour distance: {float(distance)} pixels."
-            )
-        elif distance is None:
-            spatial_observations.append(
-                "Nearest-neighbour distance summary is unavailable for fewer than two measured instances or missing centroids."
-            )
-        else:
-            spatial_observations.append(
-                "Nearest-neighbour distance summary is invalid; no numeric claim is reported."
-            )
-    population_observations = ["Population size is provided as a structured quantitative claim."]
-    nuclei_count = reports.get("nuclei_count")
-    if isinstance(nuclei_count, int) and not isinstance(nuclei_count, bool) and nuclei_count >= 0:
-        population_observations.insert(0, f"Population size: {nuclei_count} nuclei.")
+
+    population_observations: list[str] = []
+    population_observations.append(f"Measured population size: {nuclei_count} detected nuclei." if count_valid else "Measured population size is unavailable.")
+    distance_fields = (
+        ("mean_nearest_neighbor_distance_px", "Mean nearest-neighbour distance"),
+        ("median_nearest_neighbor_distance_px", "Median nearest-neighbour distance"),
+        ("min_nearest_neighbor_distance_px", "Minimum nearest-neighbour distance"),
+        ("max_nearest_neighbor_distance_px", "Maximum nearest-neighbour distance"),
+    )
+    for key, label in distance_fields:
+        value = spatial.get(key)
+        if is_number(value):
+            population_observations.append(f"{label}: {display_number(value)} pixels.")
+    if not any(is_number(spatial.get(key)) for key, _ in distance_fields):
+        population_observations.append("Nearest-neighbour distances are unavailable for this measured population or lack valid centroids.")
     findings.append(AgentFinding(
         "population_agent",
-        (*population_observations, *spatial_observations),
+        tuple(population_observations),
         ("Population comparisons require appropriate experimental controls and biological replicates.",),
         ("reports.nuclei_count", "reports.spatial.instance_count", "reports.spatial.mean_nearest_neighbor_distance_px"),
     ))
+
+    biological_observations: list[str] = []
+    if count_valid:
+        biological_observations.append(f"The computational pipeline detected {nuclei_count} nuclear instances in this field.")
+    measured_sections = []
+    if any(is_number(value) for value in morphology.values()):
+        measured_sections.append("morphology")
+    if any(is_number(value) for value in intensity.values()):
+        measured_sections.append("intensity")
+    if measured_sections:
+        biological_observations.append("Finite quantitative summaries are available for: " + ", ".join(measured_sections) + ".")
+    else:
+        biological_observations.append("No finite morphology or intensity summary is available for biological interpretation.")
+    biological_observations.append("These measurements do not identify cell type or establish disease, mechanism, treatment response, or causality.")
     findings.append(AgentFinding(
         "biological_interpretation_agent",
-        ("Interpretation is restricted to patterns supported by the measured image features.",),
-        ("No disease, diagnostic, mechanistic, or causal conclusion is generated from morphology or intensity measurements alone.",),
+        tuple(biological_observations),
+        ("Biological interpretation requires validated context, controls, replicates, and domain-specific evidence.",),
         ("reports.nuclei_count", "reports.morphology", "reports.intensity"),
     ))
+
+    input_sha256 = results.get("input_sha256")
+    input_hash_valid = isinstance(input_sha256, str) and len(input_sha256) == 64 and all(character in "0123456789abcdefABCDEF" for character in input_sha256)
+    job_id = results.get("job_id")
+    job_id_valid = isinstance(job_id, str) and bool(job_id.strip())
+    model = results.get("model")
+    model = model if isinstance(model, dict) else {}
+    weights_frozen = model.get("weights_updated_during_analysis") is False
+    training_status = training_manifest_status(results.get("agent_training_manifest"))
+    review_observations = [
+        "Input SHA-256 binding: " + ("valid." if input_hash_valid else "missing or malformed."),
+        "Job identifier binding: " + ("valid." if job_id_valid else "missing or malformed."),
+        "Model weights updated during analysis: " + ("no." if weights_frozen else "not verified."),
+        "Training provenance status: " + ("verified." if training_status["verified"] else "Not established."),
+    ]
     findings.append(AgentFinding(
         "scientific_review_agent",
-        ("All report conclusions must remain traceable to recorded measurements and quality checks.",),
+        tuple(review_observations),
         ("Unsupported confidence, invented training provenance, and unmeasured biological claims are prohibited.",),
-        ("input_sha256", "adaptive_plan", "reports", "reports.spatial"),
+        ("input_sha256", "adaptive_plan", "reports", "reports.spatial", "model"),
     ))
+
+    available_sections = [name for name in ("morphology", "intensity", "spatial") if isinstance(reports.get(name), dict)]
+    report_observations = [
+        f"Report input is bound to job {job_id}." if job_id_valid else "Report input has no valid job identifier.",
+        f"Configured analysis modules: {', '.join(modules) if modules else 'not recorded'}.",
+        "Computed report sections available: " + (", ".join(available_sections) if available_sections else "none recorded") + ".",
+    ]
+    if count_valid:
+        report_observations.append(f"The report input contains a measured count of {nuclei_count} detected nuclei.")
     findings.append(AgentFinding(
         "report_agent",
-        ("The report should preserve the analysis provenance and specialist findings.",),
-        (),
-        ("input_sha256", "analysis_modules", "reports", "reports.spatial"),
+        tuple(report_observations),
+        ("The report summarizes computed evidence; it does not create new measurements or validate model accuracy.",),
+        ("input_sha256", "analysis_modules", "reports", "reports.spatial", "model"),
     ))
 
     agent_outputs: list[dict[str, Any]] = []
     for finding in findings:
         evidence_references, evidence_sha256, evidence_payload = _evidence_for(results, finding.evidence_references)
         quantitative_claims = _numeric_claims(results, finding.evidence_references)
-        missing_references = [
-            reference for reference in finding.evidence_references
-            if reference not in evidence_references
-        ]
-        # Do not label a reviewer complete when any declared evidence is absent.
+        missing_references = [reference for reference in finding.evidence_references if reference not in evidence_references]
         status = "completed" if evidence_references and not missing_references else "incomplete"
         agent_outputs.append({
             "agent": finding.agent,
@@ -250,16 +350,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             "quantitative_claims": quantitative_claims,
         })
 
-    input_sha256 = results.get("input_sha256")
-    input_hash_valid = (
-        isinstance(input_sha256, str)
-        and len(input_sha256) == 64
-        and all(character in "0123456789abcdefABCDEF" for character in input_sha256)
-    )
     completed_count = sum(agent["status"] == "completed" for agent in agent_outputs)
-    job_id = results.get("job_id")
-    job_id_valid = isinstance(job_id, str) and bool(job_id.strip())
-    training_status = training_manifest_status(results.get("agent_training_manifest"))
     execution_payload = {
         "agent_version": "1.1",
         "job_id": job_id if job_id_valid else None,
@@ -282,9 +373,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         ],
         "training_status": training_status,
     }
-    execution_payload_json = json.dumps(
-        execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
-    )
+    execution_payload_json = json.dumps(execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
     execution_sha256 = hashlib.sha256(execution_payload_json.encode("utf-8")).hexdigest()
     all_complete = input_hash_valid and job_id_valid and completed_count == len(agent_outputs)
     incomplete_reasons = []
@@ -306,17 +395,16 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             "incomplete_reasons": incomplete_reasons,
             "agent_count": len(agent_outputs),
             "completed_agent_count": completed_count,
-            "incomplete_agents": [
-                agent["agent"] for agent in agent_outputs if agent["status"] != "completed"
-            ],
+            "incomplete_agents": [agent["agent"] for agent in agent_outputs if agent["status"] != "completed"],
             "execution_sha256": execution_sha256,
             "execution_payload_json": execution_payload_json,
         },
         "agents": agent_outputs,
         "training_status": training_status,
         "evidence_policy": (
-            "Deterministic reviewers interpret measured evidence; they do not invent "
-            "measurements or training provenance. A reviewer is incomplete when any "
-            "declared evidence reference is missing or the input hash is invalid."
+            "Deterministic specialist reviewers derive observations from computed QC, segmentation, morphology, "
+            "intensity, and spatial measurements. They do not invent measurements, training provenance, or biological "
+            "conclusions. A reviewer is incomplete when any declared evidence reference is missing or the input "
+            "hash/job binding is invalid."
         ),
     }

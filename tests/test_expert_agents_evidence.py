@@ -34,6 +34,19 @@ def _result(raw_max: int = 65535) -> dict:
             "nuclei_count": 2,
             "morphology": {"mean_area": 122},
             "intensity": {"mean_nuclear_intensity": 1200},
+            "spatial": {
+                "instance_count": 2,
+                "unit": "pixels",
+                "mean_nearest_neighbor_distance_px": 100.0,
+                "median_nearest_neighbor_distance_px": 100.0,
+                "min_nearest_neighbor_distance_px": 100.0,
+                "max_nearest_neighbor_distance_px": 100.0,
+            },
+        },
+        "model": {
+            "architecture": "Boundary U-Net",
+            "training_reference": "Not established",
+            "weights_updated_during_analysis": False,
         },
     }
 
@@ -97,6 +110,8 @@ def test_execution_manifest_binds_job_and_spatial_measurements() -> None:
     assert output["execution"]["job_id_valid"] is True
     population = next(agent for agent in output["agents"] if agent["agent"] == "population_agent")
     assert "Mean nearest-neighbour distance: 100.0 pixels." in population["observations"]
+    morphology = next(agent for agent in output["agents"] if agent["agent"] == "morphology_agent")
+    assert "Measured mean area: 122 pixels^2." in morphology["observations"]
     assert "reports.spatial.mean_nearest_neighbor_distance_px" in population["evidence_references"]
     assert len(population["evidence_sha256"]) == 64
 
