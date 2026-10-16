@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, Response
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
-from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
+from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
 
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
@@ -117,6 +117,16 @@ def result_file(request:Request,job_id:str,filename:str):
     except (FileNotFoundError,ValueError) as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     media="application/json" if filename.endswith(".json") else "text/csv" if filename.endswith(".csv") else "application/pdf" if filename.endswith(".pdf") else "image/tiff"
     return FileResponse(path,media_type=media,filename=filename,headers={"Cache-Control":"no-store"})
+
+@app.delete("/jobs/{job_id}/research-copy")
+def remove_research_copy(request: Request, job_id: str):
+    user = authenticate_optional(request)
+    try:
+        deleted = delete_research_copy(job_id, user.id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"job_id": job_id, "research_copy_deleted": deleted}
+
 
 @app.delete("/jobs/{job_id}")
 def remove_job(request:Request,job_id:str):

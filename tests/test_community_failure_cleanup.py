@@ -226,14 +226,14 @@ def test_tampered_specialist_evidence_is_rejected_before_publication(community):
         community._validate_specialist_artifact(result, artifact)
 
 
-def test_archive_excludes_original_tiff_and_nd2_plane(isolated_jobs):
+def test_archive_excludes_original_tiff_and_nd2_plane(community):
     job_id = "archive-source-exclusion"
-    root = isolated_jobs._job_dir(job_id)
+    root = community._job_dir(job_id)
     (root / "results").mkdir(parents=True)
     (root / "input.tif").write_bytes(b"source-tiff")
     (root / "input_plane.tif").write_bytes(b"source-plane")
     (root / "results" / "results.json").write_text('{"status":"synthetic"}', encoding="utf-8")
-    archive = isolated_jobs._archive(job_id)
+    archive = community._archive(job_id)
     with ZipFile(archive) as zf:
         names = set(zf.namelist())
     assert "input.tif" not in names
@@ -241,28 +241,28 @@ def test_archive_excludes_original_tiff_and_nd2_plane(isolated_jobs):
     assert "results/results.json" in names
 
 
-def test_expired_completed_job_is_denied_before_periodic_cleanup(isolated_jobs):
+def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
     job_id = "expired-at-access"
     user_id = "user-expired"
-    root = isolated_jobs._job_dir(job_id)
+    root = community._job_dir(job_id)
     (root / "results").mkdir(parents=True)
     (root / "results" / "results.json").write_text("{}", encoding="utf-8")
-    expiry = (isolated_jobs._now() - timedelta(minutes=5)).isoformat()
-    now = isolated_jobs._now().isoformat()
-    with isolated_jobs.DB_LOCK, isolated_jobs._db() as conn:
+    expiry = (community._now() - timedelta(minutes=5)).isoformat()
+    now = community._now().isoformat()
+    with community.DB_LOCK, community._db() as conn:
         conn.execute(
             "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_sha256,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (job_id,"completed",now,now,expiry,user_id,"a"*64,"x.tif",0,0,"auto","intensity,nuclei"),
         )
         conn.commit()
-    assert isolated_jobs.get_job(job_id, user_id) is None
+    assert community.get_job(job_id, user_id) is None
     with pytest.raises(FileNotFoundError):
-        isolated_jobs.get_file(job_id, user_id, "results.json")
+        community.get_file(job_id, user_id, "results.json")
     with pytest.raises(FileNotFoundError):
-        isolated_jobs.get_archive(job_id, user_id)
-    assert isolated_jobs._get_job(job_id, user_id) is not None
-    assert isolated_jobs.purge_expired() == 1
-    assert isolated_jobs._get_job(job_id, user_id) is None
+        community.get_archive(job_id, user_id)
+    assert community._get_job(job_id, user_id) is not None
+    assert community.purge_expired() == 1
+    assert community._get_job(job_id, user_id) is None
 
 
 def test_unverified_training_reference_cannot_be_published_as_verified(community):

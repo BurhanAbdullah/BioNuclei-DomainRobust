@@ -483,6 +483,25 @@ def delete_job(job_id: str,user_id: str) -> bool:
     return True
 
 
+
+def delete_research_copy(job_id: str, user_id: str) -> bool:
+    """Delete a retained research copy only for its owning user."""
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    if not bool(row["research_consent"]) or not bool(row["retained_copy"]):
+        raise FileNotFoundError("No retained research copy exists for this job")
+    root = _job_dir(job_id) / "research_copy"
+    shutil.rmtree(root, ignore_errors=True)
+    with DB_LOCK, _db() as conn:
+        conn.execute(
+            "UPDATE jobs SET retained_copy = 0, research_consent = 0, updated_at = ? WHERE id = ? AND user_id = ?",
+            (_now().isoformat(), job_id, user_id),
+        )
+        conn.commit()
+    return True
+
+
 def purge_expired() -> int:
     removed=0
     now=_now()

@@ -12,7 +12,7 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
         },
         "model": {
             "architecture": "Boundary U-Net",
-            "training_reference": "BBBC039v1",
+            "training_reference": "Not established",
             "target": "3-class background/interior/boundary prediction",
         },
         "n_instances": 7,
@@ -25,6 +25,6 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
     build_report(payload, tmp_path)
     html = (tmp_path / "analysis_report.html").read_text()
     data = (tmp_path / "analysis_report.json").read_text()
-    assert "model weights are not updated" in html
-    assert "BBBC039v1" in html
+    assert "model weights are not updated" in html.lower()
+    assert "Not established" in html
     assert "analysis_report.json" in data
