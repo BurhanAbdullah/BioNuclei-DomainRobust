@@ -109,7 +109,7 @@ def test_execution_manifest_binds_job_and_spatial_measurements() -> None:
     assert output["execution"]["input_sha256"] == result["input_sha256"]
     assert output["execution"]["job_id_valid"] is True
     population = next(agent for agent in output["agents"] if agent["agent"] == "population_agent")
-    assert "Mean nearest-neighbour distance: 100.0 pixels." in population["observations"]
+    assert "Mean nearest-neighbour distance: 100 pixels." in population["observations"]
     morphology = next(agent for agent in output["agents"] if agent["agent"] == "morphology_agent")
     assert "Measured mean area: 122 pixels^2." in morphology["observations"]
     assert "reports.spatial.mean_nearest_neighbor_distance_px" in population["evidence_references"]
