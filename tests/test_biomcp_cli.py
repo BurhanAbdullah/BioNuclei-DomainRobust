@@ -23,7 +23,7 @@ def test_biomcp_version_and_list() -> None:
     listing = run_cli("list")
     assert listing.returncode == 0
     assert "bionuclei" in listing.stdout
-    assert "deterministic bioimage tools" in listing.stdout
+    assert "validated bioimage analysis tools exposed through MCP" in listing.stdout.lower()
 
 
 def test_biomcp_dry_run_does_not_write(tmp_path: Path) -> None:
