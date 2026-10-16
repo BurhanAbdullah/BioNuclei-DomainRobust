@@ -9,6 +9,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import math
 import os
 import shutil
 import sqlite3
@@ -24,7 +25,7 @@ import pandas as pd
 import tifffile
 
 from bionuclei.adaptive_agent import build_plan, to_dict
-from bionuclei.expert_agents import run_expert_agents
+from bionuclei.expert_agents import SPECIALIST_AGENTS, run_expert_agents
 from bionuclei.inference import predict
 from bionuclei.report import build_report
 from .app import _checkpoint
@@ -94,22 +95,168 @@ def _job_dir(job_id: str) -> Path:
     return JOB_ROOT / job_id
 
 
+
+def _resolve_result_reference(results: dict[str, object], reference: str) -> tuple[bool, object]:
+    value: object = results
+    for key in reference.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return False, None
+        value = value[key]
+    return True, value
+
+
+def _validate_specialist_artifact(results: dict[str, object], expert: object) -> None:
+    """Fail closed before publication unless specialist output is complete and evidence-bound."""
+    def reject(reason: str) -> None:
+        raise ValueError("Specialist evidence gate rejected publication: " + reason)
+
+    if not isinstance(expert, dict):
+        reject("artifact is not an object")
+    if expert.get("agent_version") != "1.1":
+        reject("unsupported specialist artifact version")
+    if results.get("scientific_execution") is not True:
+        reject("result is not marked as a scientific execution")
+    model = results.get("model")
+    if not isinstance(model, dict) or model.get("weights_updated_during_analysis") is not False:
+        reject("frozen-weight inference assertion is absent or false")
+    execution = expert.get("execution")
+    if not isinstance(execution, dict) or execution.get("status") != "completed":
+        reject("execution is incomplete")
+    job_id = results.get("job_id")
+    input_sha256 = results.get("input_sha256")
+    if not isinstance(job_id, str) or not job_id.strip() or execution.get("job_id") != job_id or execution.get("job_id_valid") is not True:
+        reject("job binding is missing or invalid")
+    if not isinstance(input_sha256, str) or len(input_sha256) != 64 or any(c not in "0123456789abcdefABCDEF" for c in input_sha256):
+        reject("result input SHA-256 is malformed")
+    if execution.get("input_sha256") != input_sha256 or execution.get("input_hash_valid") is not True:
+        reject("input hash binding is missing or invalid")
+
+    agents = expert.get("agents")
+    expected = set(SPECIALIST_AGENTS)
+    if not isinstance(agents, list) or len(agents) != len(expected):
+        reject("expected eight specialist reviewers")
+    names = [agent.get("agent") for agent in agents if isinstance(agent, dict)]
+    if len(names) != len(agents) or set(names) != expected or len(set(names)) != len(names):
+        reject("reviewer set is incomplete, duplicated, or unknown")
+    if execution.get("agent_count") != len(agents) or execution.get("completed_agent_count") != len(agents):
+        reject("execution counts do not match reviewer output")
+    if execution.get("incomplete_agents") != [] or execution.get("incomplete_reasons") != []:
+        reject("execution manifest reports incomplete reviewers")
+
+    for agent in agents:
+        name = str(agent.get("agent"))
+        if agent.get("status") != "completed":
+            reject("reviewer is incomplete: " + name)
+        references = agent.get("evidence_references")
+        if not isinstance(references, list) or not references or any(not isinstance(ref, str) for ref in references):
+            reject("reviewer has no valid evidence references: " + name)
+        if len(set(references)) != len(references) or agent.get("missing_evidence_references") != []:
+            reject("reviewer has unresolved or duplicate evidence references: " + name)
+        evidence_payload = agent.get("evidence_payload")
+        evidence_sha256 = agent.get("evidence_sha256")
+        if not isinstance(evidence_payload, str) or not evidence_payload:
+            reject("reviewer evidence payload is missing: " + name)
+        if not isinstance(evidence_sha256, str) or len(evidence_sha256) != 64:
+            reject("reviewer evidence digest is malformed: " + name)
+        if hashlib.sha256(evidence_payload.encode("utf-8")).hexdigest() != evidence_sha256:
+            reject("reviewer evidence digest mismatch: " + name)
+        try:
+            evidence = json.loads(evidence_payload)
+        except (TypeError, ValueError):
+            reject("reviewer evidence payload is invalid JSON: " + name)
+        if not isinstance(evidence, dict) or sorted(evidence) != sorted(references):
+            reject("reviewer evidence keys do not match references: " + name)
+        for reference in references:
+            found, value = _resolve_result_reference(results, reference)
+            if not found or evidence.get(reference) != value:
+                reject("reviewer evidence differs from computed result: " + reference)
+
+        claims = agent.get("quantitative_claims")
+        if not isinstance(claims, list):
+            reject("quantitative claims are missing: " + name)
+        for claim in claims:
+            if not isinstance(claim, dict) or not isinstance(claim.get("reference"), str) or not isinstance(claim.get("unit"), str) or not claim["unit"].strip():
+                reject("quantitative claim schema is invalid: " + name)
+            reference = claim["reference"]
+            found, value = _resolve_result_reference(results, reference)
+            if not found or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                reject("quantitative claim does not resolve to a finite measured value: " + reference)
+            if claim.get("value") != value:
+                reject("quantitative claim differs from computed measurement: " + reference)
+            if not any(reference == path or reference.startswith(path + ".") for path in references):
+                reject("quantitative claim is not covered by declared evidence: " + reference)
+
+    training_status = expert.get("training_status")
+    if not isinstance(training_status, dict):
+        reject("training provenance status is missing")
+    if training_status.get("verified") is not True and training_status.get("claim_allowed") is not False:
+        reject("unverified training provenance was not explicitly disallowed")
+    model_metadata = results.get("model")
+    if not isinstance(model_metadata, dict) or model_metadata.get("weights_updated_during_analysis") is not False:
+        reject("frozen model-weight assertion is absent or false")
+    if training_status.get("verified") is not True and model_metadata.get("training_reference") != "Not established":
+        reject("unverified training provenance must be labeled Not established")
+    execution_payload_json = execution.get("execution_payload_json")
+    execution_sha256 = execution.get("execution_sha256")
+    if not isinstance(execution_payload_json, str) or not execution_payload_json:
+        reject("canonical execution payload is missing")
+    if not isinstance(execution_sha256, str) or hashlib.sha256(execution_payload_json.encode("utf-8")).hexdigest() != execution_sha256:
+        reject("canonical execution digest mismatch")
+    try:
+        canonical = json.loads(execution_payload_json)
+    except (TypeError, ValueError):
+        reject("canonical execution payload is invalid JSON")
+    expected_payload = {
+        "agent_version": "1.1",
+        "job_id": job_id,
+        "job_id_valid": True,
+        "input_sha256": input_sha256,
+        "input_hash_valid": True,
+        "agents": [
+            {
+                "agent": agent["agent"],
+                "status": agent["status"],
+                "observations": agent["observations"],
+                "limitations": agent["limitations"],
+                "evidence_references": agent["evidence_references"],
+                "evidence_sha256": agent["evidence_sha256"],
+                "evidence_payload": agent["evidence_payload"],
+                "quantitative_claims": agent["quantitative_claims"],
+                "missing_evidence_references": agent["missing_evidence_references"],
+            }
+            for agent in agents
+        ],
+        "training_status": training_status,
+    }
+    if canonical != expected_payload:
+        reject("canonical execution payload does not match specialist artifact")
+
+
 def _archive(job_id: str) -> Path:
     root = _job_dir(job_id)
     archive = JOB_ROOT / f"{job_id}.zip"
+    excluded_source_files = {"input.tif", "input.tiff", "input.nd2", "input_plane.tif"}
     with ZipFile(archive, "w", ZIP_DEFLATED) as zf:
         for path in root.rglob("*"):
-            if path.is_file():
+            if path.is_file() and path.name not in excluded_source_files:
                 zf.write(path, path.relative_to(root))
     return archive
 
 
 def _cleanup_failed_job(job_id: str, root: Path) -> None:
-    """Remove every transient artifact and its metadata after a failed job."""
+    """Remove transient artifacts while preserving a truthful queryable failure."""
     shutil.rmtree(root, ignore_errors=True)
     (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.execute(
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+            (
+                "failed",
+                "Analysis worker failed before producing a complete result. Please retry the analysis.",
+                _now().isoformat(),
+                job_id,
+            ),
+        )
         conn.commit()
 
 
@@ -229,6 +376,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         result.update({"job_id":job_id,"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"Not established","weights_updated_during_analysis":False}})
         _set_job(job_id, status="expert_review")
         expert = run_expert_agents(result)
+        _validate_specialist_artifact(result, expert)
         result["expert_agents"] = expert
         (output / "expert_agents.json").write_text(json.dumps(expert, indent=2) + "\n")
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -282,21 +430,37 @@ def serialize(row: sqlite3.Row) -> dict[str, object]:
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
 
 
+def _completed_job_is_expired(row: sqlite3.Row | None) -> bool:
+    """Fail closed on malformed expiry while leaving active jobs queryable."""
+    if row is None or row["status"] != "completed":
+        return False
+    try:
+        expiry = datetime.fromisoformat(str(row["expires_at"]))
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        return expiry <= _now()
+    except (TypeError, ValueError, OverflowError):
+        return True
+
+
 def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
-    return serialize(_get_job(job_id,user_id)) if _get_job(job_id,user_id) else None
+    row = _get_job(job_id, user_id)
+    if row is None or _completed_job_is_expired(row):
+        return None
+    return serialize(row)
 
 
 def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
     with DB_LOCK, _db() as conn:
         rows=conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",(user_id,)).fetchall()
-    return [serialize(row) for row in rows]
+    return [serialize(row) for row in rows if not _completed_job_is_expired(row)]
 
 
 def get_file(job_id: str,user_id: str,filename: str) -> Path:
     allowed={"segmentation_mask.tif","overlay.tif","measurements.csv","results.json","provenance.json","community_input.json","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","adaptive_plan.json","expert_agents.json","analysis_report.pdf","analysis_report.json","analysis_report.html"}
     if filename not in allowed: raise ValueError("File is not a downloadable BioNuclei result")
     row=_get_job(job_id,user_id)
-    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
+    if not row or row["status"] != "completed" or _completed_job_is_expired(row): raise FileNotFoundError(job_id)
     path=_job_dir(job_id)/"results"/filename
     if not path.is_file(): raise FileNotFoundError(filename)
     return path
@@ -304,7 +468,7 @@ def get_file(job_id: str,user_id: str,filename: str) -> Path:
 
 def get_archive(job_id: str,user_id: str) -> Path:
     row=_get_job(job_id,user_id)
-    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
+    if not row or row["status"] != "completed" or _completed_job_is_expired(row): raise FileNotFoundError(job_id)
     return _archive(job_id)
 
 

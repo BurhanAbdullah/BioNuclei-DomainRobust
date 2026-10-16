@@ -1,7 +1,7 @@
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.BIONUCLEI_SPECIALIST_VERIFICATION = factory();
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = factory(root);
+  else root.BIONUCLEI_SPECIALIST_VERIFICATION = factory(root);
+})(typeof globalThis !== "undefined" ? globalThis : this, function (root) {
   "use strict";
 
   const EXPECTED_AGENTS = new Set([

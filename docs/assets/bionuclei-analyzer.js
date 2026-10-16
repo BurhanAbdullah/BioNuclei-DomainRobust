@@ -15,6 +15,8 @@
   let roi = null;
   let roiStart = null;
   let draggingROI = false;
+  let specialistVerified = false;
+  let specialistVerificationReason = "Specialist artifact has not been verified for the selected job.";
 
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -60,6 +62,10 @@
     previewUrls.forEach(URL.revokeObjectURL);
     previewUrls = [];
     measurementRows = [];
+    specialistVerified = false;
+    specialistVerificationReason = "Specialist artifact has not been verified for the selected job.";
+    const downloadButton = $('downloadButton');
+    if (downloadButton) downloadButton.disabled = true;
     roi = null;
     $('resultPanel').hidden = true;
     $('overlayPreview').removeAttribute('src');
@@ -353,6 +359,27 @@
   async function showResult(job) {
     const result = job.result || {};
     const reports = result.reports || {};
+    const verifier = window.BIONUCLEI_SPECIALIST_VERIFICATION;
+    let verifiedExpert = null;
+    specialistVerified = false;
+    specialistVerificationReason = "Specialist verifier is unavailable.";
+    if (verifier && typeof verifier.verifySpecialistArtifact === "function") {
+      const verification = await verifier.verifySpecialistArtifact({
+        job,
+        result,
+        embedded: result.expert_agents,
+        fetchJson: path => jsonFetch(path),
+        cryptoApi: window.crypto
+      });
+      if (verification && verification.ok === true) {
+        specialistVerified = true;
+        specialistVerificationReason = verification.reason || "Specialist evidence verified.";
+        verifiedExpert = verification.artifact;
+      } else {
+        specialistVerificationReason = verification?.reason || "Specialist evidence verification failed.";
+      }
+    }
+    $('downloadButton').disabled = !specialistVerified;
     $('resultPanel').hidden = false;
     $('nucleusCount').textContent = reports.nuclei_count ?? result.n_instances ?? 'Not available';
     const shape = result.image_shape || result.input_metadata?.selected_plane_shape;
@@ -360,7 +387,7 @@
     $('reportCount').textContent = Array.isArray(result.analysis_modules) ? result.analysis_modules.length : 0;
     const agentContainer = $('agentDetails');
     agentContainer.replaceChildren();
-    const expertReport = result.expert_agents || {};
+    const expertReport = verifiedExpert || {};
     const agents = Array.isArray(expertReport.agents)
       ? expertReport.agents
       : (Array.isArray(expertReport.findings) ? expertReport.findings : []);
@@ -377,7 +404,12 @@
       });
       parent.appendChild(list);
     };
-    if (agents.length) {
+    if (!specialistVerified) {
+      const failed = document.createElement('p');
+      failed.setAttribute('role', 'alert');
+      failed.textContent = `Specialist evidence was not verified for this job: ${specialistVerificationReason}. Specialist findings and downloads are withheld.`;
+      agentContainer.appendChild(failed);
+    } else if (agents.length) {
       agents.slice(0, 8).forEach(agent => {
         const card = document.createElement('section');
         card.className = 'agent-finding';
@@ -395,6 +427,11 @@
           : [agent.statement ?? agent.finding ?? agent.summary].filter(value => value != null && String(value).trim() !== '');
         appendList(card, 'Observed evidence', observations);
         appendList(card, 'Limitations', Array.isArray(agent.limitations) ? agent.limitations : []);
+        if (Array.isArray(agent.quantitative_claims)) {
+          appendList(card, 'Verified quantitative claims', agent.quantitative_claims.map(claim =>
+            `${claim.reference}: ${String(claim.value)} ${claim.unit}`
+          ));
+        }
         const references = Array.isArray(agent.evidence_references)
           ? agent.evidence_references
           : (Array.isArray(agent.evidence_refs) ? agent.evidence_refs : []);
@@ -478,6 +515,7 @@
 
   async function downloadReport() {
     if (!currentJob) return msg('resultMsg', 'No analysis result is selected.');
+    if (!specialistVerified) return msg('resultMsg', 'Download withheld: specialist evidence for this job has not passed verification.');
     try {
       const blob = await fetchBlob(`/jobs/${encodeURIComponent(currentJob)}/download`);
       const url = URL.createObjectURL(blob);

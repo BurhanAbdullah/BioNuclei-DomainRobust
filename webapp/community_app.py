@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -16,34 +15,6 @@ from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
 
-
-def _failure_cleanup(job_id: str, root):
-    """Delete transient artifacts but keep a queryable failed-job record.
-
-    The previous implementation deleted the database row on worker failure. A
-    browser polling that job then received 404 and could only report a generic
-    connection interruption. Keeping a minimal failed row makes the API tell
-    the truth while still removing the uploaded image and derived artifacts.
-    The detailed exception remains in server logs.
-    """
-    shutil.rmtree(root, ignore_errors=True)
-    (community_service.JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
-    with community_service.DB_LOCK, community_service._db() as conn:
-        conn.execute(
-            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
-            (
-                "failed",
-                "Analysis worker failed before producing a complete result. Please retry the analysis.",
-                community_service._now().isoformat(),
-                job_id,
-            ),
-        )
-        conn.commit()
-
-
-# community._run resolves this helper through its module globals. Replace only
-# the failure cleanup behavior; the scientific pipeline itself is unchanged.
-community_service._cleanup_failed_job = _failure_cleanup
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
