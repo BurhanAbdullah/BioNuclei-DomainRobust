@@ -31,7 +31,7 @@ def test_lab_routes_local_preview_into_the_real_analyzer():
 def test_analysis_library_separates_available_and_validation_gated_features():
     html = unescape(read("bionuclei-analysis.html"))
     for text in ["Find & count nuclei", "Measure morphology", "Measure fluorescence", "Colocalization",
-                 "Track objects", "Classify objects", "Validation required"]:
+                 "Time-series tracking", "Learned object classification", "Validation required"]:
         assert text in html
 
 
@@ -55,7 +55,7 @@ def test_bionuclei_overview_is_concise_and_user_facing():
     for text in ["see the nuclei.", "what it does", "one focused workflow, now inspectable.", "the model",
                  "ai predicts. scientific code measures.", "no online training", "adaptive analysis",
                  "deterministic specialist reviewers", "your result", "do not stop at the mask.",
-                 "open the bionuclei analyzer", "not benchmark data", "not used as evidence"]:
+                 "open the analyzer", "not benchmark data", "not used as evidence"]:
         assert text in html
     for stale in ["which ai is actually being used?", "api base url", "inspect an image", "evaluate against ground truth"]:
         assert stale not in html
