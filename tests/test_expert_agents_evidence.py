@@ -23,7 +23,7 @@ def _result(raw_max: int = 65535) -> dict:
     }
     return {
         "input_sha256": "a" * 64,
-        "analysis_modules": ["nuclei", "intensity"],
+        "analysis_modules": ["nuclei", "morphology", "intensity"],
         "adaptive_plan": {
             "status": "PASS",
             "warnings": [],
