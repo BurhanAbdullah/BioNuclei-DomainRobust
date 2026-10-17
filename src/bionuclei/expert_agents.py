@@ -150,7 +150,8 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     raw_warnings = plan.get("warnings", [])
     warnings = [str(item) for item in raw_warnings] if isinstance(raw_warnings, (list, tuple)) else []
     raw_modules = results.get("analysis_modules", [])
-    modules = [str(item) for item in raw_modules] if isinstance(raw_modules, (list, tuple)) else []
+    modules = sorted({item for item in raw_modules if isinstance(item, str)}) if isinstance(raw_modules, (list, tuple)) else []
+    module_set = set(modules)
 
     profile_observations: list[str] = []
     if isinstance(profile.get("dtype"), str):
@@ -332,8 +333,32 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         ("input_sha256", "analysis_modules", "reports", "reports.spatial", "model"),
     ))
 
+    module_requirements = {
+        "morphology_agent": {"morphology"},
+        "intensity_agent": {"intensity"},
+        "biological_interpretation_agent": {"morphology", "intensity"},
+    }
+    not_applicable_limitation = (
+        "This reviewer did not execute because its required modules were not selected; "
+        "no findings or quantitative claims are asserted."
+    )
     agent_outputs: list[dict[str, Any]] = []
     for finding in findings:
+        unselected = sorted(module_requirements.get(finding.agent, set()) - module_set)
+        if unselected:
+            evidence_payload = "{}"
+            agent_outputs.append({
+                "agent": finding.agent,
+                "status": "not_applicable",
+                "observations": ["Not applicable: required analysis module(s) not selected: " + ", ".join(unselected) + "."],
+                "limitations": [not_applicable_limitation],
+                "evidence_references": [],
+                "missing_evidence_references": [],
+                "evidence_sha256": hashlib.sha256(evidence_payload.encode("utf-8")).hexdigest(),
+                "evidence_payload": evidence_payload,
+                "quantitative_claims": [],
+            })
+            continue
         evidence_references, evidence_sha256, evidence_payload = _evidence_for(results, finding.evidence_references)
         quantitative_claims = _numeric_claims(results, finding.evidence_references)
         missing_references = [reference for reference in finding.evidence_references if reference not in evidence_references]
@@ -351,8 +376,12 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         })
 
     completed_count = sum(agent["status"] == "completed" for agent in agent_outputs)
+    not_applicable_count = sum(agent["status"] == "not_applicable" for agent in agent_outputs)
+    resolved_count = completed_count + not_applicable_count
+    incomplete_agents = [agent["agent"] for agent in agent_outputs if agent["status"] not in {"completed", "not_applicable"}]
     execution_payload = {
-        "agent_version": "1.1",
+        "agent_version": "1.2",
+        "analysis_modules": modules,
         "job_id": job_id if job_id_valid else None,
         "job_id_valid": job_id_valid,
         "input_sha256": input_sha256 if input_hash_valid else None,
@@ -375,19 +404,20 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     }
     execution_payload_json = json.dumps(execution_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
     execution_sha256 = hashlib.sha256(execution_payload_json.encode("utf-8")).hexdigest()
-    all_complete = input_hash_valid and job_id_valid and completed_count == len(agent_outputs)
+    all_complete = input_hash_valid and job_id_valid and resolved_count == len(agent_outputs)
     incomplete_reasons = []
     if not job_id_valid:
         incomplete_reasons.append("missing_or_invalid_job_id")
     if not input_hash_valid:
         incomplete_reasons.append("missing_or_invalid_input_sha256")
-    if completed_count != len(agent_outputs):
+    if incomplete_agents:
         incomplete_reasons.append("one_or_more_reviewers_missing_declared_evidence")
 
     return {
-        "agent_version": "1.1",
+        "agent_version": "1.2",
         "execution": {
             "status": "completed" if all_complete else "incomplete",
+            "analysis_modules": modules,
             "job_id": job_id if job_id_valid else None,
             "job_id_valid": job_id_valid,
             "input_sha256": input_sha256 if input_hash_valid else None,
@@ -395,7 +425,9 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             "incomplete_reasons": incomplete_reasons,
             "agent_count": len(agent_outputs),
             "completed_agent_count": completed_count,
-            "incomplete_agents": [agent["agent"] for agent in agent_outputs if agent["status"] != "completed"],
+            "not_applicable_agent_count": not_applicable_count,
+            "resolved_agent_count": resolved_count,
+            "incomplete_agents": incomplete_agents,
             "execution_sha256": execution_sha256,
             "execution_payload_json": execution_payload_json,
         },
