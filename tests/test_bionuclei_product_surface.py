@@ -41,13 +41,16 @@ def test_formats_page_documents_nd2_explicit_plane_selection():
         assert text in html
 
 
-def test_community_page_has_explicit_research_consent():
+def test_community_page_redirects_to_verified_workspace_and_states_truthful_privacy():
     html = read("bionuclei-community.html")
-    assert "Optional research contribution" in html
-    assert "explicitly agree" in html
-    assert "Without the research checkbox" in html
-    assert "does not retain a research copy" in html
-    assert "optional and separate from running the analysis" in html
+    normalized = html.lower()
+    assert 'url=bionuclei-app.html' in normalized
+    assert 'window.location.replace(target.href)' in normalized
+    assert "evidence-verified analysis workspace" in normalized
+    assert "not used to train or fine-tune model weights" in normalized
+    assert "optional research contribution" not in normalized
+    assert "future bionuclei development/model-training datasets" not in normalized
+    assert "without the research checkbox" not in normalized
 
 
 def test_bionuclei_overview_is_concise_and_user_facing():
