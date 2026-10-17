@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
+from zipfile import ZipFile
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import tifffile
+
+from bionuclei.adaptive_agent import CNNPatternCheck
+
+from bionuclei.expert_agents import run_expert_agents
 
 
 @pytest.fixture
@@ -126,3 +134,228 @@ def test_report_failure_removes_transient_results_but_preserves_failed_status(co
     assert not root.exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
     _assert_failed_job_preserved_for_query(module, job_id, user_id)
+
+
+def test_incomplete_specialist_result_is_never_published(community, monkeypatch):
+    module = community
+    job_id = "failure-incomplete-specialist"
+    user_id = "guest:test"
+    root = module._job_dir(job_id)
+    input_path = _seed_job(module, job_id, user_id, root)
+    checkpoint = root / "checkpoint.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
+    monkeypatch.setattr(module, "to_dict", lambda _plan: {
+        "status": "PASS", "warnings": [],
+        "profile": {"shape": [512, 512], "dtype": "uint16", "max": 65535},
+        "cnn_pattern_check": {"executed": True, "status": "PASS"},
+    })
+
+    def successful_inference(_input, _checkpoint, output, device="cpu"):
+        (output / "segmentation_mask.tif").write_bytes(b"mask")
+        (output / "overlay.tif").write_bytes(b"overlay")
+        return {"prediction": "synthetic"}
+
+    monkeypatch.setattr(module, "predict", successful_inference)
+    monkeypatch.setattr(module.gc, "collect", lambda: None)
+    monkeypatch.setattr(module, "_extended_reports", lambda *_args: {
+        "nuclei_count": 1,
+        "morphology": {"mean_area": 10.0},
+        "intensity": {"mean_nuclear_intensity": 1200.0},
+        "spatial": {"instance_count": 1, "mean_nearest_neighbor_distance_px": None},
+    })
+    monkeypatch.setattr(module, "run_expert_agents", lambda _result: {
+        "agent_version": "1.1",
+        "execution": {"status": "incomplete", "incomplete_reasons": ["missing_or_invalid_job_id"]},
+        "agents": [],
+        "training_status": {"verified": False, "claim_allowed": False},
+    })
+    report_calls = []
+    monkeypatch.setattr(module, "build_report", lambda *_args: report_calls.append(True))
+    module._run(
+        job_id, user_id, input_path, "input.tif", False, "auto",
+        {"nuclei", "morphology", "intensity"},
+        channel=0, time=0, z=0, field=0,
+    )
+    assert report_calls == []
+    assert not root.exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+    _assert_failed_job_preserved_for_query(module, job_id, user_id)
+
+
+def _complete_uint16_result() -> dict:
+    return {
+        "job_id": "test-job-uint16",
+        "input_sha256": "a" * 64,
+        "scientific_execution": True,
+        "model": {"architecture": "Boundary U-Net", "training_reference": "Not established", "weights_updated_during_analysis": False},
+        "analysis_modules": ["nuclei", "morphology", "intensity"],
+        "adaptive_plan": {
+            "status": "PASS", "warnings": [],
+            "cnn_pattern_check": {"executed": True, "status": "PASS"},
+            "profile": {
+                "shape": [512, 512], "dtype": "uint16", "min": 1024, "p01": 1200,
+                "median": 1400, "p995": 65535, "max": 65535, "mean": 1500.0,
+                "std": 120.0, "saturation_fraction": 1 / 262144,
+                "zero_fraction": 0.0, "finite": True,
+            },
+        },
+        "reports": {
+            "nuclei_count": 2,
+            "morphology": {"mean_area": 12.0, "median_area": 11.5, "mean_circularity": 0.91},
+            "intensity": {"mean_nuclear_intensity": 1250.0, "median_nuclear_intensity": 1240.0},
+            "spatial": {
+                "instance_count": 2, "unit": "pixels",
+                "mean_nearest_neighbor_distance_px": 8.0,
+                "median_nearest_neighbor_distance_px": 8.0,
+                "min_nearest_neighbor_distance_px": 8.0,
+                "max_nearest_neighbor_distance_px": 8.0,
+            },
+        },
+    }
+
+
+def test_complete_specialist_artifact_passes_server_publication_gate(community):
+    result = _complete_uint16_result()
+    artifact = run_expert_agents(result)
+    community._validate_specialist_artifact(result, artifact)
+
+
+def test_tampered_specialist_evidence_is_rejected_before_publication(community):
+    result = _complete_uint16_result()
+    artifact = run_expert_agents(result)
+    artifact["agents"][0]["evidence_payload"] += " "
+    with pytest.raises(ValueError, match="evidence digest mismatch"):
+        community._validate_specialist_artifact(result, artifact)
+
+
+def test_archive_excludes_original_tiff_and_nd2_plane(community):
+    job_id = "archive-source-exclusion"
+    root = community._job_dir(job_id)
+    (root / "results").mkdir(parents=True)
+    (root / "input.tif").write_bytes(b"source-tiff")
+    (root / "input_plane.tif").write_bytes(b"source-plane")
+    (root / "results" / "results.json").write_text('{"status":"synthetic"}', encoding="utf-8")
+    archive = community._archive(job_id)
+    with ZipFile(archive) as zf:
+        names = set(zf.namelist())
+    assert "input.tif" not in names
+    assert "input_plane.tif" not in names
+    assert "results/results.json" in names
+
+
+def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
+    job_id = "expired-at-access"
+    user_id = "user-expired"
+    root = community._job_dir(job_id)
+    (root / "results").mkdir(parents=True)
+    (root / "results" / "results.json").write_text("{}", encoding="utf-8")
+    expiry = (community._now() - timedelta(minutes=5)).isoformat()
+    now = community._now().isoformat()
+    with community.DB_LOCK, community._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_sha256,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id,"completed",now,now,expiry,user_id,"a"*64,"x.tif",0,0,"auto","intensity,nuclei"),
+        )
+        conn.commit()
+    assert community.get_job(job_id, user_id) is None
+    with pytest.raises(FileNotFoundError):
+        community.get_file(job_id, user_id, "results.json")
+    with pytest.raises(FileNotFoundError):
+        community.get_archive(job_id, user_id)
+    assert community._get_job(job_id, user_id) is not None
+    assert community.purge_expired() == 1
+    assert community._get_job(job_id, user_id) is None
+
+
+def test_unverified_training_reference_cannot_be_published_as_verified(community):
+    result = _complete_uint16_result()
+    result["model"]["training_reference"] = "BBBC039v1"
+    artifact = run_expert_agents(result)
+    with pytest.raises(ValueError, match="must be labeled Not established"):
+        community._validate_specialist_artifact(result, artifact)
+
+
+def test_uint16_service_path_executes_specialists_from_computed_measurements(community, monkeypatch):
+    """Exercise job/report/agent wiring with real TIFF/QC/measurement code and deterministic test inference."""
+    module = community
+    job_id = "e2e-512-uint16-specialists"
+    user_id = "guest:e2e"
+    root = module._job_dir(job_id)
+    input_path = _seed_job(module, job_id, user_id, root)
+
+    image = np.full((512, 512), 512, dtype=np.uint16)
+    yy, xx = np.ogrid[:512, :512]
+    circles = [(100, 100, 18, 4096), (100, 180, 16, 8192), (220, 280, 20, 16384), (360, 160, 17, 32768)]
+    mask = np.zeros((512, 512), dtype=np.int32)
+    for label, (cy, cx, radius, intensity) in enumerate(circles, start=1):
+        disk = (yy - cy) ** 2 + (xx - cx) ** 2 <= radius ** 2
+        image[disk] = intensity
+        mask[disk] = label
+    image[0, 0] = np.uint16(65535)
+    tifffile.imwrite(input_path, image)
+
+    checkpoint = root / "checkpoint.pt"
+    checkpoint.write_bytes(b"test-only checkpoint placeholder")
+    monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(
+        "bionuclei.adaptive_agent.cnn_pattern_check",
+        lambda _path: CNNPatternCheck(True, "Boundary U Net", 0.04, 0.95, 0.1, 4, "PASS", ()),
+    )
+    monkeypatch.setattr(module.gc, "collect", lambda: None)
+
+    def deterministic_test_inference(inference_input, _checkpoint, output, device="cpu"):
+        measured_image = tifffile.imread(inference_input)
+        assert measured_image.dtype == np.uint16
+        assert int(measured_image.max()) == 65535
+        tifffile.imwrite(output / "segmentation_mask.tif", mask)
+        overlay = np.repeat((measured_image.astype(np.float64) / 65535 * 255).astype(np.uint8)[..., None], 3, axis=2)
+        tifffile.imwrite(output / "overlay.tif", overlay)
+        return {"n_instances": int(mask.max()), "image_shape": list(measured_image.shape)}
+
+    monkeypatch.setattr(module, "predict", deterministic_test_inference)
+    module._run(
+        job_id, user_id, input_path, "e2e-512-uint16.tif", False, "auto",
+        {"nuclei", "morphology", "intensity"}, channel=0, time=0, z=0, field=0,
+    )
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "completed"
+    assert row["retained_copy"] == 0 and row["research_consent"] == 0
+    assert not input_path.exists()
+
+    result_path = root / "results" / "results.json"
+    artifact_path = root / "results" / "expert_agents.json"
+    assert result_path.is_file() and artifact_path.is_file()
+    result = __import__("json").loads(result_path.read_text(encoding="utf-8"))
+    artifact = __import__("json").loads(artifact_path.read_text(encoding="utf-8"))
+
+    profile = result["adaptive_plan"]["profile"]
+    assert profile["shape"] == [512, 512] and profile["dtype"] == "uint16" and profile["max"] == 65535
+    assert result["scientific_execution"] is True
+    assert result["model"]["weights_updated_during_analysis"] is False
+    assert result["model"]["training_reference"] == "Not established"
+    assert result["reports"]["nuclei_count"] == 4
+    mean_intensity = result["reports"]["intensity"]["mean_nuclear_intensity"]
+    assert mean_intensity > 255
+
+    execution = artifact["execution"]
+    assert execution["status"] == "completed" and execution["job_id"] == job_id
+    assert execution["input_sha256"] == result["input_sha256"]
+    assert execution["agent_count"] == 8 and execution["completed_agent_count"] == 8
+    assert execution["incomplete_agents"] == []
+    assert artifact["training_status"]["verified"] is False
+    assert artifact["training_status"]["claim_allowed"] is False
+
+    intensity_agent = next(agent for agent in artifact["agents"] if agent["agent"] == "intensity_agent")
+    assert intensity_agent["status"] == "completed"
+    assert "Raw image max: 65535" in intensity_agent["observations"]
+    assert any(claim["reference"] == "adaptive_plan.profile.max" and claim["value"] == 65535 for claim in intensity_agent["quantitative_claims"])
+    assert any(claim["reference"] == "reports.intensity.mean_nuclear_intensity" and claim["value"] == mean_intensity for claim in intensity_agent["quantitative_claims"])
+
+    with ZipFile(module._archive(job_id)) as archive:
+        names = set(archive.namelist())
+        for required in ("results/analysis_report.html", "results/analysis_report.pdf", "results/expert_agents.json", "results/nuclei_analysis.csv", "results/segmentation_mask.tif", "results/overlay.tif"):
+            assert required in names
+        assert not any(name.endswith("input.tif") or name.endswith("input_plane.tif") or "e2e-512-uint16.tif" in name for name in names)

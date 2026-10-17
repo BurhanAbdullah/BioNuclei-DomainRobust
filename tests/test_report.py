@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from bionuclei.report import build_report
@@ -12,7 +13,7 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
         },
         "model": {
             "architecture": "Boundary U-Net",
-            "training_reference": "BBBC039v1",
+            "training_reference": "Not established",
             "target": "3-class background/interior/boundary prediction",
         },
         "n_instances": 7,
@@ -24,7 +25,10 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
     }
     build_report(payload, tmp_path)
     html = (tmp_path / "analysis_report.html").read_text()
-    data = (tmp_path / "analysis_report.json").read_text()
-    assert "model weights are not updated" in html
-    assert "BBBC039v1" in html
-    assert "analysis_report.json" in data
+    json_path = tmp_path / "analysis_report.json"
+    assert "model weights are not updated" in html.lower()
+    assert "Not established" in html
+    assert "BBBC039v1" not in html
+    assert json_path.is_file()
+    data = json.loads(json_path.read_text())
+    assert data["n_instances"] == 7
