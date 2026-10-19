@@ -330,6 +330,8 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
     assert result_path.is_file() and artifact_path.is_file()
     result = __import__("json").loads(result_path.read_text(encoding="utf-8"))
     artifact = __import__("json").loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["job_id"] == job_id
+    assert result["analysis_modules"] == ["intensity", "morphology", "nuclei"]
 
     profile = result["adaptive_plan"]["profile"]
     assert profile["shape"] == [512, 512] and profile["dtype"] == "uint16" and profile["max"] == 65535
