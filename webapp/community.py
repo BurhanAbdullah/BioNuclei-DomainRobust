@@ -151,10 +151,11 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
     if execution.get("incomplete_agents") != incomplete_agents or execution.get("incomplete_reasons") != []:
         reject("execution manifest reports incomplete reviewers")
     analysis_modules = results.get("analysis_modules")
-    if not isinstance(analysis_modules, list) or any(not isinstance(module, str) for module in analysis_modules) or analysis_modules != sorted(set(analysis_modules)):
-        reject("result analysis_modules are invalid or non-canonical")
-    if execution.get("analysis_modules") != analysis_modules:
-        reject("execution analysis modules do not match the computed result")
+    if not isinstance(analysis_modules, list) or any(not isinstance(module, str) for module in analysis_modules) or len(set(analysis_modules)) != len(analysis_modules):
+        reject("result analysis_modules are invalid or duplicated")
+    canonical_analysis_modules = sorted(analysis_modules)
+    if execution.get("analysis_modules") != canonical_analysis_modules:
+        reject("execution analysis modules do not match the canonical computed result")
     module_requirements = {"morphology_agent": {"morphology"}, "intensity_agent": {"intensity"}, "biological_interpretation_agent": {"morphology", "intensity"}}
 
     for agent in agents:
