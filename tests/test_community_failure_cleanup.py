@@ -595,3 +595,22 @@ const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
                 or "e2e-512-uint16.tif" in name
                 for name in names
             )
+
+
+def test_failure_cleanup_refreshes_expiry_for_queryable_failure(community):
+    module = community
+    job_id = "expired-original-failure"
+    user_id = "guest:expired-original"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+
+    # _seed_job deliberately stores an expiry at "now". If a worker fails
+    # after the original TTL, the truthful failed record must still survive
+    # until its own short retention window elapses.
+    module._cleanup_failed_job(job_id, root)
+    assert module.purge_expired() == 0
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["expires_at"] > module._now().isoformat()
+    assert module.get_job(job_id, user_id)["status"] == "failed"
