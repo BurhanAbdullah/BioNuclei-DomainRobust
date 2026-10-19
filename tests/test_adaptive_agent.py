@@ -73,8 +73,9 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
         def __call__(self, x):
             seen_shapes.append(tuple(x.shape))
             logits = torch.zeros((1, 3, x.shape[-2], x.shape[-1]))
+            logits[:, 0] = 4.0
             logits[:, 1, x.shape[-2] // 4 : 3 * x.shape[-2] // 4,
-                   x.shape[-1] // 4 : 3 * x.shape[-1] // 4] = 4.0
+                   x.shape[-1] // 4 : 3 * x.shape[-1] // 4] = 8.0
             return logits
 
     monkeypatch.setattr(bionuclei.models, "BoundaryUNet", FakeModel)
