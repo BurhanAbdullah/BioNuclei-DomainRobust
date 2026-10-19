@@ -10,6 +10,14 @@ on:
       - "pyproject.toml"
       - "docs/use.html"
       - ".github/workflows/biomcp_web_validation.yml"
+  pull_request:
+    paths:
+      - "src/bionuclei/mcp_server.py"
+      - "webapp/**"
+      - "tests/test_mcp_server.py"
+      - "pyproject.toml"
+      - "docs/use.html"
+      - ".github/workflows/biomcp_web_validation.yml"
   workflow_dispatch:
 
 permissions:
