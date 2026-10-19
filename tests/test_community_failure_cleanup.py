@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import timedelta
 import hashlib
 import io
+import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from zipfile import ZipFile
@@ -475,6 +478,63 @@ def test_public_upload_route_returns_job_bound_verified_specialist_result(commun
         assert execution["analysis_modules"] == result["analysis_modules"]
         assert artifact["training_status"]["verified"] is False
         assert artifact["training_status"]["claim_allowed"] is False
+
+        # Execute the real browser verifier (CommonJS export) against the HTTP-returned
+        # result and specialist artifact, rather than relying on source grep alone.
+        node = shutil.which("node")
+        if node is None:
+            pytest.skip("Node.js is needed to execute the browser specialist verifier")
+        verification_input = module.JOB_ROOT / "browser-verification-input.json"
+        verification_input.write_text(
+            json.dumps(
+                {"job": payload, "result": result, "artifact": artifact},
+                allow_nan=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        verifier_path = (
+            Path(__file__).resolve().parents[1]
+            / "docs"
+            / "assets"
+            / "bionuclei-specialist-verification.js"
+        )
+        verifier_script = r"""
+const fs = require("node:fs");
+const { webcrypto } = require("node:crypto");
+const verifier = require(process.argv[1]);
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+(async () => {
+  const expectedPath = "/jobs/" + encodeURIComponent(input.job.job_id) + "/files/expert_agents.json";
+  const outcome = await verifier.verifySpecialistArtifact({
+    job: input.job,
+    result: input.result,
+    embedded: input.result.expert_agents,
+    fetchJson: async path => {
+      if (path !== expectedPath) throw new Error("unexpected artifact fetch path: " + path);
+      return input.artifact;
+    },
+    cryptoApi: webcrypto
+  });
+  if (!outcome || outcome.ok !== true) throw new Error(outcome && outcome.reason || "verification failed");
+  process.stdout.write("browser-verifier-ok\\n");
+})().catch(error => {
+  console.error(error && error.stack || error);
+  process.exit(1);
+});
+"""
+        browser_verification = subprocess.run(
+            [node, "-e", verifier_script, str(verifier_path), str(verification_input)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        assert browser_verification.returncode == 0, (
+            browser_verification.stdout + browser_verification.stderr
+        )
+        assert "browser-verifier-ok" in browser_verification.stdout
+
         intensity_agent = next(
             agent for agent in artifact["agents"] if agent["agent"] == "intensity_agent"
         )
