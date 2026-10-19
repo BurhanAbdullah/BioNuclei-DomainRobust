@@ -18,11 +18,11 @@ on:
       e4_artifact_id:
         description: "Retained E4 artifact ID containing the frozen checkpoint"
         required: true
-        default: "9912441468"
+        default: "12183110279"
       expected_e4_digest:
         description: "Expected SHA-256 digest of the retained E4 artifact"
         required: true
-        default: "sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa"
+        default: "sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d"
 
 permissions:
   contents: read
@@ -59,8 +59,8 @@ jobs:
           - label: 25pct
             fraction: 0.25
     env:
-      E4_ARTIFACT_ID: ${{ inputs.e4_artifact_id || '9912441468' }}
-      EXPECTED_E4_DIGEST: ${{ inputs.expected_e4_digest || 'sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa' }}
+      E4_ARTIFACT_ID: ${{ inputs.e4_artifact_id || '12183110279' }}
+      EXPECTED_E4_DIGEST: ${{ inputs.expected_e4_digest || 'sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
