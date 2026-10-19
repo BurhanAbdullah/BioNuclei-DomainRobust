@@ -112,7 +112,7 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
 
     if not isinstance(expert, dict):
         reject("artifact is not an object")
-    if expert.get("agent_version") != "1.1":
+    if expert.get("agent_version") != "1.2":
         reject("unsupported specialist artifact version")
     if results.get("scientific_execution") is not True:
         reject("result is not marked as a scientific execution")
@@ -207,7 +207,8 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
     except (TypeError, ValueError):
         reject("canonical execution payload is invalid JSON")
     expected_payload = {
-        "agent_version": "1.1",
+        "agent_version": "1.2",
+        "analysis_modules": analysis_modules,
         "job_id": job_id,
         "job_id_valid": True,
         "input_sha256": input_sha256,
