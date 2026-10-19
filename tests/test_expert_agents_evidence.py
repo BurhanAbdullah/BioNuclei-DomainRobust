@@ -68,6 +68,7 @@ def test_uint16_raw_profile_reaches_intensity_agent_and_is_evidence_bound() -> N
 
     evidence = {
         "reports.intensity": result["reports"]["intensity"],
+        "reports.intensity.max_nuclear_intensity": result["reports"]["intensity"]["max_nuclear_intensity"],
         "adaptive_plan.profile": result["adaptive_plan"]["profile"],
     }
     expected = hashlib.sha256(
