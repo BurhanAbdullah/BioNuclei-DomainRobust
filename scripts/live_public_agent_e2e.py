@@ -80,13 +80,64 @@ def main() -> None:
                 context = browser.new_context(accept_downloads=True)
                 page = context.new_page()
 
+                # Test-only observation wrapper. It never substitutes, rewrites, or
+                # mocks an API response; it clones real responses so the E2E harness
+                # can record the ephemeral guest token/job ID even if Playwright's
+                # response event body is unavailable on a specific browser build.
+                page.add_init_script("""
+                (() => {
+                  const nativeFetch = window.fetch.bind(window);
+                  window.__BIONUCLEI_E2E_TRACE = [];
+                  window.__BIONUCLEI_E2E_GUEST_TOKEN = "";
+                  window.__BIONUCLEI_E2E_JOB_ID = "";
+                  window.fetch = async (...args) => {
+                    const input = args[0];
+                    const options = args[1] || {};
+                    const rawUrl = typeof input === "string" ? input : (input && input.url) || String(input);
+                    const method = String(options.method || (input && input.method) || "GET").toUpperCase();
+                    const response = await nativeFetch(...args);
+                    try {
+                      const url = new URL(rawUrl, window.location.href);
+                      if (url.pathname.includes("/guest-session") || url.pathname.endsWith("/analyze") || /\\/jobs\\/[^/]+$/.test(url.pathname)) {
+                        const record = {path: url.pathname, method, status: response.status, ok: response.ok};
+                        window.__BIONUCLEI_E2E_TRACE.push(record);
+                        if (window.__BIONUCLEI_E2E_TRACE.length > 60) window.__BIONUCLEI_E2E_TRACE.shift();
+                        response.clone().json().then(body => {
+                          if (url.pathname.includes("/guest-session") && body && typeof body.guest_token === "string") {
+                            window.__BIONUCLEI_E2E_GUEST_TOKEN = body.guest_token;
+                            record.response_keys = Object.keys(body).sort();
+                          }
+                          if (url.pathname.endsWith("/analyze") && body && typeof body.job_id === "string") {
+                            window.__BIONUCLEI_E2E_JOB_ID = body.job_id;
+                            record.response_keys = Object.keys(body).sort();
+                          }
+                          if (body && typeof body.detail === "string") record.detail = body.detail.slice(0, 240);
+                        }).catch(error => { record.clone_parse_error = String(error && error.name || "Error"); });
+                      }
+                    } catch (error) {
+                      window.__BIONUCLEI_E2E_TRACE.push({path:"<unparsed>", method, capture_error:String(error && error.name || "Error")});
+                    }
+                    return response;
+                  };
+                })();
+                """)
+
                 def capture_response(response) -> None:
                     try:
                         if "/guest-session" in response.url and response.request.method == "POST":
-                            body = response.json()
-                            if isinstance(body, dict) and body.get("guest_token"):
-                                credentials["guest_token"] = body["guest_token"]
-                                state["guest_token_seen"] = True
+                            state["guest_session_response_seen"] = True
+                            state["guest_session_http_status"] = response.status
+                            state["guest_session_response_url_path"] = response.url.split("?", 1)[0][-160:]
+                            try:
+                                body = response.json()
+                            except Exception as exc:
+                                state["guest_session_response_parse_error"] = type(exc).__name__
+                                body = {}
+                            if isinstance(body, dict):
+                                state["guest_session_response_keys"] = sorted(body.keys())
+                                if body.get("guest_token"):
+                                    credentials["guest_token"] = body["guest_token"]
+                                    state["guest_token_seen"] = True
                         elif response.url.rstrip("/").endswith("/analyze") and response.request.method == "POST":
                             state["analyze_http_status"] = response.status
                             try:
@@ -107,6 +158,15 @@ def main() -> None:
                         pass
 
                 page.on("response", capture_response)
+                page.on("pageerror", lambda exc: state.setdefault("browser_page_errors", []).append(str(exc)[:240]))
+                page.on("console", lambda msg: state.setdefault("browser_console_errors", []).append(msg.text[:240])
+                           if msg.type == "error" and len(state.get("browser_console_errors", [])) < 12 else None)
+                page.on("requestfailed", lambda req: state.setdefault("browser_request_failures", []).append({
+                    "path": re.sub(r"^https?://[^/]+", "", req.url).split("?", 1)[0][-160:],
+                    "method": req.method,
+                    "failure": (req.failure or "unknown")[:160],
+                }) if ("/guest-session" in req.url or "/analyze" in req.url or "bionuclei" in req.url.lower())
+                     and len(state.get("browser_request_failures", [])) < 20 else None)
                 page.goto(SITE_URL, wait_until="domcontentloaded", timeout=90000)
                 page.wait_for_function(
                     "() => window.BIONUCLEI_CONFIG && window.BIONUCLEI_CONFIG.apiBase",
@@ -119,13 +179,53 @@ def main() -> None:
                 )
                 page.locator('[data-access-tab="guest"]').click(timeout=30000)
                 page.locator("#guestButton").click(timeout=30000)
-                page.wait_for_function(
-                    "() => /guest session ready/i.test(document.querySelector('#guestMsg')?.textContent || '')",
-                    timeout=45000,
-                )
+                try:
+                    page.wait_for_function(
+                        "() => /guest session ready/i.test(document.querySelector('#guestMsg')?.textContent || '')",
+                        timeout=45000,
+                    )
+                except Exception:
+                    state["guest_message"] = page.locator("#guestMsg").inner_text()[:300]
+                    state["run_message_before_upload"] = page.locator("#runMsg").inner_text()[:300]
+                    state["guest_button_disabled"] = page.locator("#guestButton").is_disabled()
+                    state["guest_panel_visible"] = page.locator('[data-access-panel="guest"]').is_visible()
+                    state["page_url_path"] = page.url.split("?", 1)[0][-180:]
+                    state["browser_fetch_trace"] = page.evaluate("window.__BIONUCLEI_E2E_TRACE || []")
+                    state["browser_page_errors"] = state.get("browser_page_errors", [])
+                    state["browser_console_errors"] = state.get("browser_console_errors", [])
+                    state["browser_request_failures"] = state.get("browser_request_failures", [])
+                    raise AssertionError("Guest session did not reach the ready state; inspect sanitized browser diagnostics.")
+                if not credentials.get("guest_token"):
+                    # The browser's own real fetch succeeded (the UI displayed ready),
+                    # so use the in-memory clone of that response as the observation
+                    # channel; never log the token value.
+                    observed_token = page.evaluate("window.__BIONUCLEI_E2E_GUEST_TOKEN || ''")
+                    if isinstance(observed_token, str) and observed_token:
+                        credentials["guest_token"] = observed_token
+                        state["guest_token_seen"] = True
+                        state["guest_token_source"] = "cloned browser response"
+                state["browser_fetch_trace"] = page.evaluate("window.__BIONUCLEI_E2E_TRACE || []")
+                if not state["guest_token_seen"]:
+                    state["guest_message"] = page.locator("#guestMsg").inner_text()[:300]
+                    state["run_message_before_upload"] = page.locator("#runMsg").inner_text()[:300]
+                    state["browser_page_errors"] = state.get("browser_page_errors", [])
+                    state["browser_console_errors"] = state.get("browser_console_errors", [])
+                    state["browser_request_failures"] = state.get("browser_request_failures", [])
                 require(state["guest_token_seen"] is True, "Guest session response/token was not observed")
                 page.locator("#image").set_input_files(str(fixture))
                 page.locator("#analyzeButton").click(timeout=30000)
+                # Get the job ID from the real response clone if the browser event
+                # listener did not receive the response body.
+                if not credentials.get("job_id"):
+                    try:
+                        page.wait_for_function("() => Boolean(window.__BIONUCLEI_E2E_JOB_ID)", timeout=10000)
+                        observed_job_id = page.evaluate("window.__BIONUCLEI_E2E_JOB_ID || ''")
+                        if isinstance(observed_job_id, str) and observed_job_id:
+                            credentials["job_id"] = observed_job_id
+                            state["job_id_seen"] = True
+                            state["job_id_source"] = "cloned browser response"
+                    except Exception:
+                        pass
 
                 # Poll the owner-scoped job record directly and track actual stage
                 # transitions. A native worker that stalls at "planning" should
@@ -351,7 +451,7 @@ def main() -> None:
             # screenshot fails. Never serialize guest tokens or auth headers.
             try:
                 Path("live-agent-e2e-failure.json").write_text(
-                    json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str) + "\\n",
+                    json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str) + "\n",
                     encoding="utf-8",
                 )
             except Exception:
