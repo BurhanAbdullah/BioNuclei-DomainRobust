@@ -24,6 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
   "pytest>=7.4",
+  "httpx2>=2.5",
 ]
 dev = [
   "pytest>=7.4",

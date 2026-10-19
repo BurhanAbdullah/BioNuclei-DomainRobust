@@ -21,11 +21,17 @@ def _fmt(value: object, digits: int = 4) -> str:
 
 def _training_status(payload: dict[str, Any]) -> dict[str, Any]:
     status = (payload.get("expert_agents") or {}).get("training_status") or {}
+    verified = bool(status.get("verified", False) and status.get("claim_allowed", False))
+    validated_images = status.get("validated_images")
+    if isinstance(validated_images, bool) or not isinstance(validated_images, int) or validated_images < 0:
+        validated_images = None
+    if not verified:
+        validated_images = None
     return {
-        "verified": bool(status.get("verified", False)),
-        "validated_images": int(status.get("validated_images", 0) or 0),
-        "training_reference": status.get("training_reference", "Not established"),
-        "claim_allowed": bool(status.get("claim_allowed", False)),
+        "verified": verified,
+        "validated_images": validated_images,
+        "training_reference": status.get("training_reference", "Not established") if verified else "Not established",
+        "claim_allowed": verified,
     }
 
 
@@ -52,13 +58,20 @@ def _interpretation(payload: dict[str, Any]) -> list[str]:
 
 
 def _agent_lines(payload: dict[str, Any]) -> list[str]:
+    """Render specialist execution status truthfully in detailed reports."""
     expert = payload.get("expert_agents") or {}
     lines: list[str] = []
     for item in expert.get("agents", []):
         name = _clean(item.get("agent", "specialist agent"))
+        status = str(item.get("status", "unknown")).lower()
         observations = "; ".join(_clean(x) for x in item.get("observations", []))
         limitations = "; ".join(_clean(x) for x in item.get("limitations", []))
-        text = f"{name}: {observations or 'No additional observation.'}"
+        if status == "not_applicable":
+            text = f"{name}: NOT APPLICABLE — {observations or 'Required analysis module was not selected.'}"
+        elif status != "completed":
+            text = f"{name}: INCOMPLETE — {observations or 'Specialist execution did not complete.'}"
+        else:
+            text = f"{name}: COMPLETED — {observations or 'No additional observation.'}"
         if limitations:
             text += f" Limitation: {limitations}"
         lines.append(text)
@@ -87,7 +100,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path) -> Path:
     heading = ParagraphStyle("bn_heading", fontName=bold, fontSize=12, leading=15, spaceBefore=8, spaceAfter=5)
     body = ParagraphStyle("bn_body", fontName=regular, fontSize=9.5, leading=13, spaceAfter=6)
     story = [Paragraph("BioNuclei Quantitative Bioimaging Analysis Report", title), Paragraph("Evidence based nuclear image analysis and scientific interpretation", body)]
-    summary = [["Status", _clean(plan.get("status", "UNKNOWN"))], ["Nuclei detected", _clean(reports.get("nuclei_count", payload.get("n_instances", "Not available")))], ["Image shape", _clean(profile.get("shape", "Not available"))], ["Data type", _clean(profile.get("dtype", "Not available"))], ["Model", _clean(model.get("architecture", "Boundary U Net"))], ["Training reference", _clean(model.get("training_reference", "BBBC039v1"))], ["Specialist agents", str(len((payload.get("expert_agents") or {}).get("agents", [])))]]
+    summary = [["Status", _clean(plan.get("status", "UNKNOWN"))], ["Nuclei detected", _clean(reports.get("nuclei_count", payload.get("n_instances", "Not available")))], ["Image shape", _clean(profile.get("shape", "Not available"))], ["Data type", _clean(profile.get("dtype", "Not available"))], ["Model", _clean(model.get("architecture", "Boundary U Net"))], ["Training reference", _clean(model.get("training_reference", "Not established"))], ["Specialist agents", str(len((payload.get("expert_agents") or {}).get("agents", [])))]]
     table = Table(summary, colWidths=[55 * mm, 110 * mm])
     table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), regular), ("FONTNAME", (0, 0), (0, -1), bold), ("GRID", (0, 0), (-1, -1), .35, colors.grey), ("FONTSIZE", (0, 0), (-1, -1), 9), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
     story += [table, Paragraph("1. Executive Summary", heading)]
@@ -103,10 +116,15 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path) -> Path:
     mt = Table(measurements, colWidths=[55 * mm, 110 * mm])
     mt.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), regular), ("FONTNAME", (0, 0), (0, -1), bold), ("GRID", (0, 0), (-1, -1), .35, colors.grey), ("FONTSIZE", (0, 0), (-1, -1), 9)]))
     story.append(mt)
-    story.append(Paragraph("4. Specialist Evidence Chain", heading))
+    story.append(Paragraph("4. Specialist Execution and Evidence Status", heading))
     for line in _agent_lines(payload) or ["No specialist agent findings were recorded for this run."]:
         story.append(Paragraph(html.escape(line), body))
-    story.append(Paragraph(f"Verified training corpus status: {training['validated_images']} validated images. Model weights are not updated during user analysis. A claim of training on 1000 or more datasets requires a verified training manifest establishing that count.", body))
+    training_text = (
+        f"Verified specialist training corpus: {training['validated_images']} validated images."
+        if training["verified"] and training["claim_allowed"] and training["validated_images"] is not None
+        else "Training provenance is not established; no training-image count is claimed."
+    )
+    story.append(Paragraph(html.escape(training_text + " Model weights are not updated during user analysis."), body))
     story.append(Paragraph("5. Limitations", heading))
     for item in ["The CNN analysisability gate is not a calibrated diagnostic classifier.", "Object counts and morphology depend on segmentation quality and acquisition conditions.", "Fluorescence intensity depends on acquisition and staining conditions.", "Quantitative morphology does not establish a specific biological mechanism without appropriate controls.", "This software is not a clinical diagnostic system."]:
         story.append(Paragraph(html.escape(item), body))
@@ -126,7 +144,7 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
     for text in _interpretation(payload):
         sections.append(f"<p>{html.escape(_clean(text))}</p>")
     agents = "".join(f"<li>{html.escape(line)}</li>" for line in _agent_lines(payload)) or "<li>No specialist agent findings were recorded for this run.</li>"
-    page = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>BioNuclei Analysis Report</title><style>body{{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;line-height:1.55}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #bbb;padding:8px;text-align:left}}h1,h2{{margin-top:1.5em}}</style></head><body><h1>BioNuclei Quantitative Bioimaging Analysis Report</h1><p><strong>Status:</strong> {html.escape(_clean(plan.get('status','UNKNOWN')))}</p><table><tr><th>Nuclei detected</th><td>{html.escape(_clean(reports.get('nuclei_count',payload.get('n_instances','Not available'))))}</td></tr><tr><th>Model</th><td>{html.escape(_clean(model.get('architecture','Boundary U Net')))}</td></tr><tr><th>Training reference</th><td>{html.escape(_clean(model.get('training_reference','BBBC039v1')))}</td></tr></table><h2>Evidence summary</h2>{''.join(sections)}<h2>Specialist evidence chain</h2><ul>{agents}</ul><p><strong>Model weights are not updated during user analysis.</strong> Verified specialist training corpus: {training['validated_images']} validated images. Claims about larger training counts require a verified manifest.</p><h2>Limitations</h2><p>This software reports computational measurements and evidence. It is not a clinical diagnostic system.</p></body></html>"""
+    page = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>BioNuclei Analysis Report</title><style>body{{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;line-height:1.55}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #bbb;padding:8px;text-align:left}}h1,h2{{margin-top:1.5em}}</style></head><body><h1>BioNuclei Quantitative Bioimaging Analysis Report</h1><p><strong>Status:</strong> {html.escape(_clean(plan.get('status','UNKNOWN')))}</p><table><tr><th>Nuclei detected</th><td>{html.escape(_clean(reports.get('nuclei_count',payload.get('n_instances','Not available'))))}</td></tr><tr><th>Model</th><td>{html.escape(_clean(model.get('architecture','Boundary U Net')))}</td></tr><tr><th>Training reference</th><td>{html.escape(_clean(model.get('training_reference','Not established')))}</td></tr></table><h2>Evidence summary</h2>{''.join(sections)}<h2>Specialist execution and evidence status</h2><ul>{agents}</ul><p><strong>Model weights are not updated during user analysis.</strong> {html.escape(f"Verified specialist training corpus: {training['validated_images']} validated images." if training["verified"] and training["claim_allowed"] and training["validated_images"] is not None else "Training provenance is not established; no training-image count is claimed.")}</p><h2>Limitations</h2><p>This software reports computational measurements and evidence. It is not a clinical diagnostic system.</p></body></html>"""
     html_path = output_dir / "analysis_report.html"
     html_path.write_text(page, encoding="utf-8")
     (output_dir / "analysis_report.json").write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")

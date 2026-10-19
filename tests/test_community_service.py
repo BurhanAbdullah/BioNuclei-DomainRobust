@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -64,3 +65,26 @@ def test_purge_expired_removes_job(isolated_jobs):
         conn.commit()
     assert isolated_jobs.purge_expired() == 1
     assert not root.exists()
+
+
+def test_delete_research_copy_is_owner_scoped_and_requires_opt_in(isolated_jobs):
+    module = isolated_jobs
+    job_id = "research-copy-owned"
+    root = module._job_dir(job_id) / "research_copy"
+    root.mkdir(parents=True)
+    (root / "private.txt").write_text("retained", encoding="utf-8")
+    now = module._now().isoformat()
+    expiry = (module._now() + timedelta(hours=1)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id,"completed",now,now,expiry,"owner-a","x.tif",1,1,"auto","nuclei"),
+        )
+        conn.commit()
+    with pytest.raises(FileNotFoundError):
+        module.delete_research_copy(job_id, "owner-b")
+    assert (root / "private.txt").is_file()
+    assert module.delete_research_copy(job_id, "owner-a") is True
+    assert not root.exists()
+    row = module._get_job(job_id, "owner-a")
+    assert row is not None and row["retained_copy"] == 0 and row["research_consent"] == 0

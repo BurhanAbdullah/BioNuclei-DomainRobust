@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -14,36 +13,8 @@ from fastapi.responses import FileResponse, Response
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
-from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
+from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
 
-
-def _failure_cleanup(job_id: str, root):
-    """Delete transient artifacts but keep a queryable failed-job record.
-
-    The previous implementation deleted the database row on worker failure. A
-    browser polling that job then received 404 and could only report a generic
-    connection interruption. Keeping a minimal failed row makes the API tell
-    the truth while still removing the uploaded image and derived artifacts.
-    The detailed exception remains in server logs.
-    """
-    shutil.rmtree(root, ignore_errors=True)
-    (community_service.JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
-    with community_service.DB_LOCK, community_service._db() as conn:
-        conn.execute(
-            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
-            (
-                "failed",
-                "Analysis worker failed before producing a complete result. Please retry the analysis.",
-                community_service._now().isoformat(),
-                job_id,
-            ),
-        )
-        conn.commit()
-
-
-# community._run resolves this helper through its module globals. Replace only
-# the failure cleanup behavior; the scientific pipeline itself is unchanged.
-community_service._cleanup_failed_job = _failure_cleanup
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
 allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
@@ -57,7 +28,7 @@ def root():
 def health():
     try: available=_checkpoint().is_file()
     except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
+    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
 
 @app.get("/algorithms")
 def algorithms():
@@ -146,6 +117,16 @@ def result_file(request:Request,job_id:str,filename:str):
     except (FileNotFoundError,ValueError) as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     media="application/json" if filename.endswith(".json") else "text/csv" if filename.endswith(".csv") else "application/pdf" if filename.endswith(".pdf") else "image/tiff"
     return FileResponse(path,media_type=media,filename=filename,headers={"Cache-Control":"no-store"})
+
+@app.delete("/jobs/{job_id}/research-copy")
+def remove_research_copy(request: Request, job_id: str):
+    user = authenticate_optional(request)
+    try:
+        deleted = delete_research_copy(job_id, user.id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"job_id": job_id, "research_copy_deleted": deleted}
+
 
 @app.delete("/jobs/{job_id}")
 def remove_job(request:Request,job_id:str):
