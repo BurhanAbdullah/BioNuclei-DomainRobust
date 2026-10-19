@@ -250,11 +250,14 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             intensity_value_count += 1
     if intensity_value_count == 0:
         intensity_observations.append("No finite per-nucleus intensity summary was produced; confirm that instances were detected and the intensity module ran.")
+    intensity_evidence_refs = ["reports.intensity", "adaptive_plan.profile"]
+    if is_number(intensity.get("max_nuclear_intensity")):
+        intensity_evidence_refs.append("reports.intensity.max_nuclear_intensity")
     findings.append(AgentFinding(
         "intensity_agent",
         tuple(intensity_observations),
         ("Fluorescence intensity depends on acquisition, staining, exposure, background, detector response, and segmentation boundaries.",),
-        ("reports.intensity", "adaptive_plan.profile"),
+        tuple(intensity_evidence_refs),
     ))
 
     population_observations: list[str] = []
