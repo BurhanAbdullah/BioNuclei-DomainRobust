@@ -104,7 +104,7 @@ def test_recover_interrupted_job_fails_orphan_and_removes_transient_data(isolate
     now = module._now()
     created = (now - timedelta(minutes=20)).isoformat()
     updated = (now - timedelta(minutes=10)).isoformat()
-    expires = (now + timedelta(hours=1)).isoformat()
+    expires = (now - timedelta(hours=2)).isoformat()
     with module.DB_LOCK, module._db() as conn:
         conn.execute(
             "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -113,9 +113,13 @@ def test_recover_interrupted_job_fails_orphan_and_removes_transient_data(isolate
         conn.commit()
 
     assert module.recover_interrupted_jobs(now=now, stale_after=timedelta(minutes=5)) == 1
+    # Failure persistence starts a fresh, finite retention window even when
+    # the abandoned active job's original expiry elapsed during the outage.
+    assert module.purge_expired() == 0
     row = module._get_job(job_id, user_id)
     assert row is not None and row["status"] == "failed"
     assert "worker stopped" in row["error"].lower()
+    assert module._get_job(job_id, user_id)["expires_at"] > now.isoformat()
     assert not root.exists()
     assert not archive.exists()
     assert module.get_job(job_id, user_id)["status"] == "failed"
