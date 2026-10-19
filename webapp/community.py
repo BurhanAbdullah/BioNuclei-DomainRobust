@@ -280,13 +280,16 @@ def _cleanup_failed_job(job_id: str, root: Path) -> None:
     """Remove transient artifacts while preserving a truthful queryable failure."""
     shutil.rmtree(root, ignore_errors=True)
     (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    failed_at = _now()
+    expires_at = (failed_at + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
     with DB_LOCK, _db() as conn:
         conn.execute(
-            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
             (
                 "failed",
                 "Analysis worker failed before producing a complete result. Please retry the analysis.",
-                _now().isoformat(),
+                failed_at.isoformat(),
+                expires_at,
                 job_id,
             ),
         )
@@ -605,10 +608,11 @@ def recover_interrupted_jobs(
                 worker = ACTIVE_JOB_THREADS.get(job_id)
                 if worker is not None and worker.is_alive():
                     continue
+            expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
             result = conn.execute(
-                f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ? "
+                f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
                 f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
-                (message, current_time.isoformat(), job_id, *active_statuses, cutoff),
+                (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
             )
             if result.rowcount:
                 interrupted.append(job_id)
