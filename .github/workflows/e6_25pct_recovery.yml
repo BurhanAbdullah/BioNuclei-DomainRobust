@@ -3,10 +3,11 @@ name: E6 25pct recovery
 # Dedicated recovery path for the only repeatedly failing E6 fraction.
 # Scientific settings remain frozen: fraction=0.25, n=8, seed=42, epochs=20.
 on:
-  # This is an exceptional 25% recovery lane. The canonical E6 workflow already
-  # runs all four fractions serially; automatically launching this lane on the
-  # same source change doubles CPU/memory pressure and can sabotage both runs.
-  # Keep it manually dispatchable for a deliberate single-fraction recovery.
+  # This is an exceptional 25% recovery lane. The canonical E6 workflow
+  # already runs all four preregistered fractions. Automatically launching this
+  # lane too consumes an extra hosted runner and Actions minutes; jobs do not
+  # share physical CPU/RAM, but can consume repository concurrency capacity.
+  # Keep this manually dispatchable for a deliberate single-fraction recovery.
   workflow_dispatch:
 
 permissions:
