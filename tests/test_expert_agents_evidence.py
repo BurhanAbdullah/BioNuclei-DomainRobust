@@ -33,7 +33,7 @@ def _result(raw_max: int = 65535) -> dict:
         "reports": {
             "nuclei_count": 2,
             "morphology": {"mean_area": 122},
-            "intensity": {"mean_nuclear_intensity": 1200},
+            "intensity": {"mean_nuclear_intensity": 1200, "mean_max_intensity": 30000, "max_nuclear_intensity": raw_max},
             "spatial": {
                 "instance_count": 2,
                 "unit": "pixels",
