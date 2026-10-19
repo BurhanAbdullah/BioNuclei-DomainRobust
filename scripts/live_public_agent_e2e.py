@@ -107,6 +107,7 @@ def main() -> None:
                     str(configured_api).rstrip("/") == API_BASE,
                     f"Published UI API mismatch: page={configured_api!r}, expected={API_BASE!r}",
                 )
+                page.locator('[data-access-tab="guest"]').click(timeout=30000)
                 page.locator("#guestButton").click(timeout=30000)
                 page.wait_for_function(
                     "() => /guest session ready/i.test(document.querySelector('#guestMsg')?.textContent || '')",
