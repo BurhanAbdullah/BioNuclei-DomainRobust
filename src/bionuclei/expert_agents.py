@@ -382,7 +382,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     incomplete_agents = [agent["agent"] for agent in agent_outputs if agent["status"] not in {"completed", "not_applicable"}]
     execution_payload = {
         "agent_version": "1.2",
-        "analysis_modules": modules,
+        "analysis_modules": sorted(modules),
         "job_id": job_id if job_id_valid else None,
         "job_id_valid": job_id_valid,
         "input_sha256": input_sha256 if input_hash_valid else None,
