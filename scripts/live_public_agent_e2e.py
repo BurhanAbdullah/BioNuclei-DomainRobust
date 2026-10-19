@@ -43,7 +43,10 @@ def build_uint16_fixture(path: Path) -> str:
     ]
     for cy, cx, radius, intensity in circles:
         image[(yy - cy) ** 2 + (xx - cx) ** 2 <= radius ** 2] = np.uint16(intensity)
-    image[100, 100] = np.uint16(65535)
+    # A small saturated nuclear core survives ordinary instance masks more
+    # reliably than a single-pixel sentinel while affecting far less than 1%
+    # of the field. The test still requires real inference and real measurements.
+    image[97:104, 97:104] = np.uint16(65535)
     tifffile.imwrite(path, image)
     reread = tifffile.imread(path)
     assert reread.shape == (512, 512) and reread.dtype == np.uint16
@@ -116,11 +119,73 @@ def main() -> None:
                 require(state["guest_token_seen"] is True, "Guest session response/token was not observed")
                 page.locator("#image").set_input_files(str(fixture))
                 page.locator("#analyzeButton").click(timeout=30000)
+
+                # Poll the owner-scoped job record directly and track actual stage
+                # transitions. A native worker that stalls at "planning" should
+                # produce a diagnosis in minutes, not consume a 20-minute blind wait.
+                analysis_started = time.monotonic()
+                deadline = analysis_started + ANALYSIS_TIMEOUT_MS / 1000.0
+                stall_timeout = int(os.environ.get("BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS", "240"))
+                last_signature = None
+                last_transition_at = analysis_started
+                state["job_timeline"] = []
+                job_response = None
+                job = None
+                while time.monotonic() < deadline:
+                    if not credentials.get("job_id") or not credentials.get("guest_token"):
+                        time.sleep(0.5)
+                        continue
+                    job_id = credentials["job_id"]
+                    token = credentials["guest_token"]
+                    headers = {"X-BioNuclei-Guest-Token": token}
+                    try:
+                        job_response = requests.get(f"{API_BASE}/jobs/{job_id}", headers=headers, timeout=20)
+                        state["last_job_http_status"] = job_response.status_code
+                        if job_response.status_code == 200:
+                            job = job_response.json()
+                            status = str(job.get("status") or "unknown")
+                            updated_at = str(job.get("updated_at") or "")
+                            signature = (status, updated_at)
+                            if signature != last_signature:
+                                state["job_timeline"].append({
+                                    "status": status,
+                                    "updated_at": updated_at,
+                                    "seconds_since_submit": round(time.monotonic() - analysis_started, 1),
+                                })
+                                last_signature = signature
+                                last_transition_at = time.monotonic()
+                            state["last_job_status"] = status
+                            if status == "failed":
+                                state["backend_error"] = job.get("error")
+                                raise AssertionError(
+                                    f"Real model job failed in the public workflow: {job.get('error') or 'no error detail'}"
+                                )
+                            if status == "completed":
+                                break
+                            if time.monotonic() - last_transition_at > stall_timeout:
+                                raise AssertionError(
+                                    f"Analysis worker made no status/heartbeat progress for {stall_timeout}s; "
+                                    f"status={status!r}, updated_at={updated_at!r}. "
+                                    "Inspect Render worker logs and memory limits."
+                                )
+                        elif job_response.status_code not in {429, 502, 503, 504}:
+                            raise AssertionError(
+                                f"Owned job polling returned HTTP {job_response.status_code}: "
+                                f"{job_response.text[:300]}"
+                            )
+                    except requests.RequestException as exc:
+                        state["last_poll_error"] = type(exc).__name__
+                    time.sleep(5)
+                else:
+                    raise AssertionError(
+                        f"Analysis timed out after {ANALYSIS_TIMEOUT_MS / 1000:.0f}s; "
+                        f"last observed status={state.get('last_job_status')!r}"
+                    )
+                require(job is not None and job.get("status") == "completed",
+                        f"Public job did not complete: {None if job is None else job.get('status')!r}")
                 page.wait_for_function(
-                    "() => { const p=document.querySelector('#resultPanel'); "
-                    "const m=document.querySelector('#runMsg')?.textContent || ''; "
-                    "return (p && !p.hidden) || /analysis status: failed/i.test(m); }",
-                    timeout=ANALYSIS_TIMEOUT_MS,
+                    "() => { const p=document.querySelector('#resultPanel'); return !!p && !p.hidden; }",
+                    timeout=60000,
                 )
                 status_text = page.locator("#runMsg").inner_text()
                 state["run_message"] = status_text
@@ -248,9 +313,17 @@ def main() -> None:
                 browser.close()
         except Exception:
             try:
-                if page is not None:
-                    (Path("live-agent-e2e-failure.png")).parent.mkdir(parents=True, exist_ok=True)
+                if page is not None and not page.is_closed():
                     page.screenshot(path="live-agent-e2e-failure.png", full_page=True, timeout=15000)
+            except Exception:
+                pass
+            # Persist redacted status/timing diagnostics even if the browser or
+            # screenshot fails. Never serialize guest tokens or auth headers.
+            try:
+                Path("live-agent-e2e-failure.json").write_text(
+                    json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str) + "\\n",
+                    encoding="utf-8",
+                )
             except Exception:
                 pass
             print(json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str))
