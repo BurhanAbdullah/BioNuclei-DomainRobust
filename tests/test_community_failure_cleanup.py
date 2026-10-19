@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import tifffile
+import pandas as pd
 
 from bionuclei.adaptive_agent import CNNPatternCheck
 
@@ -331,7 +332,7 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
     result = __import__("json").loads(result_path.read_text(encoding="utf-8"))
     artifact = __import__("json").loads(artifact_path.read_text(encoding="utf-8"))
     assert result["job_id"] == job_id
-    assert result["analysis_modules"] == ["intensity", "morphology", "nuclei"]
+    assert result["analysis_modules"] == ["morphology", "intensity", "nuclei"]
 
     profile = result["adaptive_plan"]["profile"]
     assert profile["shape"] == [512, 512] and profile["dtype"] == "uint16" and profile["max"] == 65535
