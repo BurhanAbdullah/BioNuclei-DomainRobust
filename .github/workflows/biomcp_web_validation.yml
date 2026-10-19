@@ -67,13 +67,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Validate public console
+      - name: Validate public console redirect
         run: |
           set -euo pipefail
+          # docs/use.html intentionally retires the old developer console and
+          # redirects users to the maintained BioNuclei Lab. MCP tools are
+          # tested against the actual registry/server in the MCP jobs above.
           test -s docs/use.html
-          grep -q "inspect_image" docs/use.html
-          grep -q "predict_image" docs/use.html
-          grep -q "evaluate_image" docs/use.html
-          grep -q "compute_instance_metrics" docs/use.html
-          grep -q "read_provenance" docs/use.html
-          echo "Public BioMCP console: PASS"
+          grep -q 'http-equiv="refresh"' docs/use.html
+          grep -q 'url=bionuclei-lab.html' docs/use.html
+          grep -q 'old developer console has been retired' docs/use.html
+          grep -q 'href="bionuclei-lab.html"' docs/use.html
+          test -s docs/bionuclei-lab.html
+          echo "Public BioMCP console redirect: PASS"
