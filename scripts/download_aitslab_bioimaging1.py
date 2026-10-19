@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import re
-import hashlib
 import shutil
 import socket
 import tempfile
@@ -55,7 +55,7 @@ def _retry_delay(attempt: int, error: BaseException) -> float:
 def _is_retryable(error: BaseException) -> bool:
     if isinstance(error, HTTPError):
         return error.code in {408, 425, 429} or 500 <= error.code <= 599
-    return isinstance(error, (URLError, TimeoutError, socket.timeout, ConnectionError, OSError))
+    return isinstance(error, (URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, json.JSONDecodeError))
 
 
 def get_json(url: str) -> dict:
@@ -69,7 +69,7 @@ def get_json(url: str) -> dict:
             if not isinstance(payload, dict):
                 raise RuntimeError(f"Expected a JSON object from {url}")
             return payload
-        except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, OSError, json.JSONDecodeError, RuntimeError) as exc:
+        except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, json.JSONDecodeError, RuntimeError) as exc:
             last_error = exc
             if not _is_retryable(exc) or attempt == DOWNLOAD_ATTEMPTS:
                 break
@@ -137,7 +137,7 @@ def download_archive(url: str, destination: Path, metadata: dict) -> Path:
                 flush=True,
             )
             return destination
-        except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+        except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, RuntimeError, ValueError) as exc:
             last_error = exc
             partial.unlink(missing_ok=True)
             if not _is_retryable(exc) and not isinstance(exc, RuntimeError):
