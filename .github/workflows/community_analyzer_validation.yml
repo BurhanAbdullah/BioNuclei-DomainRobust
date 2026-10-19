@@ -154,8 +154,11 @@ jobs:
   live:
     name: Live Render endpoint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Check service root
         run: |
           set -euo pipefail
@@ -202,3 +205,28 @@ jobs:
           grep -q 'morphology' /tmp/algorithms.json
           grep -q 'intensity' /tmp/algorithms.json
           echo 'Render algorithms: PASS'
+      - name: Check deployed source revision on main pushes
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_SHA}"
+          # Git checkout/history is used for ancestry; do not rely on a static
+          # list of older artifact/deploy IDs or accept a healthy stale runtime.
+          for attempt in $(seq 1 24); do
+            health_json="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+              --retry 2 --retry-delay 2 \
+              https://bionuclei-community-analyzer.onrender.com/health 2>/dev/null || true)"
+            deployed_branch="$(printf '%s' "$health_json" | jq -r '.render_git_branch // empty' 2>/dev/null || true)"
+            deployed_commit="$(printf '%s' "$health_json" | jq -r '.render_git_commit // empty' 2>/dev/null || true)"
+            if [ "$deployed_branch" = "main" ] && [[ "$deployed_commit" =~ ^[0-9a-f]{40}$ ]] \
+              && git cat-file -e "${deployed_commit}^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$expected" "$deployed_commit"; then
+              echo "Render deployment contains ${expected}; deployed commit=${deployed_commit} (attempt ${attempt}/24)."
+              exit 0
+            fi
+            echo "Render not yet on a commit containing ${expected}; branch=${deployed_branch:-unknown}, commit=${deployed_commit:-unknown} (attempt ${attempt}/24)."
+            sleep 15
+          done
+          echo "::error::Render is healthy but not running a commit containing current main SHA ${expected}."
+          echo "Check the Render service's linked repository/branch, auto-deploy setting, and latest failed deploy."
+          exit 1
