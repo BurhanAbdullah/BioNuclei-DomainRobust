@@ -67,7 +67,7 @@
 
       const artifact = await fetchJson("/jobs/" + encodeURIComponent(jobId) + "/files/expert_agents.json");
       if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) return fail("specialist artifact is not a JSON object");
-      if (artifact.agent_version !== "1.1") return fail("unsupported specialist artifact version");
+      if (artifact.agent_version !== "1.2") return fail("unsupported specialist artifact version");
       if (!embedded || stableJson(artifact) !== stableJson(embedded)) return fail("downloaded artifact differs from the embedded job result");
 
       const execution = artifact.execution;
@@ -136,7 +136,7 @@
       if (artifact.training_status.verified !== true && artifact.training_status.claim_allowed !== false) return fail("unverified training provenance is not explicitly disallowed");
 
       const expectedPayload = {
-        agent_version: "1.1",
+        agent_version: "1.2",
         job_id: execution.job_id,
         job_id_valid: execution.job_id_valid,
         input_sha256: execution.input_sha256,
