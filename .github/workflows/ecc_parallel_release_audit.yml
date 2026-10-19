@@ -75,7 +75,7 @@ jobs:
       - name: Install from package metadata
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+          python -m pip install -e ".[test,web,mcp]"
       - name: Environment and test verification
         run: |
           python - <<'PY'
