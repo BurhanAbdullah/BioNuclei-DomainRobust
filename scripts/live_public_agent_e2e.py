@@ -75,6 +75,50 @@ def main() -> None:
         browser = None
         page = None
         try:
+            # Fail fast if the public API is serving code older than the merged
+            # runtime fix. Render exposes both its branch and deployment commit;
+            # verifying the source commit avoids attributing a stale deployment
+            # failure to the newly merged implementation.
+            health_response = None
+            for attempt in range(3):
+                try:
+                    health_response = requests.get(f"{API_BASE}/health", timeout=15)
+                    state["api_health_http_status"] = health_response.status_code
+                    if health_response.status_code == 200:
+                        break
+                    state["api_health_body"] = health_response.text[:240]
+                except requests.RequestException as exc:
+                    state["api_health_request_error"] = type(exc).__name__
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+            require(
+                health_response is not None and health_response.status_code == 200,
+                f"Public API health check failed before upload: HTTP {state.get('api_health_http_status')!r}",
+            )
+            health = health_response.json()
+            state["render_git_commit"] = health.get("render_git_commit")
+            state["render_git_branch"] = health.get("render_git_branch")
+            state["checkpoint_available"] = health.get("checkpoint_available")
+            require(health.get("status") == "ok" and health.get("checkpoint_available") is True,
+                    f"Public API is not analysis-ready: status={health.get('status')!r}, checkpoint_available={health.get('checkpoint_available')!r}")
+            deployed_commit = str(health.get("render_git_commit") or "")
+            require(bool(re.fullmatch(r"[0-9a-f]{40}", deployed_commit)),
+                    f"Render health did not expose a valid deployed Git commit: {deployed_commit!r}")
+            require(health.get("render_git_branch") == "main",
+                    f"Public API is not deployed from main: branch={health.get('render_git_branch')!r}")
+            comparison = requests.get(
+                "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/compare/"
+                f"3f7d420f3ec005f8465888bd838d7dc1da0ee493...{deployed_commit}",
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=20,
+            )
+            state["backend_fix_commit_comparison_http_status"] = comparison.status_code
+            require(comparison.status_code == 200,
+                    f"Could not verify deployed Render commit ancestry: HTTP {comparison.status_code}")
+            comparison_payload = comparison.json()
+            state["backend_fix_commit_comparison_status"] = comparison_payload.get("status")
+            require(comparison_payload.get("status") in {"ahead", "identical"},
+                    f"Render is serving a commit that does not contain the backend fix; deployed={deployed_commit}, comparison={comparison_payload.get('status')!r}")
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 context = browser.new_context(accept_downloads=True)
