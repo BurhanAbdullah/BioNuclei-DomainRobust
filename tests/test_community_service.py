@@ -88,3 +88,64 @@ def test_delete_research_copy_is_owner_scoped_and_requires_opt_in(isolated_jobs)
     assert not root.exists()
     row = module._get_job(job_id, "owner-a")
     assert row is not None and row["retained_copy"] == 0 and row["research_consent"] == 0
+
+
+def test_recover_interrupted_job_fails_orphan_and_removes_transient_data(isolated_jobs):
+    module = isolated_jobs
+    job_id = "orphaned-planning-job"
+    user_id = "user-orphan"
+    root = module._job_dir(job_id)
+    root.mkdir(parents=True)
+    (root / "input.tif").write_bytes(b"private transient input")
+    (root / "results").mkdir()
+    (root / "results" / "partial.json").write_text("{}", encoding="utf-8")
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"partial archive")
+    now = module._now()
+    created = (now - timedelta(minutes=20)).isoformat()
+    updated = (now - timedelta(minutes=10)).isoformat()
+    expires = (now + timedelta(hours=1)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id, "planning", created, updated, expires, user_id, "input.tif", 0, 0, "auto", "intensity,nuclei"),
+        )
+        conn.commit()
+
+    assert module.recover_interrupted_jobs(now=now, stale_after=timedelta(minutes=5)) == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "failed"
+    assert "worker stopped" in row["error"].lower()
+    assert not root.exists()
+    assert not archive.exists()
+    assert module.get_job(job_id, user_id)["status"] == "failed"
+
+
+def test_recover_interrupted_job_does_not_delete_a_live_worker(isolated_jobs):
+    from types import SimpleNamespace
+
+    module = isolated_jobs
+    job_id = "live-planning-job"
+    user_id = "user-live"
+    root = module._job_dir(job_id)
+    root.mkdir(parents=True)
+    marker = root / "input.tif"
+    marker.write_bytes(b"still owned by live worker")
+    now = module._now()
+    created = (now - timedelta(minutes=20)).isoformat()
+    updated = (now - timedelta(minutes=10)).isoformat()
+    expires = (now + timedelta(hours=1)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id, "planning", created, updated, expires, user_id, "input.tif", 0, 0, "auto", "intensity,nuclei"),
+        )
+        conn.commit()
+    module.ACTIVE_JOB_THREADS[job_id] = SimpleNamespace(is_alive=lambda: True)
+    try:
+        assert module.recover_interrupted_jobs(now=now, stale_after=timedelta(minutes=5)) == 0
+        row = module._get_job(job_id, user_id)
+        assert row is not None and row["status"] == "planning"
+        assert marker.read_bytes() == b"still owned by live worker"
+    finally:
+        module.ACTIVE_JOB_THREADS.pop(job_id, None)
