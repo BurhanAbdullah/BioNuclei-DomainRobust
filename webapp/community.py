@@ -144,6 +144,8 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
     incomplete_agents = [agent["agent"] for agent in agents if agent.get("status") not in {"completed", "not_applicable"}]
     if execution.get("agent_count") != len(agents) or execution.get("completed_agent_count") != completed_count:
         reject("completed reviewer counts do not match reviewer output")
+    if execution.get("status") != "completed":
+        reject("execution is incomplete")
     if execution.get("not_applicable_agent_count") != not_applicable_count or execution.get("resolved_agent_count") != resolved_count:
         reject("not-applicable or resolved reviewer counts do not match reviewer output")
     if execution.get("incomplete_agents") != incomplete_agents or execution.get("incomplete_reasons") != []:
