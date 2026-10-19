@@ -1,8 +1,8 @@
 name: Release status watch
 
-# Lightweight watcher. It checks the currently pinned scientific evidence chain;
-# it does not retrain, regenerate, or rewrite scientific evidence.
-
+# This is an observability workflow, not a release gate. It always emits a
+# machine-readable status report; missing/expired scientific evidence is reported
+# as BLOCKED rather than generating a misleading stream of monitor failures.
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -12,46 +12,181 @@ permissions:
   contents: read
   actions: read
 
-env:
-  E6_ARTIFACT_ID: "10088980217"
-  E7_ARTIFACT_ID: "10089229809"
-  UNCERTAINTY_ARTIFACT_ID: "10088988731"
-  CLEAN_REPRO_ARTIFACT_ID: "10089022008"
-
 jobs:
   status:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Check pinned evidence state
+      - uses: actions/checkout@v6
+      - name: Resolve latest successful clean reproduction
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          mkdir -p status-report
+          run_id="$(gh run list --workflow clean_environment_reproduction.yml --branch main --status success --json databaseId --limit 1 --jq '.[0].databaseId' || true)"
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          payload={
+            "monitor":"healthy",
+            "status":"BLOCKED",
+            "scope":"scientific evidence-chain observability only",
+            "release_ready":False,
+            "observed_at_utc":datetime.now(timezone.utc).isoformat(),
+            "blockers":["No successful clean-environment reproduction run is currently available."],
+          }
+          Path("status-report/release_status.json").write_text(json.dumps(payload,indent=2)+"\n")
+          print(json.dumps(payload,indent=2))
+          PY
+            exit 0
+          fi
+
+          run_meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" || true)"
+          conclusion="$(printf '%s' "$run_meta" | jq -r '.conclusion // empty' 2>/dev/null || true)"
+          branch_name="$(printf '%s' "$run_meta" | jq -r '.head_branch // empty' 2>/dev/null || true)"
+          if [ "$conclusion" != "success" ] || [ "$branch_name" != "main" ]; then
+            export EVIDENCE_BLOCKER="Latest candidate clean reproduction run is not a successful main-branch run."
+            export SOURCE_RUN_ID="$run_id"
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          payload={"monitor":"healthy","status":"BLOCKED","scope":"scientific evidence-chain observability only","release_ready":False,"observed_at_utc":datetime.now(timezone.utc).isoformat(),"source_run_id":os.environ["SOURCE_RUN_ID"],"blockers":[os.environ["EVIDENCE_BLOCKER"]]}
+          Path("status-report/release_status.json").write_text(json.dumps(payload,indent=2)+"\n")
+          print(json.dumps(payload,indent=2))
+          PY
+            exit 0
+          fi
+
+          artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" || true)"
+          artifact_id="$(printf '%s' "$artifacts" | jq -r --arg n "clean-environment-reproduction-${run_id}" '[.artifacts[]? | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' 2>/dev/null || true)"
+          if [ -z "$artifact_id" ] || [ "$artifact_id" = "null" ]; then
+            export SOURCE_RUN_ID="$run_id"
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          payload={"monitor":"healthy","status":"BLOCKED","scope":"scientific evidence-chain observability only","release_ready":False,"observed_at_utc":datetime.now(timezone.utc).isoformat(),"source_run_id":os.environ["SOURCE_RUN_ID"],"blockers":["The successful clean-reproduction run has no available, non-expired evidence artifact."]}
+          Path("status-report/release_status.json").write_text(json.dumps(payload,indent=2)+"\n")
+          print(json.dumps(payload,indent=2))
+          PY
+            exit 0
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > status-report/clean-reproduction.zip
+          mkdir status-report/clean-source
+          unzip -q status-report/clean-reproduction.zip -d status-report/clean-source
+          manifest="$(find status-report/clean-source -path '*/evidence/artifact_metadata.json' -type f -print -quit)"
+          if [ -z "$manifest" ]; then
+            export SOURCE_RUN_ID="$run_id"
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          payload={"monitor":"healthy","status":"BLOCKED","scope":"scientific evidence-chain observability only","release_ready":False,"observed_at_utc":datetime.now(timezone.utc).isoformat(),"source_run_id":os.environ["SOURCE_RUN_ID"],"blockers":["The clean-reproduction artifact is missing its artifact identity manifest."]}
+          Path("status-report/release_status.json").write_text(json.dumps(payload,indent=2)+"\n")
+          print(json.dumps(payload,indent=2))
+          PY
+            exit 0
+          fi
+          cp "$manifest" status-report/artifact_metadata.json
+          echo "$run_id" > status-report/clean-reproduction-run-id.txt
+          echo "$artifact_id" > status-report/clean-reproduction-artifact-id.txt
+
+      - name: Check current artifact identity and report release blockers
+        if: ${{ hashFiles('status-report/artifact_metadata.json') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           python - <<'PY'
-          import json, os, urllib.request
+          import json, os, urllib.error, urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+
           repo=os.environ['GITHUB_REPOSITORY']
           token=os.environ['GH_TOKEN']
-          ids={
-            'E6 aggregate':os.environ['E6_ARTIFACT_ID'],
-            'E7 BBBC038':os.environ['E7_ARTIFACT_ID'],
-            'uncertainty/failure':os.environ['UNCERTAINTY_ARTIFACT_ID'],
-            'clean reproduction':os.environ['CLEAN_REPRO_ARTIFACT_ID'],
+          meta=json.loads(Path('status-report/artifact_metadata.json').read_text())
+          blockers=[]
+          checked=[]
+
+          def get(path):
+              req=urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}/{path.lstrip("/")}',
+                  headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'},
+              )
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  return json.load(response)
+
+          def check(label, artifact_id, digest, expected_run=None, expected_name=None):
+              try:
+                  obj=get(f'actions/artifacts/{artifact_id}')
+              except urllib.error.HTTPError as exc:
+                  blockers.append(f'{label}: artifact {artifact_id} lookup returned HTTP {exc.code}')
+                  return
+              except Exception as exc:
+                  blockers.append(f'{label}: artifact {artifact_id} lookup failed ({type(exc).__name__})')
+                  return
+              if obj.get('expired') is not False:
+                  blockers.append(f'{label}: artifact {artifact_id} is expired or its expiry state is unknown')
+              if int(obj.get('size_in_bytes') or 0) <= 0:
+                  blockers.append(f'{label}: artifact {artifact_id} is empty')
+              if digest and obj.get('digest') != digest:
+                  blockers.append(f'{label}: artifact digest does not match the verified manifest')
+              run=(obj.get('workflow_run') or {}).get('id')
+              if expected_run is not None and int(run or -1) != int(expected_run):
+                  blockers.append(f'{label}: artifact source run does not match the verified manifest')
+              if expected_name and obj.get('name') != expected_name:
+                  blockers.append(f'{label}: artifact name does not match the verified manifest')
+              checked.append({'label':label,'artifact_id':obj.get('id'),'name':obj.get('name'),'digest':obj.get('digest'),'source_run_id':run,'expired':obj.get('expired')})
+
+          check('frozen E4 checkpoint',meta.get('e4_artifact_id'),meta.get('e4_artifact_digest'))
+          check('E6 finalized aggregate',meta.get('e6_final_artifact_id'),meta.get('e6_final_artifact_digest'),meta.get('e6_finalize_run_id'))
+          check('E7 BBBC038 evidence',meta.get('e7_artifact_id'),meta.get('e7_artifact_digest'),meta.get('e7_source_run_id'))
+          for label in ('01pct','05pct','10pct','25pct'):
+              entry=(meta.get('e6_fraction_artifacts') or {}).get(label) or {}
+              check(f'E6 {label}',entry.get('artifact_id'),entry.get('digest'),meta.get('e6_source_run_id'),entry.get('name'))
+          uncertainty_run=meta.get('uncertainty_run_id')
+          try:
+              artifacts=get(f'actions/runs/{uncertainty_run}/artifacts?per_page=100').get('artifacts',[])
+              expected_name=f'e6-e7-uncertainty-failure-analysis-{uncertainty_run}'
+              live=[x for x in artifacts if x.get('name')==expected_name and x.get('expired') is False and int(x.get('size_in_bytes') or 0)>0]
+              if not live:
+                  blockers.append('Uncertainty/failure analysis artifact is missing, expired, or empty.')
+              else:
+                  a=sorted(live,key=lambda x:x.get('created_at') or '')[-1]
+                  checked.append({'label':'uncertainty/failure analysis','artifact_id':a.get('id'),'name':a.get('name'),'digest':a.get('digest'),'source_run_id':uncertainty_run,'expired':a.get('expired')})
+          except Exception as exc:
+              blockers.append(f'Uncertainty/failure analysis artifact lookup failed ({type(exc).__name__}).')
+
+          payload={
+              'monitor':'healthy',
+              'status':'EVIDENCE_CHAIN_VERIFIED' if not blockers else 'BLOCKED',
+              'scope':'scientific evidence-chain observability only; does not certify public app readiness',
+              'release_ready':False,
+              'observed_at_utc':datetime.now(timezone.utc).isoformat(),
+              'clean_reproduction_run_id':int(Path('status-report/clean-reproduction-run-id.txt').read_text()),
+              'clean_reproduction_artifact_id':int(Path('status-report/clean-reproduction-artifact-id.txt').read_text()),
+              'scientific_source_run_ids':{
+                  'e6':meta.get('e6_source_run_id'),
+                  'e6_finalize':meta.get('e6_finalize_run_id'),
+                  'e7':meta.get('e7_source_run_id'),
+                  'uncertainty':meta.get('uncertainty_run_id'),
+              },
+              'checked_artifacts':checked,
+              'blockers':blockers,
+              'note':'A green status-watch run means the monitor completed successfully. Only status EVIDENCE_CHAIN_VERIFIED confirms that the referenced scientific evidence artifacts remain live and identity-matched.',
           }
-          expected={
-            os.environ['E6_ARTIFACT_ID']: 34312833206,
-            os.environ['E7_ARTIFACT_ID']: 34312920549,
-            os.environ['UNCERTAINTY_ARTIFACT_ID']: 34312853905,
-            os.environ['CLEAN_REPRO_ARTIFACT_ID']: 34312877852,
-          }
-          def get(url):
-            req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
-            with urllib.request.urlopen(req) as h:return json.load(h)
-          for label, aid in ids.items():
-            obj=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
-            assert not obj['expired'], f'{label}: expired'
-            assert obj['size_in_bytes'] > 0, f'{label}: empty'
-            run=(obj.get('workflow_run') or {}).get('id')
-            assert int(run)==expected[aid], (label, run, expected[aid])
-            print(f'{label}: LIVE; artifact={aid}; run={run}; digest={obj.get("digest")}')
-          print('status watch: PASS')
+          Path('status-report/release_status.json').write_text(json.dumps(payload,indent=2)+'\n')
+          print(json.dumps(payload,indent=2))
           PY
+
+      - name: Publish machine-readable monitor status
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-status-watch-${{ github.run_id }}
+          path: status-report/release_status.json
+          if-no-files-found: error
+          retention-days: 30
