@@ -5,13 +5,21 @@ name: E6 external fluorescence few-shot adaptation
 on:
   push:
     branches: [main]
+    # Scientific E6 retraining should be triggered only by changes to its
+    # protocol, data acquisition, training/evaluation entrypoints, or model
+    # primitives. Do not rerun the expensive matrix after unrelated web,
+    # MCP, UI, adaptive-preflight, or workflow-only maintenance commits.
     paths:
-      - ".github/workflows/e6_external_few_shot.yml"
       - "scripts/e6_run_external_few_shot.py"
       - "scripts/download_aitslab_bioimaging1.py"
       - "scripts/train_domain_robust.py"
       - "scripts/evaluate_instance_manifest.py"
-      - "src/bionuclei/**"
+      - "src/bionuclei/data.py"
+      - "src/bionuclei/losses.py"
+      - "src/bionuclei/masks.py"
+      - "src/bionuclei/metrics.py"
+      - "src/bionuclei/models.py"
+      - "src/bionuclei/targets.py"
       - "pyproject.toml"
   workflow_dispatch:
     inputs:
