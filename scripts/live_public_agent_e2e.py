@@ -60,11 +60,11 @@ def main() -> None:
     state: dict[str, object] = {
         "site_url": SITE_URL,
         "api_base": API_BASE,
-        "job_payloads": [],
         "guest_token_seen": False,
         "job_id_seen": False,
     }
     deleted = False
+    credentials: dict[str, str] = {}
     with tempfile.TemporaryDirectory(prefix="bionuclei-live-e2e-") as tmp:
         root = Path(tmp)
         fixture = root / "live-uint16-sentinel.tif"
@@ -82,17 +82,16 @@ def main() -> None:
                         if "/guest-session" in response.url and response.request.method == "POST":
                             body = response.json()
                             if isinstance(body, dict) and body.get("guest_token"):
-                                state["guest_token"] = body["guest_token"]
+                                credentials["guest_token"] = body["guest_token"]
                                 state["guest_token_seen"] = True
                         elif response.url.rstrip("/").endswith("/analyze") and response.request.method == "POST":
                             body = response.json()
                             if isinstance(body, dict) and body.get("job_id"):
-                                state["job_id"] = body["job_id"]
+                                credentials["job_id"] = body["job_id"]
                                 state["job_id_seen"] = True
                         elif re.search(r"/jobs/[^/]+$", response.url) and response.request.method == "GET":
                             body = response.json()
                             if isinstance(body, dict):
-                                state["job_payloads"].append(body)
                                 state["last_job_status"] = body.get("status")
                     except Exception:
                         pass
@@ -127,8 +126,8 @@ def main() -> None:
                 if re.search(r"analysis status: failed", status_text, re.IGNORECASE):
                     raise AssertionError(f"Real model job failed in the public workflow: {status_text}")
                 require(state["job_id_seen"] is True, "Browser upload did not return a job ID")
-                job_id = str(state["job_id"])
-                token = str(state["guest_token"])
+                job_id = credentials["job_id"]
+                token = credentials["guest_token"]
                 headers = {"X-BioNuclei-Guest-Token": token}
 
                 # Read through the same owner-scoped API that the browser uses.
@@ -257,8 +256,8 @@ def main() -> None:
             raise
         finally:
             # Delete only the disposable job created by this run, even on assertion failure.
-            job_id = state.get("job_id")
-            token = state.get("guest_token")
+            job_id = credentials.get("job_id")
+            token = credentials.get("guest_token")
             if job_id and token and not deleted:
                 try:
                     requests.delete(
