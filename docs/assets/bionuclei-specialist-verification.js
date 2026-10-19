@@ -144,8 +144,13 @@
         }
       }
       if (seen.size !== EXPECTED_AGENTS.size) return fail("one or more expected reviewers are absent");
-      if (execution.agent_count !== agents.length || execution.completed_agent_count !== agents.length) return fail("execution reviewer counts do not match the artifact");
-      if (!Array.isArray(execution.incomplete_agents) || execution.incomplete_agents.length !== 0) return fail("execution manifest lists incomplete reviewers");
+      const completedCount = agents.filter(agent => agent.status === "completed").length;
+      const notApplicableCount = agents.filter(agent => agent.status === "not_applicable").length;
+      const resolvedCount = completedCount + notApplicableCount;
+      const incompleteAgents = agents.filter(agent => !["completed", "not_applicable"].includes(agent.status)).map(agent => agent.agent);
+      if (execution.agent_count !== agents.length || execution.completed_agent_count !== completedCount || execution.not_applicable_agent_count !== notApplicableCount || execution.resolved_agent_count !== resolvedCount) return fail("execution reviewer counts do not match the artifact");
+      if (execution.status !== "completed" || !Array.isArray(execution.incomplete_reasons) || execution.incomplete_reasons.length !== 0) return fail("execution manifest is incomplete");
+      if (!Array.isArray(execution.incomplete_agents) || stableJson(execution.incomplete_agents) !== stableJson(incompleteAgents)) return fail("execution manifest incomplete reviewer list does not match");
       if (!artifact.training_status || typeof artifact.training_status !== "object") return fail("training provenance status is absent");
       if (artifact.training_status.verified !== true && artifact.training_status.claim_allowed !== false) return fail("unverified training provenance is not explicitly disallowed");
 
