@@ -1,12 +1,12 @@
 name: E7 BBBC038 external validation
 
-# E7 is independent of E6 and uses only the retained frozen E4 checkpoint.
-# The workflow_run trigger ensures the independent validation executes after the
-# repository CI completes, while preserving the frozen scientific protocol.
+# E7 is an independent external-dataset validation of the retained frozen
+# E4 checkpoint. Trigger it when E4 itself completes, not after every routine
+# repository CI run; a documentation/app fix must not retrain/evaluate 670 images.
 
 on:
   workflow_run:
-    workflows: ["ci"]
+    workflows: ["E4 domain-robust method"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
