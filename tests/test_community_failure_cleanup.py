@@ -191,7 +191,7 @@ def _complete_uint16_result() -> dict:
         "input_sha256": "a" * 64,
         "scientific_execution": True,
         "model": {"architecture": "Boundary U-Net", "training_reference": "Not established", "weights_updated_during_analysis": False},
-        "analysis_modules": ["nuclei", "morphology", "intensity"],
+        "analysis_modules": ["intensity", "morphology", "nuclei"],
         "adaptive_plan": {
             "status": "PASS", "warnings": [],
             "cnn_pattern_check": {"executed": True, "status": "PASS"},
