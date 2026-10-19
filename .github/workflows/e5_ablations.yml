@@ -151,16 +151,16 @@ jobs:
           PY
       - name: Verify and download immutable baseline release asset
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
           mkdir -p outputs/strong_baseline_source
-          release_json="$(gh api "repos/\${GITHUB_REPOSITORY}/releases/tags/checkpoint-bbbc039-v1")"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/checkpoint-bbbc039-v1")"
           asset_digest="$(jq -r '.assets[] | select(.name == "bionuclei_bbbc039.pt") | .digest' <<<"$release_json")"
           asset_url="$(jq -r '.assets[] | select(.name == "bionuclei_bbbc039.pt") | .browser_download_url' <<<"$release_json")"
           expected_asset_digest="sha256:7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
-          expected_asset_url="https://github.com/\${GITHUB_REPOSITORY}/releases/download/checkpoint-bbbc039-v1/bionuclei_bbbc039.pt"
+          expected_asset_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/checkpoint-bbbc039-v1/bionuclei_bbbc039.pt"
           test "$asset_digest" = "$expected_asset_digest" || {
             echo "Permanent BBBC039 checkpoint release digest mismatch: $asset_digest"
             exit 1
