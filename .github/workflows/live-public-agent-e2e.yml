@@ -14,9 +14,9 @@ permissions:
 
 concurrency:
   group: live-public-agent-e2e
-  # A newer diagnostics revision supersedes a stuck run. The Python test's
-  # finally block deletes its own disposable job when cancellation is handled.
-  cancel-in-progress: true
+  # Queue revisions until the current disposable analysis has finished, so a
+  # newly fixed harness does not cancel a live GPU/CPU inference mid-run.
+  cancel-in-progress: false
 
 jobs:
   public-upload-to-agent:
