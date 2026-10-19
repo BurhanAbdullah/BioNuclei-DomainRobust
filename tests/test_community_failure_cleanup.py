@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import hashlib
+import io
+import time
 from pathlib import Path
 from zipfile import ZipFile
 from types import SimpleNamespace
@@ -9,6 +12,7 @@ import numpy as np
 import pytest
 import tifffile
 import pandas as pd
+from fastapi.testclient import TestClient
 
 from bionuclei.adaptive_agent import CNNPatternCheck
 
@@ -365,3 +369,149 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
         for required in ("results/analysis_report.html", "results/analysis_report.pdf", "results/expert_agents.json", "results/nuclei_analysis.csv", "results/segmentation_mask.tif", "results/overlay.tif"):
             assert required in names
         assert not any(name.endswith("input.tif") or name.endswith("input_plane.tif") or "e2e-512-uint16.tif" in name for name in names)
+
+
+def test_public_upload_route_returns_job_bound_verified_specialist_result(community, monkeypatch):
+    """Exercise the real FastAPI upload/job/result/download path with deterministic inference."""
+    import webapp.community_app as community_app
+
+    module = community
+    checkpoint = module.JOB_ROOT / "test-only-checkpoint.pt"
+    checkpoint.write_bytes(b"test-only checkpoint placeholder")
+    monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(
+        "bionuclei.adaptive_agent.cnn_pattern_check",
+        lambda _path: CNNPatternCheck(True, "Boundary U-Net", 0.04, 0.95, 0.1, 4, "PASS", ()),
+    )
+    monkeypatch.setattr(module.gc, "collect", lambda: None)
+
+    image = np.full((512, 512), 512, dtype=np.uint16)
+    yy, xx = np.ogrid[:512, :512]
+    circles = [
+        (100, 100, 18, 4096),
+        (100, 180, 16, 8192),
+        (220, 280, 20, 16384),
+        (360, 160, 17, 32768),
+    ]
+    mask = np.zeros((512, 512), dtype=np.int32)
+    for label, (cy, cx, radius, intensity) in enumerate(circles, start=1):
+        disk = (yy - cy) ** 2 + (xx - cx) ** 2 <= radius ** 2
+        image[disk] = intensity
+        mask[disk] = label
+    image[100, 100] = np.uint16(65535)  # inside the first segmented nucleus
+    upload = io.BytesIO()
+    tifffile.imwrite(upload, image)
+    upload_bytes = upload.getvalue()
+
+    def deterministic_test_inference(inference_input, _checkpoint, output, device="cpu"):
+        measured_image = tifffile.imread(inference_input)
+        assert measured_image.dtype == np.uint16
+        assert int(measured_image.max()) == 65535
+        tifffile.imwrite(output / "segmentation_mask.tif", mask)
+        overlay = np.repeat(
+            (measured_image.astype(np.float64) / 65535 * 255).astype(np.uint8)[..., None],
+            3,
+            axis=2,
+        )
+        tifffile.imwrite(output / "overlay.tif", overlay)
+        return {"n_instances": int(mask.max()), "image_shape": list(measured_image.shape)}
+
+    monkeypatch.setattr(module, "predict", deterministic_test_inference)
+
+    # Use the same public guest-session and multipart-upload routes as the browser.
+    with TestClient(community_app.app) as client:
+        guest_response = client.post("/guest-session")
+        assert guest_response.status_code == 200, guest_response.text
+        guest_token = guest_response.json()["guest_token"]
+        headers = {"X-BioNuclei-Guest-Token": guest_token}
+
+        accepted = client.post(
+            "/analyze",
+            headers=headers,
+            files={"image": ("e2e-512-uint16.tif", upload_bytes, "image/tiff")},
+            data={
+                "research_consent": "false",
+                "algorithm_profile": "auto",
+                "analysis_modules": "nuclei,morphology,intensity",
+            },
+        )
+        assert accepted.status_code == 200, accepted.text
+        queued = accepted.json()
+        job_id = queued["job_id"]
+        assert queued["status"] == "queued"
+        assert queued["research_consent"] is False
+
+        deadline = time.monotonic() + 20.0
+        payload = None
+        while time.monotonic() < deadline:
+            response = client.get(f"/jobs/{job_id}", headers=headers)
+            assert response.status_code == 200, response.text
+            payload = response.json()
+            if payload.get("status") in {"completed", "failed"}:
+                break
+            time.sleep(0.02)
+
+        assert payload is not None
+        assert payload.get("status") == "completed", payload
+        result = payload["result"]
+        assert result["job_id"] == job_id
+        assert result["input_sha256"] == hashlib.sha256(upload_bytes).hexdigest()
+        assert result["analysis_modules"] == ["intensity", "morphology", "nuclei"]
+        assert result["adaptive_plan"]["profile"]["dtype"] == "uint16"
+        assert result["adaptive_plan"]["profile"]["max"] == 65535
+        assert result["model"]["weights_updated_during_analysis"] is False
+        assert result["model"]["training_reference"] == "Not established"
+        assert result["reports"]["intensity"]["max_nuclear_intensity"] == 65535
+
+        specialist_response = client.get(
+            f"/jobs/{job_id}/files/expert_agents.json", headers=headers
+        )
+        assert specialist_response.status_code == 200, specialist_response.text
+        artifact = specialist_response.json()
+        execution = artifact["execution"]
+        assert execution["status"] == "completed"
+        assert execution["job_id"] == job_id
+        assert execution["input_sha256"] == result["input_sha256"]
+        assert execution["analysis_modules"] == result["analysis_modules"]
+        assert artifact["training_status"]["verified"] is False
+        assert artifact["training_status"]["claim_allowed"] is False
+        intensity_agent = next(
+            agent for agent in artifact["agents"] if agent["agent"] == "intensity_agent"
+        )
+        assert any(
+            claim["reference"] == "reports.intensity.max_nuclear_intensity"
+            and claim["value"] == 65535
+            for claim in intensity_agent["quantitative_claims"]
+        )
+
+        for filename in (
+            "results.json",
+            "nuclei_analysis.csv",
+            "analysis_report.html",
+            "analysis_report.pdf",
+            "segmentation_mask.tif",
+            "overlay.tif",
+        ):
+            artifact_response = client.get(
+                f"/jobs/{job_id}/files/{filename}", headers=headers
+            )
+            assert artifact_response.status_code == 200, (
+                filename,
+                artifact_response.status_code,
+                artifact_response.text[:300],
+            )
+
+        download = client.get(f"/jobs/{job_id}/download", headers=headers)
+        assert download.status_code == 200, download.text[:300]
+        with ZipFile(io.BytesIO(download.content)) as archive:
+            names = set(archive.namelist())
+            assert "results/expert_agents.json" in names
+            assert "results/nuclei_analysis.csv" in names
+            assert "results/analysis_report.html" in names
+            assert "results/analysis_report.pdf" in names
+            assert not any(
+                name.endswith("input.tif")
+                or name.endswith("input_plane.tif")
+                or "e2e-512-uint16.tif" in name
+                for name in names
+            )
