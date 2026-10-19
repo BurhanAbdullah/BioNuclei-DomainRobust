@@ -1,12 +1,18 @@
 name: Clean-environment reproduction
 
-# Reproduces the software/tests and regenerates the released descriptive
-# uncertainty/failure analysis from immutable retained E6/E7 evidence.
+# Reproduce the completed uncertainty analysis using the exact metrics and
+# provenance carried forward by that analysis, rather than expired artifact IDs.
 on:
   workflow_run:
     workflows: ["E6 E7 uncertainty and failure analysis"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      uncertainty_run_id:
+        description: "Optional successful E6/E7 uncertainty run ID (defaults to latest successful run)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -17,7 +23,7 @@ jobs:
     name: Fresh environment reproduction
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -27,10 +33,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install project from pyproject
+      - name: Install project and all test/runtime extras
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+          python -m pip install -e ".[test,web,mcp]"
 
       - name: Verify clean environment
         run: |
@@ -55,30 +61,81 @@ jobs:
           assert not torch.cuda.is_available()
           PY
 
+      - name: Download exact successful analysis bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.uncertainty_run_id }}
+        run: |
+          set -euo pipefail
+          source_run_id="${EVENT_RUN_ID:-${INPUT_RUN_ID:-}}"
+          if [ -z "$source_run_id" ]; then
+            source_run_id="$(gh run list --workflow e6_e7_uncertainty_analysis.yml --branch main --status success --json databaseId --limit 1 --jq '.[0].databaseId')"
+          fi
+          test -n "$source_run_id" && test "$source_run_id" != "null"
+          run_meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}")"
+          test "$(jq -r '.conclusion' <<<"$run_meta")" = "success"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}/artifacts?per_page=100" > source-artifacts.json
+          artifact_name="e6-e7-uncertainty-failure-analysis-${source_run_id}"
+          artifact_id="$(jq -r --arg n "$artifact_name" '[.artifacts[] | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' source-artifacts.json)"
+          test -n "$artifact_id" || { echo "Missing or expired artifact $artifact_name"; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" > source-artifact-metadata.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > source-artifact.zip
+          unzip -q source-artifact.zip -d source-artifact
+          metadata_path="$(find source-artifact -path '*/evidence/artifact_metadata.json' -type f -print -quit)"
+          test -n "$metadata_path" || { echo "The upstream analysis artifact has no evidence identity manifest"; exit 1; }
+          bundle_root="${metadata_path%/evidence/artifact_metadata.json}"
+          cp -a "$bundle_root/evidence" ./evidence
+          retained_path="$(find "$bundle_root" -path '*/retained-analysis/e6_e7_uncertainty_failure_analysis.json' -type f -print -quit)"
+          test -n "$retained_path"
+          mkdir -p retained-analysis
+          cp "$retained_path" retained-analysis/e6_e7_uncertainty_failure_analysis.json
+          echo "$source_run_id" > uncertainty_source_run_id.txt
+          echo "$artifact_id" > uncertainty_source_artifact_id.txt
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}" --jq '.head_sha' > uncertainty_source_commit.txt
+          echo "Source analysis run=$source_run_id artifact=$artifact_id"
+
+      - name: Validate evidence manifest and frozen-checkpoint identity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          metadata=json.loads(Path('evidence/artifact_metadata.json').read_text())
+          assert metadata['e4_artifact_id'] and metadata['e4_artifact_digest']
+          assert metadata['e6_source_run_id'] and metadata['e6_finalize_run_id']
+          assert metadata['e7_source_run_id'] and metadata['e7_artifact_id']
+          assert metadata['uncertainty_run_id']==int(Path('uncertainty_source_run_id.txt').read_text())
+          assert set(metadata['e6_fraction_artifacts']) >= {'01pct','05pct','10pct','25pct'}
+          for key in ('e4_artifact_digest','e6_final_artifact_digest','e7_artifact_digest'):
+              assert str(metadata[key]).startswith('sha256:'), (key,metadata[key])
+          for label, frac, n in [('01pct',.01,1),('05pct',.05,2),('10pct',.10,3),('25pct',.25,8)]:
+              key='e6_'+label[:2]
+              p=list(Path('evidence',key).rglob('provenance.json'))
+              assert len(p)==1,(key,p)
+              prov=json.loads(p[0].read_text())
+              assert (float(prov['fraction']),int(prov['n_adaptation_images']))==(frac,n)
+              assert prov['seed']==42 and prov['epochs']==20
+              assert prov['s_biad634_used_for_adaptation'] is False
+              assert prov['test_images_used_for_adaptation'] is False
+              assert prov['development_images_used_for_training_or_selection'] is False
+              metrics=p[0].parent/'evaluation'/'test_metrics.json'
+              assert metrics.is_file()
+          e7p=list(Path('evidence/e7').rglob('provenance.json'))
+          e7m=list(Path('evidence/e7').rglob('metrics.json'))
+          assert len(e7p)==1 and len(e7m)==1
+          p7=json.loads(e7p[0].read_text())
+          assert str(p7['checkpoint_artifact_id'])==str(metadata['e4_artifact_id'])
+          assert p7['checkpoint_expected_digest']==metadata['e4_artifact_digest']
+          print('Evidence manifest and frozen checkpoint linkage: PASS')
+          PY
+
       - name: Run full test suite
         run: pytest -q
 
       - name: Compile research scripts
         run: python -m compileall -q scripts src
 
-      - name: Download retained E6/E7 analysis evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p evidence
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10048904584/zip" > e6_01.zip
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10049300074/zip" > e6_05.zip
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10055510835/zip" > e6_10.zip
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10051231349/zip" > e6_25.zip
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10088666629/zip" > e7.zip
-          unzip -q e6_01.zip -d evidence/e6_01
-          unzip -q e6_05.zip -d evidence/e6_05
-          unzip -q e6_10.zip -d evidence/e6_10
-          unzip -q e6_25.zip -d evidence/e6_25
-          unzip -q e7.zip -d evidence/e7
-
-      - name: Regenerate uncertainty/failure analysis
+      - name: Recompute image-level uncertainty and failure analysis
         run: |
           python scripts/analyze_e6_e7_uncertainty.py \
             --e6 01pct evidence/e6_01/outputs/e6_external_few_shot/01pct/01pct/evaluation/test_metrics.json \
@@ -86,18 +143,13 @@ jobs:
             --e6 10pct evidence/e6_10/outputs/e6_external_few_shot/10pct/10pct/evaluation/test_metrics.json \
             --e6 25pct evidence/e6_25/outputs/e6_external_few_shot/25pct/25pct/evaluation/test_metrics.json \
             --e7 evidence/e7/outputs/e7_bbbc038/metrics.json \
-            --metadata <(printf '%s\n' '{"e6_source_run_id":34208190019,"e7_source_run_id":34311290928}') \
+            --metadata evidence/artifact_metadata.json \
             --out reproduced/e6_e7_uncertainty_failure_analysis.json \
             --seed 42 \
             --bootstrap-resamples 10000
 
-      - name: Cross-check regenerated artifact against retained analysis
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Compare clean reproduction with retained result
         run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/10088937486/zip" > retained-analysis.zip
-          unzip -q retained-analysis.zip -d retained-analysis
           python - <<'PY'
           import json
           from pathlib import Path
@@ -109,18 +161,30 @@ jobs:
               for metric in ('dice','iou','aji','boundary_f1'):
                   a=reproduced['e6'][label][metric]
                   b=retained['e6'][label][metric]
-                  assert a['mean']==b['mean'] and a['median']==b['median'] and a['n']==b['n'], (label,metric,a,b)
+                  assert a['mean']==b['mean'] and a['median']==b['median'] and a['n']==b['n'],(label,metric,a,b)
           for metric in ('dice','iou','aji','boundary_f1'):
               a=reproduced['e7']['metrics'][metric]
               b=retained['e7']['metrics'][metric]
-              assert a['mean']==b['mean'] and a['median']==b['median'] and a['n']==b['n'], metric
+              assert a['mean']==b['mean'] and a['median']==b['median'] and a['n']==b['n'],metric
           print('clean-environment evidence reproduction: PASS')
           PY
+
+      - name: Assemble retained evidence and reproduction bundle
+        run: |
+          set -euo pipefail
+          mkdir -p clean_bundle/reproduced clean_bundle/retained-analysis
+          cp -a evidence clean_bundle/evidence
+          cp -a reproduced/e6_e7_uncertainty_failure_analysis.json clean_bundle/reproduced/
+          cp -a retained-analysis/e6_e7_uncertainty_failure_analysis.json clean_bundle/retained-analysis/
+          cp source-artifact-metadata.json clean_bundle/uncertainty-artifact-metadata.json
+          cp uncertainty_source_run_id.txt clean_bundle/
+          cp uncertainty_source_artifact_id.txt clean_bundle/
+          cp uncertainty_source_commit.txt clean_bundle/
 
       - name: Upload clean reproduction evidence
         uses: actions/upload-artifact@v4
         with:
           name: clean-environment-reproduction-${{ github.run_id }}
-          path: reproduced/e6_e7_uncertainty_failure_analysis.json
+          path: clean_bundle
           if-no-files-found: error
           retention-days: 90
