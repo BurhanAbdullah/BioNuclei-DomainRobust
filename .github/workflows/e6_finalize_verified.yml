@@ -1,77 +1,121 @@
 name: E6 finalize verified evidence
 
-# Finalizes E6 without retraining. It is deliberately pinned to the four
-# standardized fraction artifacts from run 34208190019 so the official
-# aggregate cannot accidentally consume the earlier 25% recovery artifact.
-# This harmless update retriggers the verified E6 -> uncertainty -> clean-env chain.
+# Aggregate only the four successful fraction artifacts from the completed E6
+# source run. This intentionally avoids any long-lived artifact IDs.
 on:
-  push:
+  workflow_run:
+    workflows: ["E6 external fluorescence few-shot adaptation"]
+    types: [completed]
     branches: [main]
-    paths:
-      - ".github/workflows/e6_finalize_verified.yml"
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Optional successful E6 source run ID (defaults to latest successful main run)"
+        required: false
+        type: string
 
 permissions:
   contents: read
   actions: read
 
 env:
-  E6_SOURCE_RUN_ID: "34208190019"
-  E6_SOURCE_SHA: "e5d76f279e4a2d9be0159357853fd21319cd0d1e"
+  E4_ARTIFACT_ID: "12183110279"
+  EXPECTED_E4_DIGEST: "sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d"
 
 jobs:
   finalize:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     name: E6 verified aggregate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Download pinned standardized E6 artifacts
+
+      - name: Resolve successful E6 source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          source_run_id="${EVENT_RUN_ID:-${INPUT_RUN_ID:-}}"
+          if [ -z "$source_run_id" ]; then
+            source_run_id="$(gh run list --workflow e6_external_few_shot.yml --branch main --status success --json databaseId --limit 1 --jq '.[0].databaseId')"
+          fi
+          test -n "$source_run_id" && test "$source_run_id" != "null"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}" > source-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          run=json.loads(Path('source-run.json').read_text())
+          assert run['conclusion']=='success', run
+          assert run['head_branch']=='main', run
+          print({'source_run_id':run['id'],'source_commit':run['head_sha'],'conclusion':run['conclusion']})
+          Path('source_run_id.txt').write_text(str(run['id']))
+          Path('source_commit.txt').write_text(run['head_sha'])
+          PY
+          echo "E6_SOURCE_RUN_ID=$source_run_id" >> "$GITHUB_ENV"
+
+      - name: Verify frozen E4 checkpoint identity
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}")"
+          test "$(jq -r '.expired' <<<"$meta")" = "false"
+          test "$(jq -r '.digest' <<<"$meta")" = "$EXPECTED_E4_DIGEST"
+          echo "E4 artifact verified: ${E4_ARTIFACT_ID} / ${EXPECTED_E4_DIGEST}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4-checkpoint.zip
+          unzip -q e4-checkpoint.zip -d e4-checkpoint
+          checkpoint_file="$(find e4-checkpoint -type f -path '*/outputs/e4_domain_robust/last.pt' -print -quit)"
+          test -n "$checkpoint_file" || { echo "The verified E4 artifact has no expected last.pt checkpoint"; exit 1; }
+          sha256sum "$checkpoint_file" | awk '{print $1}' > e4_checkpoint_file_sha256.txt
+          echo "Frozen checkpoint file SHA-256: $(cat e4_checkpoint_file_sha256.txt)"
+
+      - name: Download the four exact artifacts from this E6 run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source_run_id="$(cat source_run_id.txt)"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}/artifacts?per_page=100" > source-artifacts.json
           mkdir -p fractions
-          declare -A IDS
-          IDS[01pct]=10048904584
-          IDS[05pct]=10049300074
-          IDS[10pct]=10055510835
-          IDS[25pct]=10051231349
-          declare -A DIGESTS
-          DIGESTS[01pct]=b1f4732c39de3c93d7bcd1ace242c73bc9d5b2c3c7a4d9e431ed0ccd42ee4f93
-          DIGESTS[05pct]=4841db1700af56556292eaf8b267a5b95195c65445bc555efa80e93780b95103
-          DIGESTS[10pct]=00c2757ed9911db655945ab22c6cb2f70d0f6e48f376c614a8d25342e89bc472
-          DIGESTS[25pct]=8907e0dbc6d00714eb0cb4e235410462db689dd1ebbd4094b882e01e2f47b6b0
           for label in 01pct 05pct 10pct 25pct; do
-            artifact_id="${IDS[$label]}"
-            expected_digest="${DIGESTS[$label]}"
-            meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}")"
-            name="$(jq -r '.name' <<<"$meta")"
-            digest="$(jq -r '.digest' <<<"$meta")"
-            head_sha="$(jq -r '.workflow_run.head_sha' <<<"$meta")"
-            run_id="$(jq -r '.workflow_run.id' <<<"$meta")"
-            test "$name" = "e6-fraction-${label}-${E6_SOURCE_RUN_ID}"
-            test "$digest" = "sha256:${expected_digest}"
-            test "$head_sha" = "$E6_SOURCE_SHA"
-            test "$run_id" = "$E6_SOURCE_RUN_ID"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${label}.zip"
-            unzip -q "${label}.zip" -d "fractions/${label}"
+            name="e6-fraction-${label}-${source_run_id}"
+            artifact_id="$(jq -r --arg n "$name" '[.artifacts[] | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' source-artifacts.json)"
+            test -n "$artifact_id" || { echo "Missing live artifact $name in source run $source_run_id"; exit 1; }
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "fractions/${label}.zip"
+            unzip -q "fractions/${label}.zip" -d "fractions/${label}"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" > "fractions/${label}/artifact-metadata.json"
           done
-      - name: Validate and aggregate E6 evidence
+
+      - name: Validate and aggregate the frozen E6 evidence
         run: |
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
+
           root = Path('fractions')
           expected = [('01pct', 0.01, 1), ('05pct', 0.05, 2), ('10pct', 0.10, 3), ('25pct', 0.25, 8)]
           rows = []
           common = None
+          source_metadata = {}
           for label, frac, n in expected:
+              artifact_meta = json.loads(root.joinpath(label, 'artifact-metadata.json').read_text())
+              assert artifact_meta['expired'] is False
+              source_metadata[label] = {
+                  'artifact_id': artifact_meta['id'],
+                  'name': artifact_meta['name'],
+                  'digest': artifact_meta['digest'],
+                  'run_id': artifact_meta['workflow_run']['id'],
+                  'source_commit': artifact_meta['workflow_run']['head_sha'],
+              }
               matches = list(root.joinpath(label).rglob('provenance.json'))
               assert len(matches) == 1, (label, matches)
               prov_path = matches[0]
@@ -79,8 +123,8 @@ jobs:
               metrics_path = prov_path.parent / 'evaluation' / 'test_metrics.json'
               assert metrics_path.is_file(), metrics_path
               metrics = json.loads(metrics_path.read_text())
-              assert (prov['fraction'], prov['n_adaptation_images']) == (frac, n), label
-              assert (prov['seed'], prov['epochs']) == (42, 20), label
+              assert (float(prov['fraction']), int(prov['n_adaptation_images'])) == (frac, n), label
+              assert (int(prov['seed']), int(prov['epochs'])) == (42, 20), label
               assert prov['s_biad634_used_for_adaptation'] is False, label
               assert prov['test_images_used_for_adaptation'] is False, label
               assert prov['development_images_used_for_training_or_selection'] is False, label
@@ -89,6 +133,11 @@ jobs:
               assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1')), label
               metric_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
               assert metric_sha == prov['test_metrics_sha256'], label
+              checkpoint_file_sha = Path('e4_checkpoint_file_sha256.txt').read_text().strip()
+              assert prov['init_checkpoint_sha256'] == checkpoint_file_sha, (
+                  f'{label}: source checkpoint bytes do not match the retained frozen E4 artifact '
+                  f'({prov["init_checkpoint_sha256"]} != {checkpoint_file_sha})'
+              )
               immutable = {
                   'dataset_manifest_sha256': prov['dataset_manifest_sha256'],
                   'dataset_archive_sha256': prov['dataset_archive_sha256'],
@@ -108,23 +157,29 @@ jobs:
                   'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest(),
                   'activation_checkpointing': prov.get('activation_checkpointing'),
               })
-          out = Path('e6_verified')
-          out.mkdir(exist_ok=True)
+
+          source_run = json.loads(Path('source-run.json').read_text())
           aggregate = {
               'protocol': 'E6_cross_dataset_few_shot',
-              'source_run_id': 34208190019,
-              'source_commit': 'e5d76f279e4a2d9be0159357853fd21319cd0d1e',
+              'source_run_id': int(Path('source_run_id.txt').read_text()),
+              'source_commit': Path('source_commit.txt').read_text(),
               'all_four_fractions_verified': True,
               'immutable_provenance_common': common,
+              'e4_checkpoint_artifact_id': int(__import__('os').environ['E4_ARTIFACT_ID']),
+              'e4_checkpoint_artifact_digest': __import__('os').environ['EXPECTED_E4_DIGEST'],
+              'fraction_artifacts': source_metadata,
               'fractions': rows,
-              'acceptance_note': 'Official E6 aggregate uses only the four standardized fraction artifacts from run 34208190019. All four record activation checkpointing enabled, seed 42, 20 epochs, the same immutable dataset/config/E4 hashes, and fail-closed leakage flags.',
+              'acceptance_note': 'Four fraction artifacts came from one successful E6 run. Each fraction is provenance-verified with seed 42, 20 epochs, activation checkpointing, consistent immutable dataset/config/checkpoint hashes, and explicit leakage guards.',
           }
-          (out / 'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + '\n')
+          out = Path('e6_verified')
+          out.mkdir(exist_ok=True)
+          (out / 'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + chr(10))
           print('E6 verified aggregate: PASS')
           for row in rows:
               print(row['label'], row['mean'])
           PY
-      - name: Upload final E6 evidence
+
+      - name: Upload finalized E6 evidence
         uses: actions/upload-artifact@v4
         with:
           name: e6-external-few-shot-final-${{ github.run_id }}

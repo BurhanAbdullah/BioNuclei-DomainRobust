@@ -1,123 +1,246 @@
 name: ECC parallel release audit
 
-# ECC-style multi-agent release gate. Each independent lane checks one concern
-# from the immutable evidence chain. The final integrator accepts readiness only
-# when every lane passes. No lane may rewrite scientific result artifacts.
-
+# This fail-closed audit runs after the evidence chain is reproduced, rather
+# than on every routine commit against hard-coded, expiring artifact IDs.
 on:
-  push:
+  workflow_run:
+    workflows: ["Clean-environment reproduction"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      clean_reproduction_run_id:
+        description: "Optional successful clean-environment reproduction run ID"
+        required: false
+        type: string
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: ecc-release-${{ github.ref }}
+  group: ecc-release-audit-${{ github.event.workflow_run.id || inputs.clean_reproduction_run_id || github.ref }}
   cancel-in-progress: false
 
 env:
-  E6_RUN_ID: "34312833206"
-  E6_SOURCE_RUN_ID: "34208190019"
-  E7_RUN_ID: "34312920549"
-  UNCERTAINTY_RUN_ID: "34312853905"
-  E6_AGGREGATE_ARTIFACT_ID: "10088980217"
-  E7_ARTIFACT_ID: "10089229809"
-  UNCERTAINTY_ARTIFACT_ID: "10088988731"
   REQUIRED_PYTHON: "3.11"
 
 jobs:
+  resolve_evidence:
+    name: A0 Resolve current evidence identities
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      clean_run_id: ${{ steps.resolve.outputs.clean_run_id }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve successful clean reproduction and validate live artifact identities
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.clean_reproduction_run_id }}
+        run: |
+          set -euo pipefail
+          clean_run_id="${EVENT_RUN_ID:-${INPUT_RUN_ID:-}}"
+          if [ -z "$clean_run_id" ]; then
+            clean_run_id="$(gh run list --workflow clean_environment_reproduction.yml --branch main --status success --json databaseId --limit 1 --jq '.[0].databaseId')"
+          fi
+          test -n "$clean_run_id" && test "$clean_run_id" != "null"
+          clean_meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${clean_run_id}")"
+          test "$(jq -r '.conclusion' <<<"$clean_meta")" = "success"
+          test "$(jq -r '.head_branch' <<<"$clean_meta")" = "main"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${clean_run_id}/artifacts?per_page=100" > clean-artifacts.json
+          clean_name="clean-environment-reproduction-${clean_run_id}"
+          clean_artifact_id="$(jq -r --arg n "$clean_name" '[.artifacts[] | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' clean-artifacts.json)"
+          test -n "$clean_artifact_id" || { echo "Missing live artifact $clean_name"; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${clean_artifact_id}/zip" > clean-evidence.zip
+          mkdir -p clean-evidence ecc_release
+          unzip -q clean-evidence.zip -d clean-evidence
+          source_manifest="$(find clean-evidence -path '*/evidence/artifact_metadata.json' -type f -print -quit)"
+          test -n "$source_manifest" || { echo "Clean reproduction artifact does not contain evidence/artifact_metadata.json"; exit 1; }
+          cp "$source_manifest" ecc_release/upstream_artifact_metadata.json
+          export CLEAN_RUN_ID="$clean_run_id" CLEAN_ARTIFACT_ID="$clean_artifact_id"
+
+          python - <<'PY'
+          import json, os, urllib.error, urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          repo=os.environ['GITHUB_REPOSITORY']
+          token=os.environ['GH_TOKEN']
+          metadata=json.loads(Path('ecc_release/upstream_artifact_metadata.json').read_text())
+          clean_run_id=int(os.environ['CLEAN_RUN_ID'])
+          clean_artifact_id=int(os.environ['CLEAN_ARTIFACT_ID'])
+
+          required=('e4_artifact_id','e4_artifact_digest','e6_source_run_id',
+                    'e6_finalize_run_id','e6_final_artifact_id','e6_final_artifact_digest',
+                    'e7_source_run_id','e7_artifact_id','e7_artifact_digest','uncertainty_run_id')
+          missing=[k for k in required if metadata.get(k) in (None,'',0)]
+          assert not missing, f'Upstream evidence manifest is missing keys: {missing}'
+          assert set((metadata.get('e6_fraction_artifacts') or {})) >= {'01pct','05pct','10pct','25pct'}
+          assert int(metadata.get('clean_reproduction_run_id',clean_run_id)) == clean_run_id
+
+          def get(path):
+              req=urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}/{path.lstrip("/")}',
+                  headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'},
+              )
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  return json.load(response)
+
+          checked=[]
+          def verify(label, artifact_id, digest, expected_run=None, expected_name=None):
+              assert artifact_id not in (None,'','null'), f'{label}: missing artifact ID'
+              obj=get(f'actions/artifacts/{int(artifact_id)}')
+              assert obj.get('expired') is False, f'{label}: artifact is expired'
+              assert int(obj.get('size_in_bytes') or 0)>0, f'{label}: artifact is empty'
+              if digest:
+                  assert obj.get('digest') == digest, f'{label}: digest mismatch ({obj.get("digest")} != {digest})'
+              source_run=(obj.get('workflow_run') or {}).get('id')
+              if expected_run is not None:
+                  assert int(source_run or -1)==int(expected_run), f'{label}: source workflow run mismatch'
+              if expected_name:
+                  assert obj.get('name')==expected_name, f'{label}: source artifact name mismatch'
+              checked.append({
+                  'label':label,'artifact_id':int(obj['id']),'name':obj['name'],
+                  'digest':obj.get('digest'),'size_in_bytes':obj['size_in_bytes'],
+                  'source_run_id':source_run,'head_sha':(obj.get('workflow_run') or {}).get('head_sha'),
+              })
+              return obj
+
+          verify('clean reproduction',clean_artifact_id,None,clean_run_id,f'clean-environment-reproduction-{clean_run_id}')
+          verify('frozen E4 checkpoint',metadata['e4_artifact_id'],metadata['e4_artifact_digest'])
+          verify('E6 finalized aggregate',metadata['e6_final_artifact_id'],metadata['e6_final_artifact_digest'],metadata['e6_finalize_run_id'])
+          verify('E7 BBBC038',metadata['e7_artifact_id'],metadata['e7_artifact_digest'],metadata['e7_source_run_id'])
+          for label in ('01pct','05pct','10pct','25pct'):
+              entry=metadata['e6_fraction_artifacts'][label]
+              verify(f'E6 {label}',entry.get('artifact_id'),entry.get('digest'),metadata['e6_source_run_id'],entry.get('name'))
+
+          uncertainty_run_id=int(metadata['uncertainty_run_id'])
+          uncertainty_artifacts=get(f'actions/runs/{uncertainty_run_id}/artifacts?per_page=100').get('artifacts',[])
+          uncertainty_name=f'e6-e7-uncertainty-failure-analysis-{uncertainty_run_id}'
+          live=[a for a in uncertainty_artifacts if a.get('name')==uncertainty_name and a.get('expired') is False and int(a.get('size_in_bytes') or 0)>0]
+          assert live, f'No non-expired, non-empty uncertainty artifact {uncertainty_name}'
+          uncertainty=sorted(live,key=lambda a:a.get('created_at') or '')[-1]
+          verify('uncertainty/failure analysis',uncertainty['id'],uncertainty.get('digest'),uncertainty_run_id,uncertainty_name)
+
+          # Preserve source identities in a machine-readable record for all
+          # independent review lanes; do not write or substitute scientific values.
+          manifest={
+              'status':'evidence-identities-verified',
+              'verified_at_utc':datetime.now(timezone.utc).isoformat(),
+              'clean_reproduction_run_id':clean_run_id,
+              'clean_reproduction_artifact_id':clean_artifact_id,
+              'upstream_metadata':metadata,
+              'checked_artifacts':checked,
+              'scope_note':'Identity/retention verification only; not a scientific-readiness claim.',
+          }
+          Path('ecc_release/evidence_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          print(json.dumps({'status':manifest['status'],'clean_reproduction_run_id':clean_run_id,'verified_artifact_count':len(checked)},indent=2))
+          PY
+          echo "clean_run_id=$clean_run_id" >> "$GITHUB_OUTPUT"
+      - name: Publish verified evidence manifest for audit lanes
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecc-verified-evidence-manifest-${{ github.run_id }}
+          path: ecc_release/evidence_manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
   scientific:
-    name: A1 Scientific evidence
+    name: A1 Scientific protocol and analysis source
+    needs: [resolve_evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.REQUIRED_PYTHON }}
-      - name: Install analysis dependencies
-        run: python -m pip install --upgrade pip numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm
-      - name: Verify statistical plan and analyzers
+      - name: Install scientific analysis dependencies
+        run: python -m pip install --disable-pip-version-check numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm
+      - name: Verify frozen protocol and analyzers
         run: |
           set -euo pipefail
           python -m compileall -q scripts src
           test -f docs/STATISTICAL_ANALYSIS_PLAN.md
           test -f scripts/analyze_e3_e4_statistics.py
           test -f scripts/analyze_e6_e7_uncertainty.py
-      - name: Verify immutable evidence identifiers
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json, os, urllib.request
-          repo=os.environ['GITHUB_REPOSITORY']
-          token=os.environ['GH_TOKEN']
-          def get(url):
-              r=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
-              with urllib.request.urlopen(r) as h: return json.load(h)
-          for aid in [os.environ['E6_AGGREGATE_ARTIFACT_ID'],os.environ['E7_ARTIFACT_ID'],os.environ['UNCERTAINTY_ARTIFACT_ID']]:
-              obj=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
-              assert obj['expired'] is False, aid
-              assert obj['size_in_bytes'] > 0, aid
-          print('scientific evidence identifiers: PASS')
-          PY
+          grep -Rni "E6_cross_dataset_few_shot" docs scripts .github/workflows >/dev/null
+          grep -Rni "BBBC038" docs scripts .github/workflows >/dev/null
+          echo "Scientific protocol/source checks: PASS"
 
   reproduction:
-    name: A2 Clean-environment reproduction
+    name: A2 Full clean-environment reproduction
+    needs: [resolve_evidence]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.REQUIRED_PYTHON }}
-      - name: Install from package metadata
+      - name: Install the full test, web, and MCP surface
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
-      - name: Environment and test verification
+          python -m pip install -e ".[test,web,mcp]"
+      - name: Verify CPU environment and execute tests
         run: |
           python - <<'PY'
           import sys, torch
           print(sys.version)
           print(torch.__version__)
-          assert not torch.cuda.is_available()
+          assert not torch.cuda.is_available(), 'Unexpected CUDA runtime on CPU validation runner'
           PY
           pytest -q
-          python -m compileall -q scripts src
+          python -m compileall -q scripts src webapp
 
   provenance:
-    name: A3 Provenance and artifact integrity
+    name: A3 Independently re-check artifact manifest
+    needs: [resolve_evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Verify pinned GitHub artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: ecc-verified-evidence-manifest-${{ github.run_id }}
+          path: ecc_release
+      - name: Validate retained metadata schema and linkage
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python - <<'PY'
           import json, os, urllib.request
+          from pathlib import Path
           repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
-          expected={
-            os.environ['E6_AGGREGATE_ARTIFACT_ID']: {'workflow_run': 34312833206, 'digest': 'sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34'},
-            os.environ['E7_ARTIFACT_ID']: {'workflow_run': 34312920549, 'digest': 'sha256:e71df73427544700809d6cd2a094b33b572c3e7d835f754482a76061dd18ede7'},
-            os.environ['UNCERTAINTY_ARTIFACT_ID']: {'workflow_run': 34312853905, 'digest': 'sha256:0cbef10c50d7c254a38bf2c865d20dcac4c420010171af70a44e0e266c85d6a7'},
-          }
-          def get(url):
-            req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
-            with urllib.request.urlopen(req) as h:return json.load(h)
-          for aid, exp in expected.items():
-            o=get(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}')
-            assert not o['expired'], aid
-            assert o['digest']==exp['digest'], (aid,o['digest'],exp['digest'])
-            assert int(o['workflow_run']['id'])==exp['workflow_run'], (aid,o['workflow_run']['id'],exp['workflow_run'])
-            print(aid, o['digest'], 'run', o['workflow_run']['id'])
+          manifest=json.loads(Path('ecc_release/evidence_manifest.json').read_text())
+          meta=manifest['upstream_metadata']
+          assert manifest['status']=='evidence-identities-verified'
+          assert len(manifest['checked_artifacts'])==9
+          assert meta['e4_artifact_id'] and meta['e4_artifact_digest']
+          assert meta['e6_final_artifact_id'] and meta['e7_artifact_id']
+          assert set(meta['e6_fraction_artifacts']) >= {'01pct','05pct','10pct','25pct'}
+          assert str(meta['e4_artifact_digest']).startswith('sha256:')
+          assert str(meta['e7_artifact_digest']).startswith('sha256:')
+          assert str(meta['e6_final_artifact_digest']).startswith('sha256:')
+          # Re-query the E7 provenance artifact's source identity rather than
+          # trusting only the manifest generated by the upstream workflow.
+          req=urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/actions/artifacts/{int(meta["e7_artifact_id"])}',
+              headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'},
+          )
+          with urllib.request.urlopen(req,timeout=30) as response: e7=json.load(response)
+          assert e7['expired'] is False and e7['digest']==meta['e7_artifact_digest']
+          assert int(e7['workflow_run']['id'])==int(meta['e7_source_run_id'])
+          assert e7['name']==f'e7-bbbc038-{meta["e7_source_run_id"]}'
+          print('Independent provenance/retention re-check: PASS')
           PY
 
   claims:
     name: A4 Claims and documentation audit
+    needs: [resolve_evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -141,31 +264,29 @@ jobs:
               print('Potential unsupported positive claims:')
               print('\n'.join(bad))
               raise SystemExit(1)
-          print('claims/documentation audit: PASS')
+          print('Claims/documentation audit: PASS')
           PY
           test -f docs/RELEASE_CHECKLIST.md
           test -f docs/METHOD_FREEZE_2026-09-04.md
 
   hostile_review:
     name: A5 Hostile reproducibility checks
+    needs: [resolve_evidence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.REQUIRED_PYTHON }}
       - name: Static release checks
         run: |
           set -euo pipefail
           python -m compileall -q scripts src
-          grep -Rni "E6_cross_dataset_few_shot" docs scripts .github/workflows >/dev/null
-          grep -Rni "BBBC038" docs scripts .github/workflows >/dev/null
           grep -Rni "seed.*42" docs .github/workflows >/dev/null
           grep -Rni "20" docs .github/workflows >/dev/null
+          grep -Rni "activation_checkpointing" scripts .github/workflows >/dev/null
+          echo "Hostile reproducibility checks: PASS"
 
   integrator:
     name: ECC integrator
-    needs: [scientific, reproduction, provenance, claims, hostile_review]
+    needs: [resolve_evidence, scientific, reproduction, provenance, claims, hostile_review]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -173,29 +294,37 @@ jobs:
       - name: Fail closed on any lane failure
         run: |
           set -euo pipefail
-          for result in '${{ needs.scientific.result }}' '${{ needs.reproduction.result }}' '${{ needs.provenance.result }}' '${{ needs.claims.result }}' '${{ needs.hostile_review.result }}'; do
+          for result in '${{ needs.resolve_evidence.result }}' '${{ needs.scientific.result }}' '${{ needs.reproduction.result }}' '${{ needs.provenance.result }}' '${{ needs.claims.result }}' '${{ needs.hostile_review.result }}'; do
             test "$result" = success || { echo "ECC lane failure: $result"; exit 1; }
           done
-      - name: Publish machine-readable readiness state
+      - uses: actions/download-artifact@v4
+        with:
+          name: ecc-verified-evidence-manifest-${{ github.run_id }}
+          path: ecc_release
+      - name: Publish machine-readable engineering readiness
         run: |
-          mkdir -p ecc_release
-          cat > ecc_release/readiness.json <<EOF
-          {
-            "status": "pass",
-            "commit": "${GITHUB_SHA}",
-            "lanes": {
-              "scientific": "pass",
-              "clean_environment_reproduction": "pass",
-              "provenance": "pass",
-              "claims_and_documentation": "pass",
-              "hostile_reproducibility": "pass"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path('ecc_release/evidence_manifest.json').read_text())
+          metadata=manifest['upstream_metadata']
+          readiness={
+            'status':'engineering_reproducibility_pass',
+            'commit':__import__('os').environ['GITHUB_SHA'],
+            'clean_reproduction_run_id':manifest['clean_reproduction_run_id'],
+            'verified_artifact_count':len(manifest['checked_artifacts']),
+            'source_run_ids':{
+              'e6':metadata['e6_source_run_id'],
+              'e6_finalize':metadata['e6_finalize_run_id'],
+              'e7':metadata['e7_source_run_id'],
+              'uncertainty':metadata['uncertainty_run_id'],
             },
-            "e6_artifact_id": ${E6_AGGREGATE_ARTIFACT_ID},
-            "e7_artifact_id": ${E7_ARTIFACT_ID},
-            "uncertainty_artifact_id": ${UNCERTAINTY_ARTIFACT_ID},
-            "note": "Engineering/reproducibility gate only; final scientific readiness still requires human review of the complete release audit."
+            'evidence_manifest':manifest,
+            'note':'Engineering, software reproduction, and artifact-identity gates only. This result is not by itself a claim of scientific superiority or public-service release readiness.',
           }
-          EOF
+          Path('ecc_release/readiness.json').write_text(json.dumps(readiness,indent=2)+'\n')
+          print(json.dumps({'status':readiness['status'],'verified_artifact_count':readiness['verified_artifact_count']},indent=2))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: ecc-release-readiness-${{ github.run_id }}

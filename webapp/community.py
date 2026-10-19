@@ -39,6 +39,9 @@ ENABLED_MODULES = {"nuclei", "morphology", "intensity"}
 ALLOWED_UPLOAD_SUFFIXES = {".tif", ".tiff", ".nd2"}
 DB_LOCK = threading.Lock()
 INFERENCE_LOCK = threading.Lock()
+ACTIVE_JOB_THREADS: dict[str, threading.Thread] = {}
+ACTIVE_JOB_THREADS_LOCK = threading.Lock()
+STALE_JOB_RECOVERY_MINUTES = max(1, int(os.getenv("BIONUCLEI_STALE_JOB_RECOVERY_MINUTES", "3")))
 
 
 def _db() -> sqlite3.Connection:
@@ -277,13 +280,16 @@ def _cleanup_failed_job(job_id: str, root: Path) -> None:
     """Remove transient artifacts while preserving a truthful queryable failure."""
     shutil.rmtree(root, ignore_errors=True)
     (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    failed_at = _now()
+    expires_at = (failed_at + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
     with DB_LOCK, _db() as conn:
         conn.execute(
-            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
             (
                 "failed",
                 "Analysis worker failed before producing a complete result. Please retry the analysis.",
-                _now().isoformat(),
+                failed_at.isoformat(),
+                expires_at,
                 job_id,
             ),
         )
@@ -423,8 +429,17 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             print(f"bionuclei failure cleanup warning for {job_id}: {type(cleanup_exc).__name__}: {cleanup_exc}",flush=True)
         print(f"bionuclei job {job_id} failed: {type(exc).__name__}: {exc}",flush=True)
     finally:
+        # Do not leave files behind if the job was deleted or the watchdog
+        # marked the worker interrupted while a native operation was blocked.
+        current_row = _get_job(job_id, user_id)
+        if current_row is None or current_row["status"] == "failed":
+            shutil.rmtree(root, ignore_errors=True)
+            (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
         image_path.unlink(missing_ok=True)
         (root / "input_plane.tif").unlink(missing_ok=True)
+        with ACTIVE_JOB_THREADS_LOCK:
+            if ACTIVE_JOB_THREADS.get(job_id) is threading.current_thread():
+                ACTIVE_JOB_THREADS.pop(job_id, None)
 
 
 def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
@@ -451,7 +466,22 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     with DB_LOCK, _db() as conn:
         conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
         conn.commit()
-    threading.Thread(target=_run,args=(job_id,user_id,input_path,original_name,False,algorithm_profile,modules),kwargs={"channel":channel,"time":time,"z":z,"field":field},daemon=True).start()
+    worker = threading.Thread(
+        target=_run,
+        args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
+        kwargs={"channel": channel, "time": time, "z": z, "field": field},
+        name=f"bionuclei-job-{job_id[:8]}",
+        daemon=True,
+    )
+    with ACTIVE_JOB_THREADS_LOCK:
+        ACTIVE_JOB_THREADS[job_id] = worker
+    try:
+        worker.start()
+    except Exception as exc:
+        with ACTIVE_JOB_THREADS_LOCK:
+            ACTIVE_JOB_THREADS.pop(job_id, None)
+        _cleanup_failed_job(job_id, root)
+        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
     return job_id
 
 
@@ -546,13 +576,67 @@ def purge_expired() -> int:
     return removed
 
 
+def recover_interrupted_jobs(
+    *,
+    now: datetime | None = None,
+    stale_after: timedelta | None = None,
+) -> int:
+    """Fail and clean jobs whose worker disappeared after a process restart.
+
+    A job is considered recoverable only when its last stage update is older
+    than the configured lease and no worker thread for that job is alive in
+    this process. A live worker is never purged by this recovery path.
+    """
+    current_time = now or _now()
+    lease = stale_after or timedelta(minutes=STALE_JOB_RECOVERY_MINUTES)
+    cutoff = (current_time - lease).isoformat()
+    message = (
+        "Analysis worker stopped before completing this job. Transient input and "
+        "result artifacts were removed; please retry the analysis."
+    )
+    interrupted: list[str] = []
+    active_statuses = ("queued", "planning", "running", "measuring", "expert_review", "packaging")
+    placeholders = ",".join("?" for _ in active_statuses)
+    with DB_LOCK, _db() as conn:
+        rows = conn.execute(
+            f"SELECT id FROM jobs WHERE status IN ({placeholders}) AND updated_at < ?",
+            (*active_statuses, cutoff),
+        ).fetchall()
+        for row in rows:
+            job_id = str(row["id"])
+            with ACTIVE_JOB_THREADS_LOCK:
+                worker = ACTIVE_JOB_THREADS.get(job_id)
+                if worker is not None and worker.is_alive():
+                    continue
+            expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
+            result = conn.execute(
+                f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
+                f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
+                (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
+            )
+            if result.rowcount:
+                interrupted.append(job_id)
+        conn.commit()
+
+    for job_id in interrupted:
+        shutil.rmtree(_job_dir(job_id), ignore_errors=True)
+        (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+    if interrupted:
+        print(f"bionuclei recovery marked {len(interrupted)} orphaned active job(s) as failed", flush=True)
+    return len(interrupted)
+
+
 def _cleanup_loop() -> None:
+    next_expiry_sweep = 0.0
     while True:
         try:
-            purge_expired()
+            recover_interrupted_jobs()
+            if time.monotonic() >= next_expiry_sweep:
+                purge_expired()
+                next_expiry_sweep = time.monotonic() + 300
         except Exception as exc:
-            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}",flush=True)
-        time.sleep(300)
+            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}", flush=True)
+        time.sleep(60)
 
 
-threading.Thread(target=_cleanup_loop,name="bionuclei-expiry-cleaner",daemon=True).start()
+threading.Thread(target=_cleanup_loop, name="bionuclei-expiry-cleaner", daemon=True).start()

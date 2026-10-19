@@ -6,7 +6,8 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/e6_25pct_recovery.yml"
+      # Workflow-only edits should not launch a duplicate training job; code
+      # changes still trigger recovery, and workflow_dispatch remains available.
       - "scripts/e6_run_external_few_shot.py"
       - "scripts/train_domain_robust.py"
       - "scripts/download_aitslab_bioimaging1.py"
@@ -27,8 +28,8 @@ env:
   NUMEXPR_NUM_THREADS: "2"
   BIONUCLEI_NUM_WORKERS: "0"
   BIONUCLEI_ACTIVATION_CHECKPOINT: "1"
-  E4_ARTIFACT_ID: "9912441468"
-  EXPECTED_E4_DIGEST: "sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa"
+  E4_ARTIFACT_ID: "12183110279"
+  EXPECTED_E4_DIGEST: "sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d"
 
 jobs:
   e6_25pct:
