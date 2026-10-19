@@ -138,13 +138,39 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
     names = [agent.get("agent") for agent in agents if isinstance(agent, dict)]
     if len(names) != len(agents) or set(names) != expected or len(set(names)) != len(names):
         reject("reviewer set is incomplete, duplicated, or unknown")
-    if execution.get("agent_count") != len(agents) or execution.get("completed_agent_count") != len(agents):
-        reject("execution counts do not match reviewer output")
-    if execution.get("incomplete_agents") != [] or execution.get("incomplete_reasons") != []:
+    completed_count = sum(agent.get("status") == "completed" for agent in agents)
+    not_applicable_count = sum(agent.get("status") == "not_applicable" for agent in agents)
+    resolved_count = completed_count + not_applicable_count
+    incomplete_agents = [agent["agent"] for agent in agents if agent.get("status") not in {"completed", "not_applicable"}]
+    if execution.get("agent_count") != len(agents) or execution.get("completed_agent_count") != completed_count:
+        reject("completed reviewer counts do not match reviewer output")
+    if execution.get("not_applicable_agent_count") != not_applicable_count or execution.get("resolved_agent_count") != resolved_count:
+        reject("not-applicable or resolved reviewer counts do not match reviewer output")
+    if execution.get("incomplete_agents") != incomplete_agents or execution.get("incomplete_reasons") != []:
         reject("execution manifest reports incomplete reviewers")
+    analysis_modules = results.get("analysis_modules")
+    if not isinstance(analysis_modules, list) or any(not isinstance(module, str) for module in analysis_modules) or analysis_modules != sorted(set(analysis_modules)):
+        reject("result analysis_modules are invalid or non-canonical")
+    if execution.get("analysis_modules") != analysis_modules:
+        reject("execution analysis modules do not match the computed result")
+    module_requirements = {"morphology_agent": {"morphology"}, "intensity_agent": {"intensity"}, "biological_interpretation_agent": {"morphology", "intensity"}}
 
     for agent in agents:
         name = str(agent.get("agent"))
+        unselected = sorted(module_requirements.get(name, set()) - set(analysis_modules))
+        if unselected:
+            empty_payload = "{}"
+            expected_observation = "Not applicable: required analysis module(s) not selected: " + ", ".join(unselected) + "."
+            expected_limitation = "This reviewer did not execute because its required modules were not selected; no findings or quantitative claims are asserted."
+            if agent.get("status") != "not_applicable":
+                reject("reviewer should be not_applicable because required modules were not selected: " + name)
+            if agent.get("observations") != [expected_observation] or agent.get("limitations") != [expected_limitation]:
+                reject("not-applicable reviewer reason or limitations are invalid: " + name)
+            if agent.get("evidence_references") != [] or agent.get("missing_evidence_references") != [] or agent.get("quantitative_claims") != []:
+                reject("not-applicable reviewer cannot assert evidence or measurements: " + name)
+            if agent.get("evidence_payload") != empty_payload or agent.get("evidence_sha256") != hashlib.sha256(empty_payload.encode("utf-8")).hexdigest():
+                reject("not-applicable reviewer empty-evidence digest is invalid: " + name)
+            continue
         if agent.get("status") != "completed":
             reject("reviewer is incomplete: " + name)
         references = agent.get("evidence_references")
