@@ -88,10 +88,17 @@ def main() -> None:
                                 credentials["guest_token"] = body["guest_token"]
                                 state["guest_token_seen"] = True
                         elif response.url.rstrip("/").endswith("/analyze") and response.request.method == "POST":
-                            body = response.json()
+                            state["analyze_http_status"] = response.status
+                            try:
+                                body = response.json()
+                            except Exception:
+                                body = {"detail": (response.text() or "")[:300]}
                             if isinstance(body, dict) and body.get("job_id"):
                                 credentials["job_id"] = body["job_id"]
                                 state["job_id_seen"] = True
+                            elif response.status >= 400:
+                                # Keep server diagnostics but never copy bearer or guest-token headers.
+                                state["analyze_error"] = str(body.get("detail") or body.get("error") or f"HTTP {response.status}")[:300]
                         elif re.search(r"/jobs/[^/]+$", response.url) and response.request.method == "GET":
                             body = response.json()
                             if isinstance(body, dict):
@@ -128,11 +135,24 @@ def main() -> None:
                 stall_timeout = int(os.environ.get("BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS", "240"))
                 last_signature = None
                 last_transition_at = analysis_started
+                last_successful_job_poll_at = analysis_started
                 state["job_timeline"] = []
                 job_response = None
                 job = None
                 while time.monotonic() < deadline:
+                    elapsed = time.monotonic() - analysis_started
                     if not credentials.get("job_id") or not credentials.get("guest_token"):
+                        if state.get("analyze_http_status", 0) >= 400:
+                            raise AssertionError(
+                                f"Public /analyze returned HTTP {state['analyze_http_status']}: "
+                                f"{state.get('analyze_error', 'no response details')}"
+                            )
+                        if elapsed > stall_timeout:
+                            raise AssertionError(
+                                f"Browser did not obtain an owner-scoped job ID within {stall_timeout}s; "
+                                f"guest_token_seen={state.get('guest_token_seen')}, "
+                                f"analyze_http_status={state.get('analyze_http_status')!r}"
+                            )
                         time.sleep(0.5)
                         continue
                     job_id = credentials["job_id"]
@@ -142,6 +162,7 @@ def main() -> None:
                         job_response = requests.get(f"{API_BASE}/jobs/{job_id}", headers=headers, timeout=20)
                         state["last_job_http_status"] = job_response.status_code
                         if job_response.status_code == 200:
+                            last_successful_job_poll_at = time.monotonic()
                             job = job_response.json()
                             status = str(job.get("status") or "unknown")
                             updated_at = str(job.get("updated_at") or "")
@@ -173,8 +194,17 @@ def main() -> None:
                                 f"Owned job polling returned HTTP {job_response.status_code}: "
                                 f"{job_response.text[:300]}"
                             )
+                        else:
+                            state["last_poll_http_error"] = job_response.status_code
+                            state["last_poll_http_body"] = job_response.text[:200]
                     except requests.RequestException as exc:
                         state["last_poll_error"] = type(exc).__name__
+                    if time.monotonic() - last_successful_job_poll_at > stall_timeout:
+                        raise AssertionError(
+                            f"Public job endpoint has not returned a successful owner-scoped poll for "
+                            f"{stall_timeout}s; last HTTP error={state.get('last_poll_http_error')!r}, "
+                            f"network error={state.get('last_poll_error')!r}"
+                        )
                     time.sleep(5)
                 else:
                     raise AssertionError(
