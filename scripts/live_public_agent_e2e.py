@@ -98,7 +98,7 @@ def main() -> None:
                     const response = await nativeFetch(...args);
                     try {
                       const url = new URL(rawUrl, window.location.href);
-                      if (url.pathname.includes("/guest-session") || url.pathname.endsWith("/analyze") || /\\/jobs\\/[^/]+$/.test(url.pathname)) {
+                      if (url.pathname.includes("/guest-session") || url.pathname.endsWith("/analyze") || /\/jobs\/[^/]+$/.test(url.pathname)) {
                         const record = {path: url.pathname, method, status: response.status, ok: response.ok};
                         window.__BIONUCLEI_E2E_TRACE.push(record);
                         if (window.__BIONUCLEI_E2E_TRACE.length > 60) window.__BIONUCLEI_E2E_TRACE.shift();
@@ -196,9 +196,12 @@ def main() -> None:
                     state["browser_request_failures"] = state.get("browser_request_failures", [])
                     raise AssertionError("Guest session did not reach the ready state; inspect sanitized browser diagnostics.")
                 if not credentials.get("guest_token"):
-                    # The browser's own real fetch succeeded (the UI displayed ready),
-                    # so use the in-memory clone of that response as the observation
-                    # channel; never log the token value.
+                    # JSON parsing of the cloned response is asynchronous. Let that
+                    # observer finish briefly before reading it; never log the token.
+                    try:
+                        page.wait_for_function("() => Boolean(window.__BIONUCLEI_E2E_GUEST_TOKEN)", timeout=5000)
+                    except Exception:
+                        pass
                     observed_token = page.evaluate("window.__BIONUCLEI_E2E_GUEST_TOKEN || ''")
                     if isinstance(observed_token, str) and observed_token:
                         credentials["guest_token"] = observed_token
