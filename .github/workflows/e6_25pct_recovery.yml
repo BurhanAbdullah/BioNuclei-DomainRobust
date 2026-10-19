@@ -3,18 +3,10 @@ name: E6 25pct recovery
 # Dedicated recovery path for the only repeatedly failing E6 fraction.
 # Scientific settings remain frozen: fraction=0.25, n=8, seed=42, epochs=20.
 on:
-  push:
-    branches: [main]
-    paths:
-      # Workflow-only edits should not launch a duplicate training job; code
-      # changes still trigger recovery, and workflow_dispatch remains available.
-      - "scripts/e6_run_external_few_shot.py"
-      - "scripts/train_domain_robust.py"
-      - "scripts/download_aitslab_bioimaging1.py"
-      - "scripts/evaluate_instance_manifest.py"
-      - "src/bionuclei/**"
-      - "pyproject.toml"
-      - "configs/domain_robust.yaml"
+  # This is an exceptional 25% recovery lane. The canonical E6 workflow already
+  # runs all four fractions serially; automatically launching this lane on the
+  # same source change doubles CPU/memory pressure and can sabotage both runs.
+  # Keep it manually dispatchable for a deliberate single-fraction recovery.
   workflow_dispatch:
 
 permissions:
