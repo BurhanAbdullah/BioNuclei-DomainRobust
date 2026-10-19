@@ -293,7 +293,7 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
         disk = (yy - cy) ** 2 + (xx - cx) ** 2 <= radius ** 2
         image[disk] = intensity
         mask[disk] = label
-    image[0, 0] = np.uint16(65535)
+    image[100, 100] = np.uint16(65535)  # inside the first known segmented nucleus
     tifffile.imwrite(input_path, image)
 
     checkpoint = root / "checkpoint.pt"
@@ -339,6 +339,9 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
     assert result["reports"]["nuclei_count"] == 4
     mean_intensity = result["reports"]["intensity"]["mean_nuclear_intensity"]
     assert mean_intensity > 255
+    measurement_rows = pd.read_csv(root / "results" / "nuclei_analysis.csv")
+    assert int(measurement_rows.loc[measurement_rows["label"] == 1, "max_intensity"].iloc[0]) == 65535
+    assert result["reports"]["intensity"]["max_nuclear_intensity"] == 65535
 
     execution = artifact["execution"]
     assert execution["status"] == "completed" and execution["job_id"] == job_id
