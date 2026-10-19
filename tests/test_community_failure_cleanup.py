@@ -204,7 +204,7 @@ def _complete_uint16_result() -> dict:
         "reports": {
             "nuclei_count": 2,
             "morphology": {"mean_area": 12.0, "median_area": 11.5, "mean_circularity": 0.91},
-            "intensity": {"mean_nuclear_intensity": 1250.0, "median_nuclear_intensity": 1240.0},
+            "intensity": {"mean_nuclear_intensity": 1250.0, "median_nuclear_intensity": 1240.0, "mean_max_intensity": 30000.0, "max_nuclear_intensity": 65535},
             "spatial": {
                 "instance_count": 2, "unit": "pixels",
                 "mean_nearest_neighbor_distance_px": 8.0,
