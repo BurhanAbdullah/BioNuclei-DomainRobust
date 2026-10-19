@@ -163,7 +163,7 @@ jobs:
           }
           out = Path('e6_verified')
           out.mkdir(exist_ok=True)
-          (out / 'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + '\\n')
+          (out / 'aggregate_results.json').write_text(json.dumps(aggregate, indent=2) + chr(10))
           print('E6 verified aggregate: PASS')
           for row in rows:
               print(row['label'], row['mean'])
