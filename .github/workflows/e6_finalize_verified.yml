@@ -71,6 +71,12 @@ jobs:
           test "$(jq -r '.expired' <<<"$meta")" = "false"
           test "$(jq -r '.digest' <<<"$meta")" = "$EXPECTED_E4_DIGEST"
           echo "E4 artifact verified: ${E4_ARTIFACT_ID} / ${EXPECTED_E4_DIGEST}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4-checkpoint.zip
+          unzip -q e4-checkpoint.zip -d e4-checkpoint
+          checkpoint_file="$(find e4-checkpoint -type f -path '*/outputs/e4_domain_robust/last.pt' -print -quit)"
+          test -n "$checkpoint_file" || { echo "The verified E4 artifact has no expected last.pt checkpoint"; exit 1; }
+          sha256sum "$checkpoint_file" | awk '{print $1}' > e4_checkpoint_file_sha256.txt
+          echo "Frozen checkpoint file SHA-256: $(cat e4_checkpoint_file_sha256.txt)"
 
       - name: Download the four exact artifacts from this E6 run
         env:
@@ -127,6 +133,11 @@ jobs:
               assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1')), label
               metric_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
               assert metric_sha == prov['test_metrics_sha256'], label
+              checkpoint_file_sha = Path('e4_checkpoint_file_sha256.txt').read_text().strip()
+              assert prov['init_checkpoint_sha256'] == checkpoint_file_sha, (
+                  f'{label}: source checkpoint bytes do not match the retained frozen E4 artifact '
+                  f'({prov["init_checkpoint_sha256"]} != {checkpoint_file_sha})'
+              )
               immutable = {
                   'dataset_manifest_sha256': prov['dataset_manifest_sha256'],
                   'dataset_archive_sha256': prov['dataset_archive_sha256'],
@@ -148,7 +159,6 @@ jobs:
               })
 
           source_run = json.loads(Path('source-run.json').read_text())
-          e4_meta = json.loads(Path('fractions/01pct/artifact-metadata.json').read_text())
           aggregate = {
               'protocol': 'E6_cross_dataset_few_shot',
               'source_run_id': int(Path('source_run_id.txt').read_text()),
