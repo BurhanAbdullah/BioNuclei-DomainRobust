@@ -348,7 +348,7 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
         summary["morphology"] = {"mean_area":float(frame["area"].mean()) if nuclei_count else None,"median_area":float(frame["area"].median()) if nuclei_count else None,"mean_perimeter":float(frame["perimeter"].mean()) if nuclei_count else None,"mean_eccentricity":float(frame["eccentricity"].mean()) if nuclei_count else None,"mean_solidity":float(frame["solidity"].mean()) if nuclei_count else None,"mean_circularity":float(frame["circularity"].mean()) if nuclei_count else None}
         (output / "morphology_report.json").write_text(json.dumps(summary["morphology"], indent=2) + "\n")
     if "intensity" in modules:
-        summary["intensity"] = {"mean_nuclear_intensity":float(frame["mean_intensity"].mean()) if nuclei_count else None,"median_nuclear_intensity":float(frame["mean_intensity"].median()) if nuclei_count else None,"mean_max_intensity":float(frame["max_intensity"].mean()) if nuclei_count else None}
+        summary["intensity"] = {"mean_nuclear_intensity":float(frame["mean_intensity"].mean()) if nuclei_count else None,"median_nuclear_intensity":float(frame["mean_intensity"].median()) if nuclei_count else None,"mean_max_intensity":float(frame["max_intensity"].mean()) if nuclei_count else None,"max_nuclear_intensity":int(frame["max_intensity"].max()) if nuclei_count else None}
         (output / "intensity_report.json").write_text(json.dumps(summary["intensity"], indent=2) + "\n")
     (output / "nuclei_report.json").write_text(json.dumps({"nuclei_count":nuclei_count,"modules":sorted(modules)}, indent=2) + "\n")
     return summary
