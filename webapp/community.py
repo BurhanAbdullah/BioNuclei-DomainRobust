@@ -536,7 +536,7 @@ def purge_expired() -> int:
     removed=0
     now=_now()
     with DB_LOCK, _db() as conn:
-        rows=conn.execute("SELECT id FROM jobs WHERE expires_at < ?",(now.isoformat(),)).fetchall()
+        rows=conn.execute("SELECT id FROM jobs WHERE expires_at < ? AND status IN ('completed', 'failed')",(now.isoformat(),)).fetchall()
         for row in rows:
             shutil.rmtree(_job_dir(row["id"]),ignore_errors=True)
             (JOB_ROOT/f"{row['id']}.zip").unlink(missing_ok=True)
