@@ -59,6 +59,8 @@ def test_uint16_raw_profile_reaches_intensity_agent_and_is_evidence_bound() -> N
     intensity = next(agent for agent in output["agents"] if agent["agent"] == "intensity_agent")
     assert "Raw image max: 65535" in intensity["observations"]
     assert "Raw image dtype: uint16" in intensity["observations"]
+    assert len(intensity["evidence_sha256"]) == 64
+    assert "Raw image dtype: uint16" in intensity["observations"]
     assert "adaptive_plan.profile" in intensity["evidence_references"]
     assert "reports.intensity" in intensity["evidence_references"]
     assert len(intensity["evidence_sha256"]) == 64
