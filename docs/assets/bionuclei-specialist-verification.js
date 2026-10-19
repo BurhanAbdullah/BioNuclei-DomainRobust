@@ -137,6 +137,7 @@
 
       const expectedPayload = {
         agent_version: "1.2",
+        analysis_modules: execution.analysis_modules,
         job_id: execution.job_id,
         job_id_valid: execution.job_id_valid,
         input_sha256: execution.input_sha256,
