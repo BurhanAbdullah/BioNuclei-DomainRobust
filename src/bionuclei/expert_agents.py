@@ -242,6 +242,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         ("mean_nuclear_intensity", "Measured mean nuclear intensity"),
         ("median_nuclear_intensity", "Measured median nuclear intensity"),
         ("mean_max_intensity", "Mean per-instance maximum intensity"),
+        ("max_nuclear_intensity", "Maximum per-instance nuclear intensity"),
     ):
         value = intensity.get(key)
         if is_number(value):
