@@ -92,8 +92,22 @@
       for (const agent of agents) {
         if (!agent || !EXPECTED_AGENTS.has(agent.agent) || seen.has(agent.agent)) return fail("specialist reviewer set is invalid");
         seen.add(agent.agent);
-        if (agent.status !== "completed") return fail("reviewer " + agent.agent + " is incomplete");
         if (!Array.isArray(agent.observations) || !Array.isArray(agent.limitations)) return fail("reviewer observations or limitations are malformed");
+        const modules = result.analysis_modules;
+        if (!Array.isArray(modules) || stableJson(modules) !== stableJson(Array.from(new Set(modules)).sort())) return fail("result analysis_modules is not canonical");
+        const requirements = { morphology_agent: ["morphology"], intensity_agent: ["intensity"], biological_interpretation_agent: ["morphology", "intensity"] };
+        const unselected = (requirements[agent.agent] || []).filter(module => !modules.includes(module)).sort();
+        if (unselected.length) {
+          const emptyDigest = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+          const expectedObservation = "Not applicable: required analysis module(s) not selected: " + unselected.join(", ") + ".";
+          const expectedLimitation = "This reviewer did not execute because its required modules were not selected; no findings or quantitative claims are asserted.";
+          if (agent.status !== "not_applicable") return fail("reviewer should be not_applicable: " + agent.agent);
+          if (stableJson(agent.observations) !== stableJson([expectedObservation]) || stableJson(agent.limitations) !== stableJson([expectedLimitation])) return fail("not-applicable reviewer reason is invalid: " + agent.agent);
+          if (stableJson(agent.evidence_references) !== "[]" || stableJson(agent.missing_evidence_references) !== "[]" || stableJson(agent.quantitative_claims) !== "[]") return fail("not-applicable reviewer cannot assert evidence or measurements: " + agent.agent);
+          if (agent.evidence_payload !== "{}" || agent.evidence_sha256 !== emptyDigest) return fail("not-applicable reviewer empty-evidence digest is invalid: " + agent.agent);
+          continue;
+        }
+        if (agent.status !== "completed") return fail("reviewer " + agent.agent + " is incomplete");
         if (!Array.isArray(agent.evidence_references) || agent.evidence_references.length === 0) return fail("reviewer has no evidence references");
         if (!Array.isArray(agent.missing_evidence_references) || agent.missing_evidence_references.length !== 0) return fail("reviewer declares missing evidence");
         if (typeof agent.evidence_payload !== "string" || !agent.evidence_payload) return fail("reviewer canonical evidence bytes are missing");
