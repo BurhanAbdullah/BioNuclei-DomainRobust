@@ -41,12 +41,15 @@ jobs:
           BIONUCLEI_PUBLIC_SITE_URL: https://burhanabdullah.github.io/BioNuclei-DomainRobust/bionuclei-app.html
           BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
           BIONUCLEI_ANALYSIS_TIMEOUT_MS: "1200000"
+          BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS: "240"
         run: python scripts/live_public_agent_e2e.py
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: live-public-agent-e2e-failure-${{ github.run_id }}
-          path: live-agent-e2e-failure.png
+          path: |
+            live-agent-e2e-failure.png
+            live-agent-e2e-failure.json
           if-no-files-found: ignore
           retention-days: 7
