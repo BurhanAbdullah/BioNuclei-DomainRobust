@@ -178,7 +178,6 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
             del probabilities
             del model
             del x
-            import gc
             gc.collect()
     except Exception as exc:
         return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", (f"CNN gate could not execute: {type(exc).__name__}.",))
