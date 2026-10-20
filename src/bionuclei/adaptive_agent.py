@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+import gc
 import os
 
 import numpy as np
@@ -148,6 +149,10 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
                     base_channels=int(cfg.get("base_channels", 32)),
                 )
                 model.load_state_dict(state["model"])
+                # The checkpoint state dict duplicates model weights in RAM.
+                # Release it before the preflight forward pass on memory-limited hosts.
+                del state
+                gc.collect()
                 model.eval()
                 with torch.inference_mode():
                     probabilities = torch.softmax(model(x), dim=1)[0]

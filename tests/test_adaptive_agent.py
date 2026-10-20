@@ -48,6 +48,7 @@ def test_adaptive_plan_fails_closed_when_checkpoint_is_unavailable(tmp_path: Pat
 
 def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path: Path, monkeypatch) -> None:
     import torch
+    import weakref
     import bionuclei.models
 
     image = np.full((512, 512), 512, dtype=np.uint16)
@@ -57,7 +58,14 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     checkpoint = tmp_path / "checkpoint.pt"
     checkpoint.write_bytes(b"test checkpoint placeholder")
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(checkpoint))
-    monkeypatch.setattr(torch, "load", lambda *_args, **_kwargs: {"config": {"model": {}}, "model": {}})
+    loaded_checkpoint_tensor = {}
+
+    def fake_load(*_args, **_kwargs):
+        checkpoint_tensor = torch.ones(1)
+        loaded_checkpoint_tensor["ref"] = weakref.ref(checkpoint_tensor)
+        return {"config": {"model": {}}, "model": {"sentinel": checkpoint_tensor}}
+
+    monkeypatch.setattr(torch, "load", fake_load)
     seen_shapes = []
 
     class FakeModel:
@@ -71,6 +79,9 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
             return self
 
         def __call__(self, x):
+            assert loaded_checkpoint_tensor["ref"]() is None, (
+                "CNN preflight retained checkpoint tensors during the forward pass"
+            )
             seen_shapes.append(tuple(x.shape))
             logits = torch.zeros((1, 3, x.shape[-2], x.shape[-1]))
             logits[:, 0] = 4.0
