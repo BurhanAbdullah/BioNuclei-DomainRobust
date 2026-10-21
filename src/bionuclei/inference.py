@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import platform
 import threading
 from datetime import datetime, timezone
@@ -50,6 +51,11 @@ def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
         base_channels=int(model_cfg.get("base_channels", 32)),
     )
     model.load_state_dict(state["model"])
+    # The checkpoint may also contain optimizer/scheduler metadata. Drop the
+    # deserialized container before inference so it cannot overlap with tile
+    # activations on memory-constrained production instances.
+    del state
+    gc.collect()
     model.to(target).eval()
     return model
 
@@ -59,6 +65,77 @@ def _split_instances(logits: torch.Tensor) -> np.ndarray:
     foreground = classes != 0
     instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
     return instances.astype(np.int32)
+
+
+
+def _tile_starts(length: int, tile_size: int, overlap: int) -> list[int]:
+    """Return deterministic, evenly spaced tile origins with complete coverage."""
+    if length <= tile_size:
+        return [0]
+    stride = tile_size - overlap
+    count = math.ceil((length - tile_size) / stride) + 1
+    # Spread any required remainder across tiles instead of creating a tiny
+    # final tile (which can be incompatible with the U-Net's pooling strides).
+    return sorted({
+        int(round(i * (length - tile_size) / (count - 1)))
+        for i in range(count)
+    })
+
+
+def _predict_logits_tiled(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    *,
+    tile_size: int = 288,
+    overlap: int = 64,
+) -> torch.Tensor:
+    """Run inference in overlapping tiles and blend logits on CPU.
+
+    The input tensor is already normalized from the original image. Only model
+    activations are tiled; measurements later still use the untouched source
+    image, preserving the full uint16 intensity range.
+    """
+    if tile_size <= 0 or overlap < 0 or overlap >= tile_size:
+        raise ValueError("tile_size must be positive and overlap in [0, tile_size)")
+    if x.ndim != 4 or x.shape[0] != 1:
+        raise ValueError("Tiled inference expects a single NCHW image")
+
+    _, _, height, width = x.shape
+    if height <= tile_size and width <= tile_size:
+        return model(x)
+
+    y_starts = _tile_starts(height, tile_size, overlap)
+    x_starts = _tile_starts(width, tile_size, overlap)
+    logits_sum: torch.Tensor | None = None
+    weight_sum = torch.zeros((1, 1, height, width), dtype=torch.float32, device="cpu")
+
+    for top in y_starts:
+        bottom = min(top + tile_size, height)
+        for left in x_starts:
+            right = min(left + tile_size, width)
+            tile = x[..., top:bottom, left:right]
+            tile_logits = model(tile)
+            if (
+                tile_logits.ndim != 4
+                or tile_logits.shape[0] != 1
+                or tile_logits.shape[-2:] != (bottom - top, right - left)
+            ):
+                raise ValueError("Model returned unexpected tile-logit shape")
+            if logits_sum is None:
+                logits_sum = torch.zeros(
+                    (1, tile_logits.shape[1], height, width),
+                    dtype=torch.float32,
+                    device="cpu",
+                )
+            logits_sum[..., top:bottom, left:right] += tile_logits.detach().to(
+                device="cpu", dtype=torch.float32
+            )
+            weight_sum[..., top:bottom, left:right] += 1.0
+            del tile_logits, tile
+
+    if logits_sum is None or torch.any(weight_sum == 0):
+        raise RuntimeError("Tiled inference did not cover every input pixel")
+    return logits_sum / weight_sum
 
 
 def _measure(instances: np.ndarray) -> list[dict[str, float | int]]:
@@ -100,7 +177,7 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
         try:
             x = torch.from_numpy(_normalise(image)[None, None]).float().to(device)
             with torch.no_grad():
-                instances = _split_instances(model(x))
+                instances = _split_instances(_predict_logits_tiled(model, x))
         finally:
             del x
             del model
