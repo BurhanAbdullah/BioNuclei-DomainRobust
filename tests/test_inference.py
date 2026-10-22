@@ -89,3 +89,28 @@ def test_tiled_logits_reject_invalid_geometry_and_channels():
         _predict_logits(model, x, tile_size=31, overlap=16)
     with pytest.raises(ValueError, match="single-image, single-channel"):
         _predict_logits(model, torch.zeros((1, 2, 64, 64)), tile_size=32, overlap=16)
+
+class _RecordingPointwiseLogits(_PointwiseLogits):
+    def __init__(self):
+        super().__init__()
+        self.forward_shapes = []
+
+    def forward(self, x):
+        self.forward_shapes.append(tuple(x.shape[-2:]))
+        return super().forward(x)
+
+
+def test_default_tiling_bounds_every_512px_forward_pass():
+    model = _RecordingPointwiseLogits().eval()
+    x = torch.arange(512 * 512, dtype=torch.float32).reshape(1, 1, 512, 512)
+    x = x.remainder(997).div(997.0)
+
+    with torch.inference_mode():
+        expected = model(x)
+        model.forward_shapes.clear()
+        actual = _predict_logits(model, x)
+
+    assert actual.shape == (1, 3, 512, 512)
+    assert torch.equal(actual, expected)
+    assert len(model.forward_shapes) == 9
+    assert all(height <= 256 and width <= 256 for height, width in model.forward_shapes)
