@@ -123,7 +123,7 @@ def _tile_core_ranges(starts: list[int], tile_length: int, length: int) -> list[
 def _predict_logits(
     model: torch.nn.Module,
     x: torch.Tensor,
-    tile_size: int = 320,
+    tile_size: int = 256,
     overlap: int = 128,
 ) -> torch.Tensor:
     """Predict logits with bounded spatial activations and overlap-context stitching.
