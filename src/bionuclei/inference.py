@@ -42,7 +42,17 @@ def _normalise(image: np.ndarray) -> np.ndarray:
 
 def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
     target = torch.device(device)
-    state = torch.load(checkpoint, map_location=target)
+    # The checkpoint is a trusted, immutable release artifact. Memory-map its
+    # CPU storages and assign them directly to the module instead of keeping a
+    # deserialized state dict and a second copied parameter set resident at
+    # once. This matters on the 512 MiB public worker before tiled activations
+    # are even allocated. weights_only rejects arbitrary pickled objects.
+    state = torch.load(
+        checkpoint,
+        map_location="cpu",
+        mmap=True,
+        weights_only=True,
+    )
     cfg = state.get("config", {})
     model_cfg = cfg.get("model", {})
     model = BoundaryUNet(
@@ -50,9 +60,11 @@ def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
         out_channels=int(model_cfg.get("out_channels", 3)),
         base_channels=int(model_cfg.get("base_channels", 32)),
     )
-    model.load_state_dict(state["model"])
-    model.to(target).eval()
-    return model
+    model.load_state_dict(state["model"], assign=True)
+    del state
+    if target.type != "cpu":
+        model.to(target)
+    return model.eval()
 
 
 def _split_instances(logits: torch.Tensor) -> np.ndarray:
