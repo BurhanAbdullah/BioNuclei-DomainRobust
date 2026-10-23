@@ -516,43 +516,67 @@ def main() -> None:
                     "() => /analysis data deleted from the server/i.test(document.querySelector('#runMsg')?.textContent || '')",
                     timeout=30000,
                 )
-                deleted = True
+                state["cleanup_attempted"] = True
+                state["cleanup_source"] = "browser_delete"
                 deleted_response = requests.get(f"{API_BASE}/jobs/{job_id}", headers=headers, timeout=30)
+                state["cleanup_verify_http_status"] = deleted_response.status_code
                 require(deleted_response.status_code == 404, f"Deleted job remained accessible: HTTP {deleted_response.status_code}")
                 state["deleted_job_http_status"] = deleted_response.status_code
+                state["cleanup_verified"] = True
+                deleted = True
                 print(json.dumps({"status": "PASS", **state}, indent=2, sort_keys=True))
                 context.close()
                 browser.close()
         except Exception:
+            state["status"] = "FAIL"
             try:
                 if page is not None and not page.is_closed():
                     page.screenshot(path="live-agent-e2e-failure.png", full_page=True, timeout=15000)
             except Exception:
                 pass
-            # Persist redacted status/timing diagnostics even if the browser or
-            # screenshot fails. Never serialize guest tokens or auth headers.
-            try:
-                Path("live-agent-e2e-failure.json").write_text(
-                    json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str) + "\n",
-                    encoding="utf-8",
-                )
-            except Exception:
-                pass
-            print(json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str))
             raise
         finally:
             # Delete only the disposable job created by this run, even on assertion failure.
+            # Record both the delete response and a separate access check; a request attempt
+            # is not evidence that the job or its files were actually removed.
             job_id = credentials.get("job_id")
             token = credentials.get("guest_token")
             if job_id and token and not deleted:
+                state["cleanup_attempted"] = True
                 try:
-                    requests.delete(
+                    delete_response = requests.delete(
                         f"{API_BASE}/jobs/{job_id}",
                         headers={"X-BioNuclei-Guest-Token": str(token)},
                         timeout=30,
                     )
+                    state["cleanup_delete_http_status"] = delete_response.status_code
+                    verify_response = requests.get(
+                        f"{API_BASE}/jobs/{job_id}",
+                        headers={"X-BioNuclei-Guest-Token": str(token)},
+                        timeout=30,
+                    )
+                    state["cleanup_verify_http_status"] = verify_response.status_code
+                    state["cleanup_verified"] = verify_response.status_code == 404
+                    if verify_response.status_code == 404:
+                        deleted = True
+                    else:
+                        state["cleanup_error"] = "job remained accessible after cleanup"
+                except requests.RequestException as exc:
+                    state["cleanup_verified"] = False
+                    state["cleanup_error"] = type(exc).__name__
+            else:
+                state.setdefault("cleanup_attempted", False)
+                state.setdefault("cleanup_verified", False)
+            if state.get("status") == "FAIL":
+                # Persist only after finally has attempted and verified cleanup.
+                try:
+                    Path("live-agent-e2e-failure.json").write_text(
+                        json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str) + "\n",
+                        encoding="utf-8",
+                    )
                 except Exception:
                     pass
+                print(json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str))
             if browser is not None:
                 try:
                     browser.close()
