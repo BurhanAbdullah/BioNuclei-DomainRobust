@@ -122,3 +122,17 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), context);
     assert result.returncode == 0, result.stdout + result.stderr
     assert "terminal-failure-ui-ok" in result.stdout
 
+def test_lab_page_never_persists_uploaded_microscopy_files() -> None:
+    html = (DOCS / "bionuclei-lab.html").read_text(encoding="utf-8")
+    lowered = html.lower()
+
+    # The selected File may be previewed in page memory, but navigation must
+    # require a fresh selection rather than restoring a persisted microscopy blob.
+    for forbidden in ("indexeddb", "pending_files", "localstorage", "sessionstorage", "blob:f"):
+        assert forbidden not in lowered
+    assert "browser storage" in lowered
+    assert "fresh file selection after navigation" in lowered
+    assert "url.createobjecturl" in lowered
+    assert "url.revokeobjecturl" in lowered
+    assert "beforeunload" in lowered
+
