@@ -628,16 +628,36 @@ def get_archive(job_id: str, user_id: str) -> Path:
     return _archive(job_id)
 
 
-def delete_job(job_id: str,user_id: str) -> bool:
-    row=_get_job(job_id,user_id)
-    if row is None: raise FileNotFoundError(job_id)
-    shutil.rmtree(_job_dir(job_id),ignore_errors=True)
-    (JOB_ROOT/f"{job_id}.zip").unlink(missing_ok=True)
-    with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?",(job_id,user_id))
-        conn.commit()
-    return True
+def delete_job(job_id: str, user_id: str) -> bool:
+    """Delete an owner's job only after transient artifacts are physically removed."""
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
 
+    root = _job_dir(job_id)
+    archive = JOB_ROOT / f"{job_id}.zip"
+    try:
+        if root.exists():
+            shutil.rmtree(root)
+        archive.unlink(missing_ok=True)
+        if root.exists() or archive.exists():
+            raise OSError("job artifacts remain after cleanup")
+    except OSError as exc:
+        # Keep the owner-scoped row so the owner can retry deletion. Never report
+        # success or erase metadata while source/result bytes may still exist.
+        raise OSError(
+            "Could not remove all transient job artifacts; job metadata was retained for retry"
+        ) from exc
+
+    with DB_LOCK, _db() as conn:
+        deleted = conn.execute(
+            "DELETE FROM jobs WHERE id = ? AND user_id = ?",
+            (job_id, user_id),
+        )
+        conn.commit()
+    if deleted.rowcount != 1:
+        raise FileNotFoundError(job_id)
+    return True
 
 
 def delete_research_copy(job_id: str, user_id: str) -> bool:
@@ -647,14 +667,28 @@ def delete_research_copy(job_id: str, user_id: str) -> bool:
         raise FileNotFoundError(job_id)
     if not bool(row["research_consent"]) or not bool(row["retained_copy"]):
         raise FileNotFoundError("No retained research copy exists for this job")
+
     root = _job_dir(job_id) / "research_copy"
-    shutil.rmtree(root, ignore_errors=True)
+    try:
+        if root.exists():
+            shutil.rmtree(root)
+        if root.exists():
+            raise OSError("research-copy artifacts remain after cleanup")
+    except OSError as exc:
+        # Preserve consent/retention metadata until deletion is confirmed.
+        raise OSError(
+            "Could not remove the retained research copy; metadata was retained for retry"
+        ) from exc
+
     with DB_LOCK, _db() as conn:
-        conn.execute(
-            "UPDATE jobs SET retained_copy = 0, research_consent = 0, updated_at = ? WHERE id = ? AND user_id = ?",
+        updated = conn.execute(
+            "UPDATE jobs SET retained_copy = 0, research_consent = 0, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND research_consent = 1 AND retained_copy = 1",
             (_now().isoformat(), job_id, user_id),
         )
         conn.commit()
+    if updated.rowcount != 1:
+        raise FileNotFoundError("No retained research copy exists for this job")
     return True
 
 
