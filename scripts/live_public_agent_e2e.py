@@ -59,6 +59,16 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def resolve_result_reference(payload: dict[str, object], reference: str) -> tuple[bool, object]:
+    """Resolve a specialist numeric claim against the actual computed result."""
+    value: object = payload
+    for component in reference.split("."):
+        if not isinstance(value, dict) or component not in value:
+            return False, None
+        value = value[component]
+    return True, value
+
+
 def verify_published_site(state: dict[str, object]) -> None:
     """Open the real published UI before probing its backend or creating a job."""
     with sync_playwright() as playwright:
@@ -467,19 +477,72 @@ def main() -> None:
                     result.get("model", {}).get("training_reference") == "Not established",
                     "Unverified training provenance was not labeled Not established",
                 )
-                profile = result.get("adaptive_plan", {}).get("profile", {})
+                plan = result.get("adaptive_plan", {})
+                require(isinstance(plan, dict), "Adaptive QC plan is missing")
+                require(plan.get("status") in {"READY", "CAUTION"},
+                        f"Input QC/CNN gate did not produce an analysable result: {plan.get('status')!r}")
+                profile = plan.get("profile", {})
                 require(profile.get("shape") == [512, 512], f"Unexpected input shape: {profile.get('shape')!r}")
                 require(profile.get("dtype") == "uint16", f"Input dtype was not preserved: {profile.get('dtype')!r}")
+                require(profile.get("min") == 512, f"Unexpected raw-image minimum: {profile.get('min')!r}")
                 require(profile.get("max") == 65535, f"Full uint16 range lost before specialist reasoning: {profile.get('max')!r}")
-                intensity = result.get("reports", {}).get("intensity", {})
+                require(profile.get("finite") is True, "Image QC did not confirm finite raw pixels")
+                std = profile.get("std")
+                require(isinstance(std, (int, float)) and np.isfinite(float(std)) and float(std) > 0,
+                        f"Image QC did not preserve non-constant intensity variation: {std!r}")
+                saturation_fraction = profile.get("saturation_fraction")
+                require(isinstance(saturation_fraction, (int, float)) and
+                        np.isfinite(float(saturation_fraction)) and 0 < float(saturation_fraction) <= 1,
+                        f"Image QC did not report the 16-bit saturation sentinel: {saturation_fraction!r}")
+                zero_fraction = profile.get("zero_fraction")
+                require(isinstance(zero_fraction, (int, float)) and float(zero_fraction) == 0,
+                        f"Unexpected zero-intensity fraction for the deterministic fixture: {zero_fraction!r}")
+
+                cnn = plan.get("cnn_pattern_check", {})
+                require(isinstance(cnn, dict) and cnn.get("executed") is True,
+                        "The real CNN analyseability/QC gate did not execute")
+                require(cnn.get("status") in {"PASS", "CAUTION"},
+                        f"CNN gate returned an invalid status: {cnn.get('status')!r}")
+                foreground_fraction = cnn.get("foreground_fraction")
+                confidence = cnn.get("mean_class_confidence")
+                entropy = cnn.get("mean_entropy")
+                components = cnn.get("connected_components")
+                require(isinstance(foreground_fraction, (int, float)) and
+                        np.isfinite(float(foreground_fraction)) and 0 <= float(foreground_fraction) <= 1,
+                        f"CNN foreground fraction is invalid: {foreground_fraction!r}")
+                require(isinstance(confidence, (int, float)) and
+                        np.isfinite(float(confidence)) and 0 <= float(confidence) <= 1,
+                        f"CNN mean class confidence is invalid: {confidence!r}")
+                require(isinstance(entropy, (int, float)) and
+                        np.isfinite(float(entropy)) and float(entropy) >= 0,
+                        f"CNN mean entropy is invalid: {entropy!r}")
+                require(isinstance(components, int) and not isinstance(components, bool) and components >= 0,
+                        f"CNN connected-component count is invalid: {components!r}")
+                actions = plan.get("actions", [])
+                require(any("Do not report a calibrated probability of correctness" in str(action) for action in actions),
+                        "The uncertainty policy no longer prevents unsupported calibrated-confidence claims")
+
+                reports = result.get("reports", {})
+                nuclei_count = reports.get("nuclei_count")
+                require(isinstance(nuclei_count, int) and not isinstance(nuclei_count, bool) and nuclei_count > 0,
+                        f"No valid measured instance count was produced: {nuclei_count!r}")
+                spatial = reports.get("spatial", {})
+                require(spatial.get("instance_count") == nuclei_count,
+                        "Spatial and primary instance counts disagree")
+                morphology = reports.get("morphology", {})
+                mean_area = morphology.get("mean_area")
+                require(isinstance(mean_area, (int, float)) and np.isfinite(float(mean_area)) and float(mean_area) > 0,
+                        f"Measured morphology is missing or invalid: {mean_area!r}")
+
+                intensity = reports.get("intensity", {})
                 require(
                     intensity.get("max_nuclear_intensity") == 65535,
                     "65535 did not survive into the measured nuclear intensity; the real model did not segment the sentinel-containing object",
                 )
-                require(
-                    float(intensity.get("mean_nuclear_intensity", 0)) > 255,
-                    "Nuclear intensity measurements do not demonstrate values above 8-bit range",
-                )
+                mean_intensity = intensity.get("mean_nuclear_intensity")
+                require(isinstance(mean_intensity, (int, float)) and
+                        np.isfinite(float(mean_intensity)) and float(mean_intensity) > 255,
+                        f"Nuclear intensity measurements do not demonstrate values above 8-bit range: {mean_intensity!r}")
 
                 artifact_response = requests.get(
                     f"{API_BASE}/jobs/{job_id}/files/expert_agents.json", headers=headers, timeout=30
