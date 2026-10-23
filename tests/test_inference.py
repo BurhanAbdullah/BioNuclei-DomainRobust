@@ -11,6 +11,7 @@ from bionuclei.inference import (
     _predict_logits,
     _tile_core_ranges,
 )
+from bionuclei.models import BoundaryUNet
 
 
 def test_normalise_is_finite_and_bounded():
@@ -90,6 +91,7 @@ def test_tiled_logits_reject_invalid_geometry_and_channels():
     with pytest.raises(ValueError, match="single-image, single-channel"):
         _predict_logits(model, torch.zeros((1, 2, 64, 64)), tile_size=32, overlap=16)
 
+
 class _RecordingPointwiseLogits(_PointwiseLogits):
     def __init__(self):
         super().__init__()
@@ -114,3 +116,17 @@ def test_default_tiling_bounds_every_512px_forward_pass():
     assert torch.equal(actual, expected)
     assert len(model.forward_shapes) == 9
     assert all(height <= 256 and width <= 256 for height, width in model.forward_shapes)
+
+
+def test_tiled_logits_match_boundary_unet_receptive_field_context():
+    """Exercise the actual U-Net topology, not only pointwise stitching fixtures."""
+    torch.manual_seed(17)
+    model = BoundaryUNet(base_channels=2).eval()
+    x = torch.linspace(0.0, 1.0, 512 * 512, dtype=torch.float32).reshape(1, 1, 512, 512)
+
+    with torch.inference_mode():
+        expected = model(x)
+        actual = _predict_logits(model, x)
+
+    assert actual.shape == expected.shape == (1, 3, 512, 512)
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=1e-6)
