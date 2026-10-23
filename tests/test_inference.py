@@ -120,6 +120,20 @@ def test_default_tiling_bounds_every_512px_forward_pass():
 
 
 @pytest.mark.parametrize("shape", [(512, 512), (319, 321), (512, 520), (600, 520)])
+def test_192px_cpu_tiles_match_boundary_unet_receptive_field_context():
+    """The lower-memory CPU geometry must preserve the actual U-Net seam outputs."""
+    torch.manual_seed(23)
+    model = BoundaryUNet(base_channels=2).eval()
+    x = torch.linspace(0.0, 1.0, 512 * 512, dtype=torch.float32).reshape(1, 1, 512, 512)
+
+    with torch.inference_mode():
+        expected = model(x)
+        actual = _predict_logits(model, x, tile_size=192, overlap=128)
+
+    assert actual.shape == expected.shape == (1, 3, 512, 512)
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=1e-6)
+
+
 def test_tiled_logits_match_boundary_unet_receptive_field_context(shape):
     """Exercise the actual U-Net topology and seam context on square and irregular images."""
     torch.manual_seed(17)
