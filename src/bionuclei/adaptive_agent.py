@@ -121,12 +121,12 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
 
         # This is only a coarse analyseability gate, not the final scientific
         # prediction. Bound its working set by using a scale-preserving view at
-        # <=256 px on the longest side; the real inference still uses the full
+        # <=192 px on the longest side; the real inference still uses the full
         # original-resolution image. Dimensions are rounded to multiples of 16
         # for the four-level U-Net encoder/decoder.
         normalised = _normalise(image)
         height, width = normalised.shape
-        scale = min(1.0, 256.0 / max(height, width))
+        scale = min(1.0, 192.0 / max(height, width))
         if scale < 1.0:
             target_height = max(16, int(round((height * scale) / 16.0) * 16))
             target_width = max(16, int(round((width * scale) / 16.0) * 16))
