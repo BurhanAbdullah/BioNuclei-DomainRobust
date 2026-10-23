@@ -3,17 +3,11 @@ name: E6 25pct recovery
 # Dedicated recovery path for the only repeatedly failing E6 fraction.
 # Scientific settings remain frozen: fraction=0.25, n=8, seed=42, epochs=20.
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/e6_25pct_recovery.yml"
-      - "scripts/e6_run_external_few_shot.py"
-      - "scripts/train_domain_robust.py"
-      - "scripts/download_aitslab_bioimaging1.py"
-      - "scripts/evaluate_instance_manifest.py"
-      - "src/bionuclei/**"
-      - "pyproject.toml"
-      - "configs/domain_robust.yaml"
+  # This is an exceptional 25% recovery lane. The canonical E6 workflow
+  # already runs all four preregistered fractions. Automatically launching this
+  # lane too consumes an extra hosted runner and Actions minutes; jobs do not
+  # share physical CPU/RAM, but can consume repository concurrency capacity.
+  # Keep this manually dispatchable for a deliberate single-fraction recovery.
   workflow_dispatch:
 
 permissions:
@@ -27,8 +21,8 @@ env:
   NUMEXPR_NUM_THREADS: "2"
   BIONUCLEI_NUM_WORKERS: "0"
   BIONUCLEI_ACTIVATION_CHECKPOINT: "1"
-  E4_ARTIFACT_ID: "9912441468"
-  EXPECTED_E4_DIGEST: "sha256:7e6efb89b11d6d04db2eb5da257cd33cb19d93e5223c8e6c93c638308c3e9afa"
+  E4_ARTIFACT_ID: "12183110279"
+  EXPECTED_E4_DIGEST: "sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d"
 
 jobs:
   e6_25pct:

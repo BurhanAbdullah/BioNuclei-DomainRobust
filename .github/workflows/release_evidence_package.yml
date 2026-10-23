@@ -1,84 +1,156 @@
 name: Permanent evidence package
 
+# Packaging is a release-stage operation: run only after clean reproduction has
+# succeeded, or explicitly by a maintainer. Routine code pushes must not package
+# stale or incomplete scientific results.
 on:
-  push:
+  workflow_run:
+    workflows: ["Clean-environment reproduction"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      clean_reproduction_run_id:
+        description: "Optional successful clean reproduction run ID (defaults to latest successful run)"
+        required: false
+        type: string
 
 permissions:
   contents: write
   actions: read
 
-env:
-  E6_ARTIFACT_ID: "10088980217"
-  E7_ARTIFACT_ID: "10089229809"
-  UNCERTAINTY_ARTIFACT_ID: "10088988731"
-  CLEAN_REPRO_ARTIFACT_ID: "10089022008"
-  SCIENTIFIC_SOURCE_COMMIT: "2dba10e614bc5efc9bc4de66994c7c920d6667cb"
-  RELEASE_TAG: "evidence-package-v1"
-
 jobs:
   package:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - name: Download exact retained artifacts
+
+      - name: Resolve successful clean reproduction and manifest
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.clean_reproduction_run_id }}
         run: |
           set -euo pipefail
+          clean_run_id="${EVENT_RUN_ID:-${INPUT_RUN_ID:-}}"
+          if [ -z "$clean_run_id" ]; then
+            clean_run_id="$(gh run list --workflow clean_environment_reproduction.yml --branch main --status success --json databaseId --limit 1 --jq '.[0].databaseId')"
+          fi
+          test -n "$clean_run_id" && test "$clean_run_id" != "null"
+          clean_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${clean_run_id}")"
+          test "$(jq -r '.conclusion' <<<"$clean_run")" = "success"
+          test "$(jq -r '.head_branch' <<<"$clean_run")" = "main"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${clean_run_id}/artifacts?per_page=100" > clean-artifacts.json
+          clean_name="clean-environment-reproduction-${clean_run_id}"
+          clean_artifact_id="$(jq -r --arg n "$clean_name" '[.artifacts[] | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' clean-artifacts.json)"
+          test -n "$clean_artifact_id" || { echo "Missing live artifact $clean_name"; exit 1; }
           mkdir -p package/evidence
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${E6_ARTIFACT_ID}/zip" > package/evidence/e6-aggregate.zip
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${E7_ARTIFACT_ID}/zip" > package/evidence/e7-bbbc038.zip
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${UNCERTAINTY_ARTIFACT_ID}/zip" > package/evidence/e6-e7-uncertainty-failure.zip
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CLEAN_REPRO_ARTIFACT_ID}/zip" > package/evidence/clean-reproduction.zip
-          for f in package/evidence/*.zip; do test -s "$f"; done
-      - name: Verify exact artifact metadata
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${clean_artifact_id}" > package/evidence/clean-reproduction.metadata.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${clean_artifact_id}/zip" > package/evidence/clean-reproduction.zip
+          unzip -q package/evidence/clean-reproduction.zip -d clean-source
+          metadata_path="$(find clean-source -path '*/evidence/artifact_metadata.json' -type f -print -quit)"
+          test -n "$metadata_path" || { echo "Clean reproduction is missing artifact identity metadata"; exit 1; }
+          cp "$metadata_path" package/evidence/artifact_metadata.json
+          echo "$clean_run_id" > package/evidence/clean_reproduction_run_id.txt
+          echo "$clean_artifact_id" > package/evidence/clean_reproduction_artifact_id.txt
+
+      - name: Verify and archive the exact scientific source artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json, os, urllib.request
-          repo=os.environ['GITHUB_REPOSITORY']; token=os.environ['GH_TOKEN']
-          expected={
-            os.environ['E6_ARTIFACT_ID']: {'run':34312833206,'digest':'sha256:fad1b13ae05cfcb4cfa7f958a61b027ff84751d1ff980a6d6c5d1794106f7c34'},
-            os.environ['E7_ARTIFACT_ID']: {'run':34312920549,'digest':'sha256:e71df73427544700809d6cd2a094b33b572c3e7d835f754482a76061dd18ede7'},
-            os.environ['UNCERTAINTY_ARTIFACT_ID']: {'run':34312853905,'digest':'sha256:0cbef10c50d7c254a38bf2c865d20dcac4c420010171af70a44e0e266c85d6a7'},
-            os.environ['CLEAN_REPRO_ARTIFACT_ID']: {'run':34312877852,'digest':'sha256:68b2bfdee4dec46ab208daa4792870f7e16c309cf1b2dc6eb1ec46b509174b77'},
+          metadata=package/evidence/artifact_metadata.json
+          e4_id="$(jq -r '.e4_artifact_id' "$metadata")"
+          e4_digest="$(jq -r '.e4_artifact_digest' "$metadata")"
+          e6_final_id="$(jq -r '.e6_final_artifact_id' "$metadata")"
+          e6_final_digest="$(jq -r '.e6_final_artifact_digest' "$metadata")"
+          e7_id="$(jq -r '.e7_artifact_id' "$metadata")"
+          e7_digest="$(jq -r '.e7_artifact_digest' "$metadata")"
+          uncertainty_run_id="$(jq -r '.uncertainty_run_id' "$metadata")"
+          test "$e4_id" != "null" && test "$e6_final_id" != "null" && test "$e7_id" != "null"
+          test "$uncertainty_run_id" != "null"
+
+          download_verified() {
+            local label="$1" artifact_id="$2" expected_digest="$3" path="package/evidence/$1"
+            local obj digest expired size
+            obj="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}")"
+            digest="$(jq -r '.digest' <<<"$obj")"
+            expired="$(jq -r '.expired' <<<"$obj")"
+            size="$(jq -r '.size_in_bytes' <<<"$obj")"
+            test "$expired" = "false" || { echo "$label artifact $artifact_id is expired"; return 1; }
+            test "$size" -gt 0 || { echo "$label artifact $artifact_id is empty"; return 1; }
+            if [ -n "$expected_digest" ]; then
+              test "$digest" = "$expected_digest" || { echo "$label artifact digest mismatch: expected $expected_digest, got $digest"; return 1; }
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "${path}.zip"
+            printf '%s\n' "$obj" > "${path}.metadata.json"
           }
-          def get(aid):
-            req=urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'})
-            with urllib.request.urlopen(req) as h:return json.load(h)
-          records=[]
-          for aid, exp in expected.items():
-            o=get(aid)
-            assert not o['expired'], aid
-            assert int(o['workflow_run']['id']) == exp['run'], aid
-            assert o['digest'] == exp['digest'], aid
-            records.append({'artifact_id':int(aid),'name':o['name'],'workflow_run':exp['run'],'digest':o['digest'],'size_in_bytes':o['size_in_bytes']})
-          json.dump({'scientific_source_commit':os.environ['SCIENTIFIC_SOURCE_COMMIT'],'packaging_commit':os.environ['GITHUB_SHA'],'records':records},open('package/evidence_manifest.json','w'),indent=2)
-          PY
-      - name: Copy release-control documents
-        run: |
-          set -euo pipefail
+
+          download_verified e4-frozen-checkpoint "$e4_id" "$e4_digest"
+          download_verified e6-final-aggregate "$e6_final_id" "$e6_final_digest"
+          download_verified e7-bbbc038 "$e7_id" "$e7_digest"
+
+          for label in 01pct 05pct 10pct 25pct; do
+            id="$(jq -r --arg label "$label" '.e6_fraction_artifacts[$label].artifact_id' "$metadata")"
+            digest="$(jq -r --arg label "$label" '.e6_fraction_artifacts[$label].digest' "$metadata")"
+            test "$id" != "null" && test "$digest" != "null"
+            download_verified "e6-fraction-$label" "$id" "$digest"
+            actual_run="$(jq -r '.workflow_run.id' "package/evidence/e6-fraction-$label.metadata.json")"
+            expected_run="$(jq -r '.e6_source_run_id' "$metadata")"
+            test "$actual_run" = "$expected_run"
+          done
+
+          uncertainty_name="e6-e7-uncertainty-failure-analysis-${uncertainty_run_id}"
+          uncertainty_artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${uncertainty_run_id}/artifacts?per_page=100")"
+          uncertainty_id="$(jq -r --arg n "$uncertainty_name" '[.artifacts[] | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' <<<"$uncertainty_artifacts")"
+          test -n "$uncertainty_id" || { echo "Missing live uncertainty artifact $uncertainty_name"; exit 1; }
+          download_verified uncertainty-analysis "$uncertainty_id" ""
+
           cp docs/RELEASE_CHECKLIST.md package/RELEASE_CHECKLIST.md
           cp docs/STATISTICAL_ANALYSIS_PLAN.md package/STATISTICAL_ANALYSIS_PLAN.md
           cp docs/E6_ANNOTATION_EFFICIENCY_2026-09-17.md package/E6_ANNOTATION_EFFICIENCY_2026-09-17.md
           cp docs/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md package/E3_E4_STATISTICAL_VERIFICATION_2026-09-04.md
           cp docs/PROGRESS.md package/PROGRESS.md
-      - name: Create permanent package
-        run: |
-          set -euo pipefail
-          tar -czf "BioNuclei-${RELEASE_TAG}.tar.gz" package
-          sha256sum "BioNuclei-${RELEASE_TAG}.tar.gz" > "BioNuclei-${RELEASE_TAG}.tar.gz.sha256"
-      - name: Publish GitHub Release
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('package/evidence')
+          records={}
+          for p in sorted(root.glob('*.metadata.json')):
+              obj=json.loads(p.read_text())
+              records[p.name.removesuffix('.metadata.json')]={
+                  'artifact_id':obj['id'],'name':obj['name'],'digest':obj['digest'],
+                  'size_in_bytes':obj['size_in_bytes'],'expired':obj['expired'],
+                  'workflow_run_id':(obj.get('workflow_run') or {}).get('id'),
+                  'head_sha':(obj.get('workflow_run') or {}).get('head_sha'),
+              }
+          metadata=json.loads((root/'artifact_metadata.json').read_text())
+          manifest={
+              'status':'verified evidence package; this is not a claim of scientific readiness',
+              'packaging_commit':__import__('os').environ['GITHUB_SHA'],
+              'clean_reproduction_run_id':int((root/'clean_reproduction_run_id.txt').read_text()),
+              'scientific_source':metadata,
+              'artifacts':records,
+          }
+          (Path('package')/'evidence_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          print('Verified source artifact manifest written:',len(records),'artifacts')
+          PY
+
+      - name: Create immutable per-run package and checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          export RELEASE_TAG="evidence-package-${GITHUB_RUN_ID}"
+          tar -czf "BioNuclei-${RELEASE_TAG}.tar.gz" package
+          sha256sum "BioNuclei-${RELEASE_TAG}.tar.gz" > "BioNuclei-${RELEASE_TAG}.tar.gz.sha256"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "BioNuclei-${RELEASE_TAG}.tar.gz" "BioNuclei-${RELEASE_TAG}.tar.gz.sha256" --clobber
-          else
-            gh release create "$RELEASE_TAG" "BioNuclei-${RELEASE_TAG}.tar.gz" "BioNuclei-${RELEASE_TAG}.tar.gz.sha256" --title "BioNuclei Permanent Evidence Package v1" --notes "Permanent evidence package pinned to the verified E6 aggregate, E7 BBBC038 validation, E6/E7 uncertainty/failure analysis, clean-environment reproduction, release-control documents, exact artifact digests, and scientific source commit. This package does not rewrite scientific evidence."
+            echo "Refusing to overwrite existing evidence release $RELEASE_TAG"
+            exit 1
           fi
+          gh release create "$RELEASE_TAG" "BioNuclei-${RELEASE_TAG}.tar.gz" "BioNuclei-${RELEASE_TAG}.tar.gz.sha256" \
+            --title "BioNuclei verified evidence package ${GITHUB_RUN_ID}" \
+            --notes "Generated only after successful clean-environment reproduction. Contains exact upstream artifact digests and provenance. Packaging does not rewrite scientific outputs and does not itself establish scientific readiness."

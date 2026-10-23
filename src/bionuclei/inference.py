@@ -1,9 +1,11 @@
 """User-facing BioNuclei inference and deterministic result bundles."""
 from __future__ import annotations
 
+import ctypes
 import gc
 import json
 import platform
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 import torch
+import torch.nn.functional as F
 from scipy import ndimage
 from skimage.io import imread
 from skimage.measure import regionprops
@@ -31,6 +34,26 @@ except RuntimeError:
     pass
 
 
+def _trim_cpu_allocator() -> bool:
+    """Return free glibc heap pages to the OS after CPU inference when possible.
+
+    PyTorch CPU tensors are freed below, but glibc can otherwise retain their
+    arenas in a long-lived 512 MiB web worker. On non-Linux/non-glibc systems
+    this is a safe no-op; inference correctness never depends on trimming.
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        trim = getattr(ctypes.CDLL(None), "malloc_trim", None)
+        if trim is None:
+            return False
+        trim.argtypes = [ctypes.c_size_t]
+        trim.restype = ctypes.c_int
+        return bool(trim(0))
+    except (AttributeError, OSError, TypeError):
+        return False
+
+
 def _normalise(image: np.ndarray) -> np.ndarray:
     x = image.astype(np.float32, copy=False)
     scale = float(np.percentile(x, 99.5))
@@ -41,7 +64,17 @@ def _normalise(image: np.ndarray) -> np.ndarray:
 
 def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
     target = torch.device(device)
-    state = torch.load(checkpoint, map_location=target)
+    # The checkpoint is a trusted, immutable release artifact. Memory-map its
+    # CPU storages and assign them directly to the module instead of keeping a
+    # deserialized state dict and a second copied parameter set resident at
+    # once. This matters on the 512 MiB public worker before tiled activations
+    # are even allocated. weights_only rejects arbitrary pickled objects.
+    state = torch.load(
+        checkpoint,
+        map_location="cpu",
+        mmap=True,
+        weights_only=True,
+    )
     cfg = state.get("config", {})
     model_cfg = cfg.get("model", {})
     model = BoundaryUNet(
@@ -49,9 +82,11 @@ def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
         out_channels=int(model_cfg.get("out_channels", 3)),
         base_channels=int(model_cfg.get("base_channels", 32)),
     )
-    model.load_state_dict(state["model"])
-    model.to(target).eval()
-    return model
+    model.load_state_dict(state["model"], assign=True)
+    del state
+    if target.type != "cpu":
+        model.to(target)
+    return model.eval()
 
 
 def _split_instances(logits: torch.Tensor) -> np.ndarray:
@@ -86,6 +121,85 @@ def _overlay(image: np.ndarray, instances: np.ndarray) -> np.ndarray:
     return base
 
 
+def _axis_tile_starts(length: int, tile_size: int, overlap: int) -> list[int]:
+    """Return pooling-grid-aligned tile origins that cover an axis."""
+    if length <= tile_size:
+        return [0]
+    stride = tile_size - overlap
+    starts = list(range(0, length - tile_size + 1, stride))
+    final_start = length - tile_size
+    if starts[-1] != final_start:
+        starts.append(final_start)
+    return starts
+
+
+def _tile_core_ranges(starts: list[int], tile_length: int, length: int) -> list[tuple[int, int]]:
+    """Partition an axis at overlap midpoints so every output pixel is written once."""
+    boundaries = [0]
+    for previous, current in zip(starts, starts[1:]):
+        boundaries.append((previous + tile_length + current) // 2)
+    boundaries.append(length)
+    return list(zip(boundaries[:-1], boundaries[1:]))
+
+
+def _predict_logits(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    tile_size: int = 256,
+    overlap: int = 128,
+) -> torch.Tensor:
+    """Predict logits with bounded spatial activations and overlap-context stitching.
+
+    Origins, tile dimensions, and overlap are multiples of eight to preserve the
+    three pooling stages' spatial alignment. A 64-pixel minimum context is kept
+    at internal seams; global instance labeling remains a later operation.
+    """
+    if x.ndim != 4 or x.shape[0] != 1 or x.shape[1] != 1:
+        raise ValueError(f"Expected a single-image, single-channel tensor; got {tuple(x.shape)}")
+    if tile_size <= overlap or tile_size % 8 or overlap % 8:
+        raise ValueError("tile_size and overlap must be multiples of eight with tile_size > overlap")
+
+    original_height, original_width = x.shape[-2:]
+    pad_height = (-original_height) % 8
+    pad_width = (-original_width) % 8
+    if pad_height or pad_width:
+        x = F.pad(x, (0, pad_width, 0, pad_height), mode="replicate")
+
+    height, width = x.shape[-2:]
+    tile_height = min(tile_size, height)
+    tile_width = min(tile_size, width)
+    y_starts = _axis_tile_starts(height, tile_size, overlap)
+    x_starts = _axis_tile_starts(width, tile_size, overlap)
+
+    with torch.no_grad():
+        if len(y_starts) == 1 and len(x_starts) == 1:
+            return model(x)[..., :original_height, :original_width]
+
+        y_cores = _tile_core_ranges(y_starts, tile_height, height)
+        x_cores = _tile_core_ranges(x_starts, tile_width, width)
+        assembled = None
+        for y_index, y_start in enumerate(y_starts):
+            y0, y1 = y_cores[y_index]
+            for x_index, x_start in enumerate(x_starts):
+                x0, x1 = x_cores[x_index]
+                tile = x[..., y_start:y_start + tile_height, x_start:x_start + tile_width]
+                tile_logits = model(tile)
+                if assembled is None:
+                    assembled = torch.empty(
+                        (1, tile_logits.shape[1], height, width),
+                        dtype=tile_logits.dtype,
+                        device=tile_logits.device,
+                    )
+                assembled[..., y0:y1, x0:x1] = tile_logits[
+                    ...,
+                    y0 - y_start:y1 - y_start,
+                    x0 - x_start:x1 - x_start,
+                ]
+                del tile_logits, tile
+
+    return assembled[..., :original_height, :original_width]
+
+
 def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu") -> dict:
     """Run segmentation and write mask, overlay, measurements and provenance."""
     image = np.asarray(tifffile.imread(input_path))
@@ -99,12 +213,20 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
         model = _load_model(checkpoint, device)
         try:
             x = torch.from_numpy(_normalise(image)[None, None]).float().to(device)
+            # The public Render Free instance has a 512 MiB limit. Smaller CPU
+            # tiles reduce peak activation memory; retain 64 px context on each
+            # side of internal seams. GPU inference keeps the faster default.
+            tile_size, overlap = (160, 128) if device == "cpu" else (256, 128)
             with torch.no_grad():
-                instances = _split_instances(model(x))
+                instances = _split_instances(
+                    _predict_logits(model, x, tile_size=tile_size, overlap=overlap)
+                )
         finally:
             del x
             del model
             gc.collect()
+            if device == "cpu":
+                _trim_cpu_allocator()
             if device == "cuda" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 

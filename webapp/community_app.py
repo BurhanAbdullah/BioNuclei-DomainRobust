@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -14,39 +13,30 @@ from fastapi.responses import FileResponse, Response
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
-from .community import MAX_UPLOAD_BYTES, create_job, delete_job, get_archive, get_file, get_job, get_jobs_for_user
+from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
 
-
-def _failure_cleanup(job_id: str, root):
-    """Delete transient artifacts but keep a queryable failed-job record.
-
-    The previous implementation deleted the database row on worker failure. A
-    browser polling that job then received 404 and could only report a generic
-    connection interruption. Keeping a minimal failed row makes the API tell
-    the truth while still removing the uploaded image and derived artifacts.
-    The detailed exception remains in server logs.
-    """
-    shutil.rmtree(root, ignore_errors=True)
-    (community_service.JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
-    with community_service.DB_LOCK, community_service._db() as conn:
-        conn.execute(
-            "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
-            (
-                "failed",
-                "Analysis worker failed before producing a complete result. Please retry the analysis.",
-                community_service._now().isoformat(),
-                job_id,
-            ),
-        )
-        conn.commit()
-
-
-# community._run resolves this helper through its module globals. Replace only
-# the failure cleanup behavior; the scientific pipeline itself is unchanged.
-community_service._cleanup_failed_job = _failure_cleanup
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
-allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
+PUBLIC_SITE_ORIGIN = "https://burhanabdullah.github.io"
+
+
+def _configured_origins(value: str | None) -> list[str]:
+    """Keep the published GitHub Pages analyzer able to call the public API.
+
+    Operators may restrict additional origins through BIONUCLEI_ALLOWED_ORIGINS,
+    but that setting must not accidentally disable the only supported public UI.
+    Wildcard mode remains available because this API intentionally uses no cookies.
+    """
+    raw = value if value is not None else "*"
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    if PUBLIC_SITE_ORIGIN not in origins:
+        origins.append(PUBLIC_SITE_ORIGIN)
+    return origins or [PUBLIC_SITE_ORIGIN]
+
+
+allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
@@ -57,7 +47,7 @@ def root():
 def health():
     try: available=_checkpoint().is_file()
     except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
+    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
 
 @app.get("/algorithms")
 def algorithms():
@@ -69,6 +59,11 @@ def guest_session():
 
 @app.post("/analyze")
 async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research_consent:Annotated[bool,Form()]=False,algorithm_profile:Annotated[str,Form()]="auto",analysis_modules:Annotated[str,Form()]="nuclei,morphology,intensity",nd2_channel:Annotated[int,Form()]=0,nd2_time:Annotated[int,Form()]=0,nd2_z:Annotated[int,Form()]=0,nd2_field:Annotated[int,Form()]=0):
+    if research_consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
+        )
     user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
@@ -109,7 +104,7 @@ def progress(request:Request,job_id:str):
         ("expert_review", "5 · Expert evidence review", "Evidence-constrained specialist agents are reviewing the measured result.", 84),
         ("packaging", "6 · Report packaging", "The report and downloadable analysis package are being assembled.", 94),
         ("completed", "7 · Complete", "Analysis complete. The report is ready to download.", 100),
-        ("failed", "Analysis failed", "The server-side analysis job failed. No transient input/result artifacts were retained.", 0),
+        ("failed", "Analysis failed", "Analysis failed. Cleanup status is reported separately.", 0),
     ]
     phase = status if status in {name for name, *_ in stages} else "queued"
     if output.exists():
@@ -121,7 +116,54 @@ def progress(request:Request,job_id:str):
     if status == "failed": phase = "failed"
     if status not in {"completed","failed","planning","running"} and not output.exists(): phase = "queued"
     selected = next(item for item in stages if item[0] == phase)
-    return {"job_id":job_id,"status":status,"phase":phase,"label":selected[1],"message":selected[2],"progress":selected[3],"pipeline_truth_source":"filesystem artifacts plus job status","expert_agents_started":(output / "expert_agents.json").is_file() if output.exists() else False,"report_ready":(output / "analysis_report.pdf").is_file() if output.exists() else False}
+    message = selected[2]
+    cleanup_status = "pending"
+    if status == "completed":
+        # Completion is only persisted after transient input cleanup succeeds.
+        cleanup_status = "verified"
+    elif status == "failed":
+        error = str(payload.get("error") or "")
+        if error.endswith(community_service._FAILED_JOB_CLEANUP_SUFFIX):
+            cleanup_status = "incomplete"
+            message = (
+                "Analysis failed. Cleanup is incomplete; transient artifacts may remain. "
+                "Automatic cleanup retries will continue. Please retry later."
+            )
+        elif error in {
+            community_service._FAILED_JOB_ERROR,
+            community_service._INTERRUPTED_JOB_ERROR,
+        }:
+            cleanup_status = "verified"
+            message = (
+                "Analysis failed. Transient input/result artifacts were removed and "
+                "cleanup was verified. Please retry the analysis."
+            )
+        else:
+            # Legacy or unrecognized error records do not prove that cleanup succeeded.
+            cleanup_status = "unknown"
+            message = (
+                "Analysis failed. Cleanup status is unknown; do not assume transient "
+                "input/result artifacts were removed."
+            )
+    report_ready = (
+        status == "completed"
+        and output.exists()
+        and (output / "analysis_report.pdf").is_file()
+    )
+    return {
+        "job_id": job_id,
+        "status": status,
+        "phase": phase,
+        "label": selected[1],
+        "message": message,
+        "progress": selected[3],
+        "pipeline_truth_source": "filesystem artifacts plus job status",
+        "expert_agents_started": (
+            (output / "expert_agents.json").is_file() if output.exists() else False
+        ),
+        "report_ready": report_ready,
+        "cleanup_status": cleanup_status,
+    }
 
 @app.get("/jobs/{job_id}/preview/{filename}")
 def preview(request:Request,job_id:str,filename:str):
@@ -146,6 +188,16 @@ def result_file(request:Request,job_id:str,filename:str):
     except (FileNotFoundError,ValueError) as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     media="application/json" if filename.endswith(".json") else "text/csv" if filename.endswith(".csv") else "application/pdf" if filename.endswith(".pdf") else "image/tiff"
     return FileResponse(path,media_type=media,filename=filename,headers={"Cache-Control":"no-store"})
+
+@app.delete("/jobs/{job_id}/research-copy")
+def remove_research_copy(request: Request, job_id: str):
+    user = authenticate_optional(request)
+    try:
+        deleted = delete_research_copy(job_id, user.id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"job_id": job_id, "research_copy_deleted": deleted}
+
 
 @app.delete("/jobs/{job_id}")
 def remove_job(request:Request,job_id:str):

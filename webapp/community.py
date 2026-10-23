@@ -9,6 +9,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import math
 import os
 import shutil
 import sqlite3
@@ -24,7 +25,7 @@ import pandas as pd
 import tifffile
 
 from bionuclei.adaptive_agent import build_plan, to_dict
-from bionuclei.expert_agents import run_expert_agents
+from bionuclei.expert_agents import SPECIALIST_AGENTS, run_expert_agents
 from bionuclei.inference import predict
 from bionuclei.report import build_report
 from .app import _checkpoint
@@ -38,6 +39,9 @@ ENABLED_MODULES = {"nuclei", "morphology", "intensity"}
 ALLOWED_UPLOAD_SUFFIXES = {".tif", ".tiff", ".nd2"}
 DB_LOCK = threading.Lock()
 INFERENCE_LOCK = threading.Lock()
+ACTIVE_JOB_THREADS: dict[str, threading.Thread] = {}
+ACTIVE_JOB_THREADS_LOCK = threading.Lock()
+STALE_JOB_RECOVERY_MINUTES = max(1, int(os.getenv("BIONUCLEI_STALE_JOB_RECOVERY_MINUTES", "3")))
 
 
 def _db() -> sqlite3.Connection:
@@ -94,23 +98,347 @@ def _job_dir(job_id: str) -> Path:
     return JOB_ROOT / job_id
 
 
+
+def _resolve_result_reference(results: dict[str, object], reference: str) -> tuple[bool, object]:
+    value: object = results
+    for key in reference.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return False, None
+        value = value[key]
+    return True, value
+
+
+def _validate_specialist_artifact(results: dict[str, object], expert: object) -> None:
+    """Fail closed before publication unless specialist output is complete and evidence-bound."""
+    def reject(reason: str) -> None:
+        raise ValueError("Specialist evidence gate rejected publication: " + reason)
+
+    if not isinstance(expert, dict):
+        reject("artifact is not an object")
+    if expert.get("agent_version") != "1.2":
+        reject("unsupported specialist artifact version")
+    if results.get("scientific_execution") is not True:
+        reject("result is not marked as a scientific execution")
+    model = results.get("model")
+    if not isinstance(model, dict) or model.get("weights_updated_during_analysis") is not False:
+        reject("frozen-weight inference assertion is absent or false")
+    execution = expert.get("execution")
+    if not isinstance(execution, dict) or execution.get("status") != "completed":
+        reject("execution is incomplete")
+    job_id = results.get("job_id")
+    input_sha256 = results.get("input_sha256")
+    if not isinstance(job_id, str) or not job_id.strip() or execution.get("job_id") != job_id or execution.get("job_id_valid") is not True:
+        reject("job binding is missing or invalid")
+    if not isinstance(input_sha256, str) or len(input_sha256) != 64 or any(c not in "0123456789abcdefABCDEF" for c in input_sha256):
+        reject("result input SHA-256 is malformed")
+    if execution.get("input_sha256") != input_sha256 or execution.get("input_hash_valid") is not True:
+        reject("input hash binding is missing or invalid")
+
+    agents = expert.get("agents")
+    expected = set(SPECIALIST_AGENTS)
+    if not isinstance(agents, list) or len(agents) != len(expected):
+        reject("expected eight specialist reviewers")
+    names = [agent.get("agent") for agent in agents if isinstance(agent, dict)]
+    if len(names) != len(agents) or set(names) != expected or len(set(names)) != len(names):
+        reject("reviewer set is incomplete, duplicated, or unknown")
+    completed_count = sum(agent.get("status") == "completed" for agent in agents)
+    not_applicable_count = sum(agent.get("status") == "not_applicable" for agent in agents)
+    resolved_count = completed_count + not_applicable_count
+    incomplete_agents = [agent["agent"] for agent in agents if agent.get("status") not in {"completed", "not_applicable"}]
+    if execution.get("agent_count") != len(agents) or execution.get("completed_agent_count") != completed_count:
+        reject("completed reviewer counts do not match reviewer output")
+    if execution.get("status") != "completed":
+        reject("execution is incomplete")
+    if execution.get("not_applicable_agent_count") != not_applicable_count or execution.get("resolved_agent_count") != resolved_count:
+        reject("not-applicable or resolved reviewer counts do not match reviewer output")
+    if execution.get("incomplete_agents") != incomplete_agents or execution.get("incomplete_reasons") != []:
+        reject("execution manifest reports incomplete reviewers")
+    analysis_modules = results.get("analysis_modules")
+    if not isinstance(analysis_modules, list) or any(not isinstance(module, str) for module in analysis_modules) or len(set(analysis_modules)) != len(analysis_modules):
+        reject("result analysis_modules are invalid or duplicated")
+    canonical_analysis_modules = sorted(analysis_modules)
+    if execution.get("analysis_modules") != canonical_analysis_modules:
+        reject("execution analysis modules do not match the canonical computed result")
+    module_requirements = {"morphology_agent": {"morphology"}, "intensity_agent": {"intensity"}, "biological_interpretation_agent": {"morphology", "intensity"}}
+
+    for agent in agents:
+        name = str(agent.get("agent"))
+        unselected = sorted(module_requirements.get(name, set()) - set(analysis_modules))
+        if unselected:
+            empty_payload = "{}"
+            expected_observation = "Not applicable: required analysis module(s) not selected: " + ", ".join(unselected) + "."
+            expected_limitation = "This reviewer did not execute because its required modules were not selected; no findings or quantitative claims are asserted."
+            if agent.get("status") != "not_applicable":
+                reject("reviewer should be not_applicable because required modules were not selected: " + name)
+            if agent.get("observations") != [expected_observation] or agent.get("limitations") != [expected_limitation]:
+                reject("not-applicable reviewer reason or limitations are invalid: " + name)
+            if agent.get("evidence_references") != [] or agent.get("missing_evidence_references") != [] or agent.get("quantitative_claims") != []:
+                reject("not-applicable reviewer cannot assert evidence or measurements: " + name)
+            if agent.get("evidence_payload") != empty_payload or agent.get("evidence_sha256") != hashlib.sha256(empty_payload.encode("utf-8")).hexdigest():
+                reject("not-applicable reviewer empty-evidence digest is invalid: " + name)
+            continue
+        if agent.get("status") != "completed":
+            reject("reviewer is incomplete: " + name)
+        references = agent.get("evidence_references")
+        if not isinstance(references, list) or not references or any(not isinstance(ref, str) for ref in references):
+            reject("reviewer has no valid evidence references: " + name)
+        if len(set(references)) != len(references) or agent.get("missing_evidence_references") != []:
+            reject("reviewer has unresolved or duplicate evidence references: " + name)
+        evidence_payload = agent.get("evidence_payload")
+        evidence_sha256 = agent.get("evidence_sha256")
+        if not isinstance(evidence_payload, str) or not evidence_payload:
+            reject("reviewer evidence payload is missing: " + name)
+        if not isinstance(evidence_sha256, str) or len(evidence_sha256) != 64:
+            reject("reviewer evidence digest is malformed: " + name)
+        if hashlib.sha256(evidence_payload.encode("utf-8")).hexdigest() != evidence_sha256:
+            reject("reviewer evidence digest mismatch: " + name)
+        try:
+            evidence = json.loads(evidence_payload)
+        except (TypeError, ValueError):
+            reject("reviewer evidence payload is invalid JSON: " + name)
+        if not isinstance(evidence, dict) or sorted(evidence) != sorted(references):
+            reject("reviewer evidence keys do not match references: " + name)
+        for reference in references:
+            found, value = _resolve_result_reference(results, reference)
+            if not found or evidence.get(reference) != value:
+                reject("reviewer evidence differs from computed result: " + reference)
+
+        claims = agent.get("quantitative_claims")
+        if not isinstance(claims, list):
+            reject("quantitative claims are missing: " + name)
+        for claim in claims:
+            if not isinstance(claim, dict) or not isinstance(claim.get("reference"), str) or not isinstance(claim.get("unit"), str) or not claim["unit"].strip():
+                reject("quantitative claim schema is invalid: " + name)
+            reference = claim["reference"]
+            found, value = _resolve_result_reference(results, reference)
+            if not found or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                reject("quantitative claim does not resolve to a finite measured value: " + reference)
+            if claim.get("value") != value:
+                reject("quantitative claim differs from computed measurement: " + reference)
+            if not any(reference == path or reference.startswith(path + ".") for path in references):
+                reject("quantitative claim is not covered by declared evidence: " + reference)
+
+    training_status = expert.get("training_status")
+    if not isinstance(training_status, dict):
+        reject("training provenance status is missing")
+    if training_status.get("verified") is not True and training_status.get("claim_allowed") is not False:
+        reject("unverified training provenance was not explicitly disallowed")
+    model_metadata = results.get("model")
+    if not isinstance(model_metadata, dict) or model_metadata.get("weights_updated_during_analysis") is not False:
+        reject("frozen model-weight assertion is absent or false")
+    if training_status.get("verified") is not True and model_metadata.get("training_reference") != "Not established":
+        reject("unverified training provenance must be labeled Not established")
+    execution_payload_json = execution.get("execution_payload_json")
+    execution_sha256 = execution.get("execution_sha256")
+    if not isinstance(execution_payload_json, str) or not execution_payload_json:
+        reject("canonical execution payload is missing")
+    if not isinstance(execution_sha256, str) or hashlib.sha256(execution_payload_json.encode("utf-8")).hexdigest() != execution_sha256:
+        reject("canonical execution digest mismatch")
+    try:
+        canonical = json.loads(execution_payload_json)
+    except (TypeError, ValueError):
+        reject("canonical execution payload is invalid JSON")
+    expected_payload = {
+        "agent_version": "1.2",
+        "analysis_modules": analysis_modules,
+        "job_id": job_id,
+        "job_id_valid": True,
+        "input_sha256": input_sha256,
+        "input_hash_valid": True,
+        "agents": [
+            {
+                "agent": agent["agent"],
+                "status": agent["status"],
+                "observations": agent["observations"],
+                "limitations": agent["limitations"],
+                "evidence_references": agent["evidence_references"],
+                "evidence_sha256": agent["evidence_sha256"],
+                "evidence_payload": agent["evidence_payload"],
+                "quantitative_claims": agent["quantitative_claims"],
+                "missing_evidence_references": agent["missing_evidence_references"],
+            }
+            for agent in agents
+        ],
+        "training_status": training_status,
+    }
+    if canonical != expected_payload:
+        reject("canonical execution payload does not match specialist artifact")
+
+
+_RESULT_ARTIFACTS = frozenset({
+    "segmentation_mask.tif",
+    "overlay.tif",
+    "measurements.csv",
+    "results.json",
+    "provenance.json",
+    "community_input.json",
+    "nuclei_analysis.csv",
+    "nuclei_report.json",
+    "morphology_report.json",
+    "intensity_report.json",
+    "spatial_report.json",
+    "adaptive_plan.json",
+    "expert_agents.json",
+    "analysis_report.pdf",
+    "analysis_report.json",
+    "analysis_report.html",
+})
+
+
 def _archive(job_id: str) -> Path:
+    """Package only explicitly approved result artifacts, never the job tree."""
     root = _job_dir(job_id)
+    results_root = root / "results"
     archive = JOB_ROOT / f"{job_id}.zip"
     with ZipFile(archive, "w", ZIP_DEFLATED) as zf:
-        for path in root.rglob("*"):
-            if path.is_file():
-                zf.write(path, path.relative_to(root))
+        if results_root.is_dir() and not results_root.is_symlink():
+            for filename in sorted(_RESULT_ARTIFACTS):
+                path = results_root / filename
+                # Do not follow symlinks: a result-looking path must not expose
+                # the uploaded source or a file outside the result directory.
+                if path.is_file() and not path.is_symlink():
+                    zf.write(path, Path("results") / filename)
     return archive
 
 
-def _cleanup_failed_job(job_id: str, root: Path) -> None:
-    """Remove every transient artifact and its metadata after a failed job."""
-    shutil.rmtree(root, ignore_errors=True)
-    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+_FAILED_JOB_ERROR = (
+    "Analysis worker failed before producing a complete result. Please retry the analysis."
+)
+_INTERRUPTED_JOB_ERROR = (
+    "Analysis worker stopped before completing this job. Please retry the analysis."
+)
+_FAILED_JOB_CLEANUP_SUFFIX = (
+    " Cleanup is incomplete; transient artifacts may remain. "
+    "Automatic cleanup retries will continue; please retry the analysis later."
+)
+
+
+def _path_entry_exists(path: Path) -> bool:
+    """Check a filesystem entry without treating metadata errors as absence.
+
+    Path.exists() suppresses many OSErrors on newer Python versions. Cleanup
+    must fail closed when permissions or filesystem metadata prevent verification.
+    lstat() also detects dangling symlinks that exists() would miss.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _remove_transient_input(path: Path, label: str) -> None:
+    """Remove and verify one uploaded or extracted source artifact."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise OSError(f"Could not remove transient {label}") from exc
+    if _path_entry_exists(path):
+        raise OSError(f"Transient {label} remains after cleanup")
+
+
+def _remove_job_artifacts(job_id: str, root: Path) -> bool:
+    """Best-effort remove all transient artifacts and report whether absence was verified."""
+    archive = JOB_ROOT / f"{job_id}.zip"
+    cleanup_failed = False
+
+    try:
+        if _path_entry_exists(root):
+            shutil.rmtree(root)
+    except OSError as exc:
+        cleanup_failed = True
+        print(
+            f"bionuclei: artifact cleanup deferred for job {job_id} ({type(exc).__name__})",
+            flush=True,
+        )
+
+    try:
+        archive.unlink(missing_ok=True)
+    except OSError as exc:
+        cleanup_failed = True
+        print(
+            f"bionuclei: archive cleanup deferred for job {job_id} ({type(exc).__name__})",
+            flush=True,
+        )
+
+    try:
+        if _path_entry_exists(root) or _path_entry_exists(archive):
+            cleanup_failed = True
+    except OSError as exc:
+        cleanup_failed = True
+        print(
+            f"bionuclei: artifact absence could not be verified for job {job_id} "
+            f"({type(exc).__name__})",
+            flush=True,
+        )
+
+    return not cleanup_failed
+
+
+def _cleanup_failed_job(
+    job_id: str,
+    root: Path,
+    *,
+    failure_message: str = _FAILED_JOB_ERROR,
+) -> bool:
+    """Persist a truthful failed record and whether transient cleanup was verified."""
+    cleanup_ok = _remove_job_artifacts(job_id, root)
+    failed_at = _now()
+    expires_at = (failed_at + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
+    error = failure_message if cleanup_ok else failure_message + _FAILED_JOB_CLEANUP_SUFFIX
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        conn.execute(
+            "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
+            ("failed", error, failed_at.isoformat(), expires_at, job_id),
+        )
         conn.commit()
+    return cleanup_ok
+
+
+def _retry_failed_job_cleanup(job_id: str, user_id: str) -> bool:
+    """Retry only failed jobs whose previous artifact cleanup was explicitly incomplete."""
+    row = _get_job(job_id, user_id)
+    if row is None or row["status"] != "failed":
+        return False
+    previous_error = str(row["error"] or "")
+    if not previous_error.endswith(_FAILED_JOB_CLEANUP_SUFFIX):
+        return False
+
+    if not _remove_job_artifacts(job_id, _job_dir(job_id)):
+        return False
+
+    # Preserve the original failure reason (worker exception vs. interrupted worker)
+    # while removing only the cleanup-warning suffix.
+    failure_message = previous_error[: -len(_FAILED_JOB_CLEANUP_SUFFIX)]
+    with DB_LOCK, _db() as conn:
+        updated = conn.execute(
+            "UPDATE jobs SET error = ?, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND status = 'failed' AND error = ?",
+            (
+                failure_message,
+                _now().isoformat(),
+                job_id,
+                user_id,
+                previous_error,
+            ),
+        )
+        conn.commit()
+    return updated.rowcount == 1
+
+
+def _retry_failed_cleanups() -> int:
+    """Retry incomplete failed-job cleanup without extending the retention deadline."""
+    with DB_LOCK, _db() as conn:
+        rows = conn.execute(
+            "SELECT id, user_id FROM jobs WHERE status = 'failed' AND error LIKE ?",
+            (f"%{_FAILED_JOB_CLEANUP_SUFFIX}",),
+        ).fetchall()
+
+    cleaned = 0
+    for row in rows:
+        if _retry_failed_job_cleanup(str(row["id"]), str(row["user_id"])):
+            cleaned += 1
+    return cleaned
 
 
 def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> dict[str, object]:
@@ -162,6 +490,7 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     if mask.shape != image.shape:
         raise ValueError(f"Image and predicted mask shapes differ: {image.shape} != {mask.shape}")
     from skimage.measure import regionprops_table
+    from scipy.spatial import cKDTree
     properties = ["label", "area", "centroid", "bbox"]
     if "morphology" in modules:
         properties += ["perimeter", "eccentricity", "solidity", "major_axis_length", "minor_axis_length"]
@@ -171,14 +500,35 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     frame = pd.DataFrame(table)
     if "morphology" in modules and not frame.empty:
         frame["circularity"] = np.where(frame["perimeter"] > 0, 4.0 * np.pi * frame["area"] / (frame["perimeter"] ** 2), np.nan)
+    spatial_summary: dict[str, object] = {
+        "instance_count": int(len(frame)),
+        "unit": "pixels",
+        "mean_nearest_neighbor_distance_px": None,
+        "median_nearest_neighbor_distance_px": None,
+        "min_nearest_neighbor_distance_px": None,
+        "max_nearest_neighbor_distance_px": None,
+    }
+    if len(frame) >= 2:
+        centroids = frame[["centroid-0", "centroid-1"]].to_numpy(dtype=float)
+        nearest = cKDTree(centroids).query(centroids, k=2)[0][:, 1]
+        frame["nearest_neighbor_distance_px"] = nearest
+        spatial_summary.update({
+            "mean_nearest_neighbor_distance_px": float(np.mean(nearest)),
+            "median_nearest_neighbor_distance_px": float(np.median(nearest)),
+            "min_nearest_neighbor_distance_px": float(np.min(nearest)),
+            "max_nearest_neighbor_distance_px": float(np.max(nearest)),
+        })
+    else:
+        frame["nearest_neighbor_distance_px"] = np.nan
     frame.to_csv(output / "nuclei_analysis.csv", index=False)
     nuclei_count = int(len(frame))
-    summary: dict[str, object] = {"nuclei_count": nuclei_count, "modules": sorted(modules), "measurement_file": "nuclei_analysis.csv"}
+    summary: dict[str, object] = {"nuclei_count": nuclei_count, "modules": sorted(modules), "measurement_file": "nuclei_analysis.csv", "spatial": spatial_summary}
+    (output / "spatial_report.json").write_text(json.dumps(spatial_summary, indent=2) + "\n")
     if "morphology" in modules:
         summary["morphology"] = {"mean_area":float(frame["area"].mean()) if nuclei_count else None,"median_area":float(frame["area"].median()) if nuclei_count else None,"mean_perimeter":float(frame["perimeter"].mean()) if nuclei_count else None,"mean_eccentricity":float(frame["eccentricity"].mean()) if nuclei_count else None,"mean_solidity":float(frame["solidity"].mean()) if nuclei_count else None,"mean_circularity":float(frame["circularity"].mean()) if nuclei_count else None}
         (output / "morphology_report.json").write_text(json.dumps(summary["morphology"], indent=2) + "\n")
     if "intensity" in modules:
-        summary["intensity"] = {"mean_nuclear_intensity":float(frame["mean_intensity"].mean()) if nuclei_count else None,"median_nuclear_intensity":float(frame["mean_intensity"].median()) if nuclei_count else None,"mean_max_intensity":float(frame["max_intensity"].mean()) if nuclei_count else None}
+        summary["intensity"] = {"mean_nuclear_intensity":float(frame["mean_intensity"].mean()) if nuclei_count else None,"median_nuclear_intensity":float(frame["mean_intensity"].median()) if nuclei_count else None,"mean_max_intensity":float(frame["max_intensity"].mean()) if nuclei_count else None,"max_nuclear_intensity":int(frame["max_intensity"].max()) if nuclei_count else None}
         (output / "intensity_report.json").write_text(json.dumps(summary["intensity"], indent=2) + "\n")
     (output / "nuclei_report.json").write_text(json.dumps({"nuclei_count":nuclei_count,"modules":sorted(modules)}, indent=2) + "\n")
     return summary
@@ -202,13 +552,22 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         with INFERENCE_LOCK:
             result = predict(inference_input, checkpoint, output, device="cpu")
             gc.collect()
+        _set_job(job_id, status="measuring")
         report_summary = _extended_reports(inference_input, output, analysis_modules)
-        result.update({"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"BBBC039v1","weights_updated_during_analysis":False}})
+        # Do not publish a completed job until all source bytes have been removed.
+        # If removal cannot be verified, the exception path marks the job failed and
+        # retries full artifact cleanup rather than exposing results with retained input.
+        _remove_transient_input(image_path, "uploaded source image")
+        _remove_transient_input(root / "input_plane.tif", "extracted input plane")
+        result.update({"job_id":job_id,"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"Not established","weights_updated_during_analysis":False}})
+        _set_job(job_id, status="expert_review")
         expert = run_expert_agents(result)
+        _validate_specialist_artifact(result, expert)
         result["expert_agents"] = expert
         (output / "expert_agents.json").write_text(json.dumps(expert, indent=2) + "\n")
         (output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
         (output / "community_input.json").write_text(json.dumps({"source_filename":original_name,"source_sha256":input_sha256,**input_metadata}, indent=2) + "\n")
+        _set_job(job_id, status="packaging")
         build_report(result, output)
         _archive(job_id)
         expiry = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
@@ -220,8 +579,38 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             print(f"bionuclei failure cleanup warning for {job_id}: {type(cleanup_exc).__name__}: {cleanup_exc}",flush=True)
         print(f"bionuclei job {job_id} failed: {type(exc).__name__}: {exc}",flush=True)
     finally:
-        image_path.unlink(missing_ok=True)
-        (root / "input_plane.tif").unlink(missing_ok=True)
+        # Input planes are transient even when the worker fails. Record cleanup
+        # failures rather than silently treating ignore_errors as successful deletion.
+        try:
+            image_path.unlink(missing_ok=True)
+        except OSError as exc:
+            print(
+                f"bionuclei: source input cleanup deferred for job {job_id} "
+                f"({type(exc).__name__})",
+                flush=True,
+            )
+        try:
+            (root / "input_plane.tif").unlink(missing_ok=True)
+        except OSError as exc:
+            print(
+                f"bionuclei: extracted input-plane cleanup deferred for job {job_id} "
+                f"({type(exc).__name__})",
+                flush=True,
+            )
+
+        current_row = _get_job(job_id, user_id)
+        if current_row is None:
+            if not _remove_job_artifacts(job_id, root):
+                print(
+                    f"bionuclei: orphan artifact cleanup remains incomplete for job {job_id}",
+                    flush=True,
+                )
+        elif current_row["status"] == "failed":
+            _retry_failed_job_cleanup(job_id, user_id)
+
+        with ACTIVE_JOB_THREADS_LOCK:
+            if ACTIVE_JOB_THREADS.get(job_id) is threading.current_thread():
+                ACTIVE_JOB_THREADS.pop(job_id, None)
 
 
 def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
@@ -248,7 +637,22 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     with DB_LOCK, _db() as conn:
         conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
         conn.commit()
-    threading.Thread(target=_run,args=(job_id,user_id,input_path,original_name,False,algorithm_profile,modules),kwargs={"channel":channel,"time":time,"z":z,"field":field},daemon=True).start()
+    worker = threading.Thread(
+        target=_run,
+        args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
+        kwargs={"channel": channel, "time": time, "z": z, "field": field},
+        name=f"bionuclei-job-{job_id[:8]}",
+        daemon=True,
+    )
+    with ACTIVE_JOB_THREADS_LOCK:
+        ACTIVE_JOB_THREADS[job_id] = worker
+    try:
+        worker.start()
+    except Exception as exc:
+        with ACTIVE_JOB_THREADS_LOCK:
+            ACTIVE_JOB_THREADS.pop(job_id, None)
+        _cleanup_failed_job(job_id, root)
+        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
     return job_id
 
 
@@ -257,64 +661,283 @@ def serialize(row: sqlite3.Row) -> dict[str, object]:
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
 
 
+def _terminal_job_is_expired(row: sqlite3.Row | None) -> bool:
+    """Treat completed and failed jobs as expiring terminal records.
+
+    Active jobs remain visible while their worker is running. Malformed expiry
+    metadata on a terminal job fails closed.
+    """
+    if row is None or row["status"] not in {"completed", "failed"}:
+        return False
+    try:
+        expiry = datetime.fromisoformat(str(row["expires_at"]))
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        return expiry <= _now()
+    except (TypeError, ValueError, OverflowError):
+        return True
+
+
+def _remove_expired_job(job_id: str, user_id: str | None = None) -> bool:
+    """Remove expired terminal artifacts before deleting their metadata.
+
+    If physical cleanup fails, leave the row for retry but never return the
+    expired job or its artifacts to a caller.
+    """
+    with DB_LOCK, _db() as conn:
+        if user_id is None:
+            row = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
+                (job_id, user_id),
+            ).fetchone()
+    if row is None:
+        return True
+    if not _terminal_job_is_expired(row):
+        return False
+
+    root = _job_dir(job_id)
+    archive = JOB_ROOT / f"{job_id}.zip"
+    try:
+        if _path_entry_exists(root):
+            shutil.rmtree(root)
+        archive.unlink(missing_ok=True)
+        if _path_entry_exists(root) or _path_entry_exists(archive):
+            raise OSError("expired job artifacts remain after cleanup")
+    except OSError as exc:
+        print(
+            f"bionuclei: expiry cleanup deferred for job {job_id} ({type(exc).__name__})",
+            flush=True,
+        )
+        return False
+
+    with DB_LOCK, _db() as conn:
+        if user_id is None:
+            current = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        else:
+            current = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
+                (job_id, user_id),
+            ).fetchone()
+        if current is None:
+            return True
+        if not _terminal_job_is_expired(current):
+            return False
+        if user_id is None:
+            deleted = conn.execute(
+                "DELETE FROM jobs WHERE id = ? AND status IN ('completed', 'failed')",
+                (job_id,),
+            )
+        else:
+            deleted = conn.execute(
+                "DELETE FROM jobs WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed')",
+                (job_id, user_id),
+            )
+        conn.commit()
+        return deleted.rowcount == 1
+
+
+def _live_owned_row(job_id: str, user_id: str) -> sqlite3.Row | None:
+    row = _get_job(job_id, user_id)
+    if row is None:
+        return None
+    if _terminal_job_is_expired(row):
+        _remove_expired_job(job_id, user_id)
+        return None
+    return row
+
+
 def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
-    return serialize(_get_job(job_id,user_id)) if _get_job(job_id,user_id) else None
+    row = _live_owned_row(job_id, user_id)
+    return serialize(row) if row is not None else None
 
 
 def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
     with DB_LOCK, _db() as conn:
-        rows=conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",(user_id,)).fetchall()
-    return [serialize(row) for row in rows]
+        rows = conn.execute(
+            "SELECT id FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+            (user_id,),
+        ).fetchall()
+    live_rows: list[sqlite3.Row] = []
+    for row in rows:
+        live = _live_owned_row(row["id"], user_id)
+        if live is not None:
+            live_rows.append(live)
+    return [serialize(row) for row in live_rows]
 
 
-def get_file(job_id: str,user_id: str,filename: str) -> Path:
-    allowed={"segmentation_mask.tif","overlay.tif","measurements.csv","results.json","provenance.json","community_input.json","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","adaptive_plan.json","expert_agents.json","analysis_report.pdf","analysis_report.json","analysis_report.html"}
-    if filename not in allowed: raise ValueError("File is not a downloadable BioNuclei result")
-    row=_get_job(job_id,user_id)
-    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
-    path=_job_dir(job_id)/"results"/filename
-    if not path.is_file(): raise FileNotFoundError(filename)
+def get_file(job_id: str, user_id: str, filename: str) -> Path:
+    if filename not in _RESULT_ARTIFACTS:
+        raise ValueError("File is not a downloadable BioNuclei result")
+    row = _live_owned_row(job_id, user_id)
+    if row is None or row["status"] != "completed":
+        raise FileNotFoundError(job_id)
+    path = _job_dir(job_id) / "results" / filename
+    if not path.is_file():
+        raise FileNotFoundError(filename)
     return path
 
 
-def get_archive(job_id: str,user_id: str) -> Path:
-    row=_get_job(job_id,user_id)
-    if not row or row["status"] != "completed": raise FileNotFoundError(job_id)
+def get_archive(job_id: str, user_id: str) -> Path:
+    row = _live_owned_row(job_id, user_id)
+    if row is None or row["status"] != "completed":
+        raise FileNotFoundError(job_id)
     return _archive(job_id)
 
 
-def delete_job(job_id: str,user_id: str) -> bool:
-    row=_get_job(job_id,user_id)
-    if row is None: raise FileNotFoundError(job_id)
-    shutil.rmtree(_job_dir(job_id),ignore_errors=True)
-    (JOB_ROOT/f"{job_id}.zip").unlink(missing_ok=True)
+def delete_job(job_id: str, user_id: str) -> bool:
+    """Delete an owner's job only after transient artifacts are physically removed."""
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+
+    root = _job_dir(job_id)
+    archive = JOB_ROOT / f"{job_id}.zip"
+    try:
+        if _path_entry_exists(root):
+            shutil.rmtree(root)
+        archive.unlink(missing_ok=True)
+        if _path_entry_exists(root) or _path_entry_exists(archive):
+            raise OSError("job artifacts remain after cleanup")
+    except OSError as exc:
+        # Keep the owner-scoped row so the owner can retry deletion. Never report
+        # success or erase metadata while source/result bytes may still exist.
+        raise OSError(
+            "Could not remove all transient job artifacts; job metadata was retained for retry"
+        ) from exc
+
     with DB_LOCK, _db() as conn:
-        conn.execute("DELETE FROM jobs WHERE id = ? AND user_id = ?",(job_id,user_id))
+        deleted = conn.execute(
+            "DELETE FROM jobs WHERE id = ? AND user_id = ?",
+            (job_id, user_id),
+        )
         conn.commit()
+    if deleted.rowcount != 1:
+        raise FileNotFoundError(job_id)
+    return True
+
+
+def delete_research_copy(job_id: str, user_id: str) -> bool:
+    """Delete a retained research copy only for its owning user."""
+    row = _get_job(job_id, user_id)
+    if row is None:
+        raise FileNotFoundError(job_id)
+    if not bool(row["research_consent"]) or not bool(row["retained_copy"]):
+        raise FileNotFoundError("No retained research copy exists for this job")
+
+    root = _job_dir(job_id) / "research_copy"
+    try:
+        if _path_entry_exists(root):
+            shutil.rmtree(root)
+        if _path_entry_exists(root):
+            raise OSError("research-copy artifacts remain after cleanup")
+    except OSError as exc:
+        # Preserve consent/retention metadata until deletion is confirmed.
+        raise OSError(
+            "Could not remove the retained research copy; metadata was retained for retry"
+        ) from exc
+
+    with DB_LOCK, _db() as conn:
+        updated = conn.execute(
+            "UPDATE jobs SET retained_copy = 0, research_consent = 0, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND research_consent = 1 AND retained_copy = 1",
+            (_now().isoformat(), job_id, user_id),
+        )
+        conn.commit()
+    if updated.rowcount != 1:
+        raise FileNotFoundError("No retained research copy exists for this job")
     return True
 
 
 def purge_expired() -> int:
-    removed=0
-    now=_now()
+    """Purge expired terminal jobs only after their artifacts are removed."""
     with DB_LOCK, _db() as conn:
-        rows=conn.execute("SELECT id FROM jobs WHERE expires_at < ?",(now.isoformat(),)).fetchall()
-        for row in rows:
-            shutil.rmtree(_job_dir(row["id"]),ignore_errors=True)
-            (JOB_ROOT/f"{row['id']}.zip").unlink(missing_ok=True)
-            conn.execute("DELETE FROM jobs WHERE id = ?",(row["id"],))
+        rows = conn.execute(
+            "SELECT id, user_id, status, expires_at FROM jobs WHERE status IN ('completed', 'failed')"
+        ).fetchall()
+    removed = 0
+    for row in rows:
+        if _terminal_job_is_expired(row) and _remove_expired_job(row["id"], row["user_id"]):
             removed += 1
-        conn.commit()
     return removed
 
 
+def recover_interrupted_jobs(
+    *,
+    now: datetime | None = None,
+    stale_after: timedelta | None = None,
+) -> int:
+    """Fail and clean jobs whose worker disappeared after a process restart.
+
+    A job is considered recoverable only when its last stage update is older
+    than the configured lease and no worker thread for that job is alive in
+    this process. A live worker is never purged by this recovery path.
+    """
+    current_time = now or _now()
+    lease = stale_after or timedelta(minutes=STALE_JOB_RECOVERY_MINUTES)
+    cutoff = (current_time - lease).isoformat()
+    message = (
+        "Analysis worker stopped before completing this job. Artifact cleanup is being "
+        "verified; please retry the analysis."
+    )
+    interrupted: list[str] = []
+    active_statuses = ("queued", "planning", "running", "measuring", "expert_review", "packaging")
+    placeholders = ",".join("?" for _ in active_statuses)
+    with DB_LOCK, _db() as conn:
+        rows = conn.execute(
+            f"SELECT id FROM jobs WHERE status IN ({placeholders}) AND updated_at < ?",
+            (*active_statuses, cutoff),
+        ).fetchall()
+        for row in rows:
+            job_id = str(row["id"])
+            with ACTIVE_JOB_THREADS_LOCK:
+                worker = ACTIVE_JOB_THREADS.get(job_id)
+                if worker is not None and worker.is_alive():
+                    continue
+            expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
+            result = conn.execute(
+                f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
+                f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
+                (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
+            )
+            if result.rowcount:
+                interrupted.append(job_id)
+        conn.commit()
+
+    for job_id in interrupted:
+        _cleanup_failed_job(
+            job_id,
+            _job_dir(job_id),
+            failure_message=_INTERRUPTED_JOB_ERROR,
+        )
+    if interrupted:
+        print(
+            f"bionuclei recovery marked {len(interrupted)} orphaned active job(s) as failed "
+            "and verified artifact cleanup where possible",
+            flush=True,
+        )
+    return len(interrupted)
+
+
 def _cleanup_loop() -> None:
+    next_expiry_sweep = 0.0
     while True:
         try:
-            purge_expired()
+            _retry_failed_cleanups()
+            recover_interrupted_jobs()
+            if time.monotonic() >= next_expiry_sweep:
+                purge_expired()
+                next_expiry_sweep = time.monotonic() + 300
         except Exception as exc:
-            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}",flush=True)
-        time.sleep(300)
+            print(f"bionuclei cleanup warning: {type(exc).__name__}: {exc}", flush=True)
+        time.sleep(60)
 
 
-threading.Thread(target=_cleanup_loop,name="bionuclei-expiry-cleaner",daemon=True).start()
+threading.Thread(target=_cleanup_loop, name="bionuclei-expiry-cleaner", daemon=True).start()

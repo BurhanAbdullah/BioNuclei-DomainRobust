@@ -15,6 +15,9 @@ permissions:
 
 jobs:
   aggregate:
+    # A failed source run may upload diagnostic artifacts, but it must never
+    # enter aggregation as if all four scientific fractions existed.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
