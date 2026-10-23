@@ -279,10 +279,12 @@ def _archive(job_id: str) -> Path:
 _FAILED_JOB_ERROR = (
     "Analysis worker failed before producing a complete result. Please retry the analysis."
 )
-_FAILED_JOB_CLEANUP_ERROR = (
-    "Analysis worker failed before producing a complete result. Cleanup is incomplete; "
-    "transient artifacts may remain. Automatic cleanup retries will continue; "
-    "please retry the analysis later."
+_INTERRUPTED_JOB_ERROR = (
+    "Analysis worker stopped before completing this job. Please retry the analysis."
+)
+_FAILED_JOB_CLEANUP_SUFFIX = (
+    " Cleanup is incomplete; transient artifacts may remain. "
+    "Automatic cleanup retries will continue; please retry the analysis later."
 )
 
 
@@ -324,12 +326,17 @@ def _remove_job_artifacts(job_id: str, root: Path) -> bool:
     return not cleanup_failed
 
 
-def _cleanup_failed_job(job_id: str, root: Path) -> bool:
+def _cleanup_failed_job(
+    job_id: str,
+    root: Path,
+    *,
+    failure_message: str = _FAILED_JOB_ERROR,
+) -> bool:
     """Persist a truthful failed record and whether transient cleanup was verified."""
     cleanup_ok = _remove_job_artifacts(job_id, root)
     failed_at = _now()
     expires_at = (failed_at + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
-    error = _FAILED_JOB_ERROR if cleanup_ok else _FAILED_JOB_CLEANUP_ERROR
+    error = failure_message if cleanup_ok else failure_message + _FAILED_JOB_CLEANUP_SUFFIX
     with DB_LOCK, _db() as conn:
         conn.execute(
             "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
@@ -342,26 +349,28 @@ def _cleanup_failed_job(job_id: str, root: Path) -> bool:
 def _retry_failed_job_cleanup(job_id: str, user_id: str) -> bool:
     """Retry only failed jobs whose previous artifact cleanup was explicitly incomplete."""
     row = _get_job(job_id, user_id)
-    if (
-        row is None
-        or row["status"] != "failed"
-        or row["error"] != _FAILED_JOB_CLEANUP_ERROR
-    ):
+    if row is None or row["status"] != "failed":
+        return False
+    previous_error = str(row["error"] or "")
+    if not previous_error.endswith(_FAILED_JOB_CLEANUP_SUFFIX):
         return False
 
     if not _remove_job_artifacts(job_id, _job_dir(job_id)):
         return False
 
+    # Preserve the original failure reason (worker exception vs. interrupted worker)
+    # while removing only the cleanup-warning suffix.
+    failure_message = previous_error[: -len(_FAILED_JOB_CLEANUP_SUFFIX)]
     with DB_LOCK, _db() as conn:
         updated = conn.execute(
             "UPDATE jobs SET error = ?, updated_at = ? "
             "WHERE id = ? AND user_id = ? AND status = 'failed' AND error = ?",
             (
-                _FAILED_JOB_ERROR,
+                failure_message,
                 _now().isoformat(),
                 job_id,
                 user_id,
-                _FAILED_JOB_CLEANUP_ERROR,
+                previous_error,
             ),
         )
         conn.commit()
@@ -372,8 +381,8 @@ def _retry_failed_cleanups() -> int:
     """Retry incomplete failed-job cleanup without extending the retention deadline."""
     with DB_LOCK, _db() as conn:
         rows = conn.execute(
-            "SELECT id, user_id FROM jobs WHERE status = 'failed' AND error = ?",
-            (_FAILED_JOB_CLEANUP_ERROR,),
+            "SELECT id, user_id FROM jobs WHERE status = 'failed' AND error LIKE ?",
+            (f"%{_FAILED_JOB_CLEANUP_SUFFIX}",),
         ).fetchall()
 
     cleaned = 0
@@ -849,7 +858,11 @@ def recover_interrupted_jobs(
         conn.commit()
 
     for job_id in interrupted:
-        _cleanup_failed_job(job_id, _job_dir(job_id))
+        _cleanup_failed_job(
+            job_id,
+            _job_dir(job_id),
+            failure_message=_INTERRUPTED_JOB_ERROR,
+        )
     if interrupted:
         print(
             f"bionuclei recovery marked {len(interrupted)} orphaned active job(s) as failed "
