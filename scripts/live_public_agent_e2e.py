@@ -936,7 +936,7 @@ def main() -> None:
                     pdf_reader = PdfReader(io.BytesIO(pdf_bytes), strict=True)
                     require(len(pdf_reader.pages) >= 1,
                             "ZIP PDF report is not readable or contains no pages")
-                    pdf_text = "\\n".join(page.extract_text() or "" for page in pdf_reader.pages)
+                    pdf_text = "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
                     for required_text in (
                         "BioNuclei Quantitative Bioimaging Analysis Report",
                         "Training provenance is not established",
