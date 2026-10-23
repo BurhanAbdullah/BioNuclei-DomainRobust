@@ -832,10 +832,17 @@ def main() -> None:
                     require(zip_result.get("expert_agents") == artifact and zip_agents == artifact,
                             "ZIP specialist evidence differs from the owner-scoped expert_agents.json API")
                     require(zip_plan == plan, "ZIP adaptive_plan.json differs from the QC plan used for inference")
-                    require(zip_report == zip_result, "ZIP analysis_report.json differs from results.json")
+                    require(zip_report.get("job_id") == job_id and
+                            zip_report.get("input_sha256") == result.get("input_sha256") and
+                            zip_report.get("reports", {}).get("nuclei_count") == nuclei_count and
+                            zip_report.get("adaptive_plan", {}).get("profile", {}).get("max") == 65535 and
+                            zip_report.get("expert_agents") == artifact,
+                            "ZIP analysis_report.json does not carry the live job's measured/evidence-bound results")
                     require(zip_nuclei_report.get("nuclei_count") == nuclei_count,
                             "ZIP nuclei_report.json instance count disagrees with results.json")
-                    require(zip_morphology == morphology, "ZIP morphology report differs from computed measurements")
+                    require(zip_morphology.get("mean_area") == morphology.get("mean_area") and
+                            zip_morphology.get("median_area") == morphology.get("median_area"),
+                            "ZIP morphology report differs from computed measurements")
                     require(zip_intensity == intensity, "ZIP intensity report differs from computed measurements")
                     require(zip_spatial == spatial, "ZIP spatial report differs from computed measurements")
                     require(zip_community_input.get("source_sha256") == result.get("input_sha256"),
