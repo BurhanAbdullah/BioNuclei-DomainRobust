@@ -186,12 +186,14 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
         pass
 
     mask = np.where(np.indices((8, 8))[0] < 4, 1, 2).astype(np.int32)
+    tile_settings = {}
     monkeypatch.setattr(inference, "_load_model", lambda *_args, **_kwargs: DummyModel())
-    monkeypatch.setattr(
-        inference,
-        "_predict_logits",
-        lambda _model, x: torch.zeros((1, 3, *x.shape[-2:]), dtype=torch.float32),
-    )
+
+    def fake_predict_logits(_model, x, *, tile_size, overlap):
+        tile_settings.update(tile_size=tile_size, overlap=overlap)
+        return torch.zeros((1, 3, *x.shape[-2:]), dtype=torch.float32)
+
+    monkeypatch.setattr(inference, "_predict_logits", fake_predict_logits)
     monkeypatch.setattr(inference, "_split_instances", lambda _logits: mask.copy())
     monkeypatch.setattr(inference.gc, "collect", lambda: events.append("gc"))
     monkeypatch.setattr(inference, "_trim_cpu_allocator", lambda: events.append("trim"))
@@ -200,4 +202,5 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
 
     assert result["n_instances"] == 2
     assert (output_path / "segmentation_mask.tif").is_file()
+    assert tile_settings == {"tile_size": 192, "overlap": 128}
     assert events[-2:] == ["gc", "trim"]
