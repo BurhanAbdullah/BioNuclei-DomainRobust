@@ -6,7 +6,9 @@ not a reason to substitute synthetic inference.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -81,6 +83,26 @@ NON_RUNTIME_PREFIXES = (".github/workflows/", "tests/", "docs/")
 def is_non_runtime_path(path: str) -> bool:
     """Return true only for explicit test/documentation paths that do not ship to Render."""
     return path in NON_RUNTIME_PATHS or path.startswith(NON_RUNTIME_PREFIXES)
+
+
+def read_zip_json(archive, member: str) -> dict[str, object]:
+    try:
+        payload = json.loads(archive.read(member))
+    except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"ZIP member {member} is not valid JSON") from exc
+    require(isinstance(payload, dict), f"ZIP member {member} is not a JSON object")
+    return payload
+
+
+def read_zip_csv(archive, member: str):
+    try:
+        text = archive.read(member).decode("utf-8")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+    except (KeyError, UnicodeDecodeError, csv.Error) as exc:
+        raise AssertionError(f"ZIP member {member} is not a valid UTF-8 CSV") from exc
+    require(reader.fieldnames is not None, f"ZIP member {member} has no CSV header")
+    return reader.fieldnames, rows
 
 
 def verify_published_site(state: dict[str, object]) -> None:
@@ -603,6 +625,23 @@ def main() -> None:
                 require(isinstance(mean_intensity, (int, float)) and
                         np.isfinite(float(mean_intensity)) and float(mean_intensity) > 255,
                         f"Nuclear intensity measurements do not demonstrate values above 8-bit range: {mean_intensity!r}")
+                # Persist the actual measured values in the E2E artifact so the
+                # release record demonstrates 16-bit preservation, not just PASS.
+                state["input_dtype"] = profile["dtype"]
+                state["raw_image_min"] = profile["min"]
+                state["raw_image_max"] = profile["max"]
+                state["cnn_qc"] = {
+                    "status": cnn.get("status"),
+                    "foreground_fraction": foreground_fraction,
+                    "mean_class_confidence": confidence,
+                    "mean_entropy": entropy,
+                    "connected_components": components,
+                }
+                state["nuclei_count"] = nuclei_count
+                state["spatial_instance_count"] = spatial.get("instance_count")
+                state["morphology_mean_area"] = mean_area
+                state["mean_nuclear_intensity"] = mean_intensity
+                state["measured_max_nuclear_intensity"] = intensity.get("max_nuclear_intensity")
 
                 artifact_response = requests.get(
                     f"{API_BASE}/jobs/{job_id}/files/expert_agents.json", headers=headers, timeout=30
@@ -671,13 +710,14 @@ def main() -> None:
                     "Raw image max: 65535" in intensity_agent.get("observations", []),
                     "Intensity specialist did not reason about the 16-bit raw-image maximum",
                 )
-                require(
-                    any(
-                        c.get("reference") == "adaptive_plan.profile.max" and c.get("value") == 65535
-                        for c in intensity_agent.get("quantitative_claims", [])
-                    ),
-                    "Intensity specialist lacks an evidence-bound 65535 claim",
+                intensity_max_claim = next(
+                    c for c in intensity_agent.get("quantitative_claims", [])
+                    if c.get("reference") == "adaptive_plan.profile.max" and c.get("value") == 65535
                 )
+                state["intensity_specialist_65535_claim"] = {
+                    "reference": intensity_max_claim.get("reference"),
+                    "value": intensity_max_claim.get("value"),
+                }
                 segmentation_agent = next((a for a in agents if a.get("agent") == "segmentation_quality_agent"), None)
                 require(isinstance(segmentation_agent, dict) and any(
                     "not an accuracy metric" in str(limit).lower() and "ground-truth comparison" in str(limit).lower()
@@ -759,11 +799,128 @@ def main() -> None:
                         "results/overlay.tif",
                     }
                     require(required.issubset(names), f"ZIP missing required artifacts: {sorted(required - names)}")
+                    require(allowed_names.issubset(names),
+                            f"ZIP omitted expected result artifacts: {sorted(allowed_names - names)}")
                     require(
                         not any(Path(name).name in {"input.tif", "input.tiff", "input.nd2", "input_plane.tif", fixture.name}
                                 for name in names),
                         "ZIP contains the uploaded source image or an extracted source plane",
                     )
+
+                    # Validate the contents of the result bundle, not just filenames.
+                    zip_result = read_zip_json(archive, "results/results.json")
+                    zip_plan = read_zip_json(archive, "results/adaptive_plan.json")
+                    zip_agents = read_zip_json(archive, "results/expert_agents.json")
+                    zip_report = read_zip_json(archive, "results/analysis_report.json")
+                    zip_provenance = read_zip_json(archive, "results/provenance.json")
+                    zip_community_input = read_zip_json(archive, "results/community_input.json")
+                    zip_nuclei_report = read_zip_json(archive, "results/nuclei_report.json")
+                    zip_morphology = read_zip_json(archive, "results/morphology_report.json")
+                    zip_intensity = read_zip_json(archive, "results/intensity_report.json")
+                    zip_spatial = read_zip_json(archive, "results/spatial_report.json")
+
+                    require(zip_result.get("job_id") == job_id, "ZIP results.json is not bound to the live job")
+                    require(zip_result.get("input_sha256") == result.get("input_sha256"),
+                            "ZIP results.json input hash differs from the live job result")
+                    require(zip_result.get("n_instances") == nuclei_count and
+                            zip_result.get("reports", {}).get("nuclei_count") == nuclei_count,
+                            "ZIP result/measurement instance counts disagree")
+                    require(zip_result.get("adaptive_plan", {}).get("profile", {}).get("max") == 65535,
+                            "ZIP results.json lost the raw 16-bit maximum")
+                    require(zip_result.get("reports", {}).get("intensity", {}).get("max_nuclear_intensity") == 65535,
+                            "ZIP results.json lost the measured 65535 nuclear intensity")
+                    require(zip_result.get("expert_agents") == artifact and zip_agents == artifact,
+                            "ZIP specialist evidence differs from the owner-scoped expert_agents.json API")
+                    require(zip_plan == plan, "ZIP adaptive_plan.json differs from the QC plan used for inference")
+                    require(zip_report == zip_result, "ZIP analysis_report.json differs from results.json")
+                    require(zip_nuclei_report.get("nuclei_count") == nuclei_count,
+                            "ZIP nuclei_report.json instance count disagrees with results.json")
+                    require(zip_morphology == morphology, "ZIP morphology report differs from computed measurements")
+                    require(zip_intensity == intensity, "ZIP intensity report differs from computed measurements")
+                    require(zip_spatial == spatial, "ZIP spatial report differs from computed measurements")
+                    require(zip_community_input.get("source_sha256") == result.get("input_sha256"),
+                            "ZIP provenance input hash differs from the uploaded source")
+                    require(zip_community_input.get("source_filename") == result.get("source_filename"),
+                            "ZIP community input filename differs from the uploaded source")
+                    require(zip_provenance.get("command") == "predict" and
+                            zip_provenance.get("device") == "cpu" and
+                            zip_provenance.get("package") == "bionuclei-domainrobust",
+                            "ZIP inference provenance does not identify the actual CPU prediction path")
+
+                    html_bytes = archive.read("results/analysis_report.html")
+                    html_text = html_bytes.decode("utf-8")
+                    require(len(html_bytes) > 1000, "ZIP HTML report is unexpectedly small")
+                    for required_text in (
+                        "BioNuclei Quantitative Bioimaging Analysis Report",
+                        "Specialist execution and evidence status",
+                        "Training provenance is not established; no training-image count is claimed.",
+                    ):
+                        require(required_text in html_text,
+                                f"ZIP HTML report omitted required evidence/policy text: {required_text!r}")
+                    require(str(nuclei_count) in html_text,
+                            "ZIP HTML report omitted the measured instance count")
+
+                    pdf_bytes = archive.read("results/analysis_report.pdf")
+                    require(len(pdf_bytes) > 1000 and pdf_bytes.startswith(b"%PDF-"),
+                            "ZIP PDF report does not have a valid PDF signature or is empty")
+                    require(b"%%EOF" in pdf_bytes[-2048:],
+                            "ZIP PDF report is missing its end-of-file marker")
+
+                    mask = np.asarray(tifffile.imread(io.BytesIO(archive.read("results/segmentation_mask.tif"))))
+                    require(mask.shape == (512, 512), f"ZIP segmentation mask has wrong dimensions: {mask.shape!r}")
+                    require(np.issubdtype(mask.dtype, np.integer), f"ZIP segmentation mask is not integer-labeled: {mask.dtype!r}")
+                    mask_labels = np.unique(mask)
+                    mask_labels = mask_labels[mask_labels > 0]
+                    mask_label_set = {int(label) for label in mask_labels}
+                    require(len(mask_label_set) == nuclei_count,
+                            f"ZIP mask has {len(mask_label_set)} nonzero instance labels but report has {nuclei_count}")
+                    overlay = np.asarray(tifffile.imread(io.BytesIO(archive.read("results/overlay.tif"))))
+                    require(overlay.shape == (512, 512, 3) and overlay.dtype == np.uint8,
+                            f"ZIP overlay has invalid shape/dtype: {overlay.shape!r}/{overlay.dtype!r}")
+
+                    measurement_fields, measurement_rows = read_zip_csv(archive, "results/measurements.csv")
+                    require({"instance_id", "area_pixels", "centroid_row", "centroid_col"}.issubset(measurement_fields),
+                            f"ZIP measurements.csv has unexpected columns: {measurement_fields!r}")
+                    require(len(measurement_rows) == nuclei_count,
+                            "ZIP measurements.csv row count differs from the segmentation instance count")
+                    measurement_ids = {int(row["instance_id"]) for row in measurement_rows}
+                    require(measurement_ids == mask_label_set,
+                            "ZIP measurements.csv instance IDs disagree with segmentation-mask labels")
+                    require(all(float(row["area_pixels"]) > 0 for row in measurement_rows),
+                            "ZIP measurements.csv contains a non-positive instance area")
+
+                    nuclei_fields, nuclei_rows = read_zip_csv(archive, "results/nuclei_analysis.csv")
+                    require({"label", "area", "mean_intensity", "max_intensity"}.issubset(nuclei_fields),
+                            f"ZIP nuclei_analysis.csv has unexpected columns: {nuclei_fields!r}")
+                    require(len(nuclei_rows) == nuclei_count,
+                            "ZIP nuclei_analysis.csv row count differs from the measured instance count")
+                    nuclei_csv_labels = {int(float(row["label"])) for row in nuclei_rows}
+                    require(nuclei_csv_labels == mask_label_set,
+                            "ZIP nuclei_analysis.csv labels disagree with segmentation-mask labels")
+                    nuclei_csv_max_intensity = max(float(row["max_intensity"]) for row in nuclei_rows)
+                    nuclei_csv_mean_intensity = max(float(row["mean_intensity"]) for row in nuclei_rows)
+                    require(nuclei_csv_max_intensity == 65535.0,
+                            "ZIP nuclei_analysis.csv lost the 65535 measured intensity sentinel")
+                    require(nuclei_csv_mean_intensity > 255,
+                            "ZIP nuclei_analysis.csv does not preserve intensity values above 8-bit range")
+                    require(all(float(row["area"]) > 0 for row in nuclei_rows),
+                            "ZIP nuclei_analysis.csv contains a non-positive instance area")
+
+                    state["archive_content_checks"] = {
+                        "result_json_matches_live_result": True,
+                        "specialist_json_matches_api": True,
+                        "adaptive_plan_matches_qc": True,
+                        "html_report_content_verified": True,
+                        "pdf_signature_and_eof_verified": True,
+                        "mask_labels_match_instance_count": True,
+                        "overlay_dimensions_verified": True,
+                        "measurement_csv_rows_match_instances": True,
+                        "nuclei_csv_rows_and_65535_verified": True,
+                        "provenance_hash_matches_upload": True,
+                    }
+                    state["zip_csv_max_nuclear_intensity"] = nuclei_csv_max_intensity
+                    state["zip_mask_instance_count"] = len(mask_label_set)
+                    state["zip_overlay_shape"] = list(overlay.shape)
                 state["zip_artifacts"] = sorted(names)
 
                 page.locator("#deleteButton").click()
