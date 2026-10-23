@@ -679,3 +679,80 @@ def test_delete_research_copy_preserves_consent_metadata_when_cleanup_fails(
     assert row["retained_copy"] == 1
     assert research_copy.exists()
     assert (research_copy / "retained-image.tif").exists()
+
+def test_failed_job_cleanup_records_incomplete_artifacts_and_retries(community, monkeypatch):
+    module = community
+    job_id = "failure-cleanup-retry"
+    user_id = "guest:cleanup-retry"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"archive")
+
+    original_rmtree = module.shutil.rmtree
+    attempts = 0
+
+    def fail_once(path, *args, **kwargs):
+        nonlocal attempts
+        if Path(path) == root and attempts == 0:
+            attempts += 1
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_once)
+
+    assert module._cleanup_failed_job(job_id, root) is False
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_CLEANUP_ERROR
+    assert root.exists()
+    assert not archive.exists()
+
+    # This is the same retry path the periodic cleanup loop invokes.
+    assert module._retry_failed_cleanups() == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_ERROR
+    assert not root.exists()
+    assert not archive.exists()
+
+
+def test_recovery_does_not_claim_artifacts_removed_when_cleanup_fails(community, monkeypatch):
+    module = community
+    job_id = "recovery-cleanup-failure"
+    user_id = "guest:recovery-cleanup"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"archive")
+
+    now = module._now()
+    stale_at = (now - timedelta(hours=2)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ? AND user_id = ?",
+            (stale_at, job_id, user_id),
+        )
+        conn.commit()
+
+    original_rmtree = module.shutil.rmtree
+
+    def deny_root(path, *args, **kwargs):
+        if Path(path) == root:
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", deny_root)
+
+    assert module.recover_interrupted_jobs(
+        now=now, stale_after=timedelta(minutes=5)
+    ) == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_CLEANUP_ERROR
+    assert root.exists()
+    assert not archive.exists()
+
