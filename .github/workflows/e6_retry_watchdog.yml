@@ -23,7 +23,10 @@ jobs:
         run: |
           set -euo pipefail
           jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" --jq '.jobs[] | select(.name == "E6 25pct") | select(.conclusion != "success") | .id')"
-          test -n "${jobs}"
+          if [ -z "${jobs}" ]; then
+            echo "::notice::No failed E6 25pct job exists in run ${RUN_ID}; no retry is eligible."
+            exit 0
+          fi
           while IFS= read -r job_id; do
             [ -z "${job_id}" ] && continue
             echo "Retrying E6 25pct job ${job_id} from workflow run ${RUN_ID}"
