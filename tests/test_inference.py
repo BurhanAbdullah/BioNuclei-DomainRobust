@@ -119,7 +119,7 @@ def test_default_tiling_bounds_every_512px_forward_pass():
     assert all(height <= 256 and width <= 256 for height, width in model.forward_shapes)
 
 
-def test_192px_cpu_tiles_match_boundary_unet_receptive_field_context():
+def test_160px_cpu_tiles_match_boundary_unet_receptive_field_context():
     """The lower-memory CPU geometry must preserve the actual U-Net seam outputs."""
     torch.manual_seed(23)
     model = BoundaryUNet(base_channels=2).eval()
@@ -127,7 +127,7 @@ def test_192px_cpu_tiles_match_boundary_unet_receptive_field_context():
 
     with torch.inference_mode():
         expected = model(x)
-        actual = _predict_logits(model, x, tile_size=192, overlap=128)
+        actual = _predict_logits(model, x, tile_size=160, overlap=128)
 
     assert actual.shape == expected.shape == (1, 3, 512, 512)
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=1e-6)
@@ -216,5 +216,5 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
 
     assert result["n_instances"] == 2
     assert (output_path / "segmentation_mask.tif").is_file()
-    assert tile_settings == {"tile_size": 192, "overlap": 128}
+    assert tile_settings == {"tile_size": 160, "overlap": 128}
     assert events[-2:] == ["gc", "trim"]
