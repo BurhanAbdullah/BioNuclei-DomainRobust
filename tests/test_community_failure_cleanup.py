@@ -273,12 +273,14 @@ def test_expired_active_job_is_preserved_by_result_purge(community):
     assert community._get_job(job_id, user_id) is not None
     assert marker.read_text(encoding="utf-8") == "active"
 
-def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
+def test_expired_completed_job_is_removed_at_access(community):
     job_id = "expired-at-access"
     user_id = "user-expired"
     root = community._job_dir(job_id)
     (root / "results").mkdir(parents=True)
     (root / "results" / "results.json").write_text("{}", encoding="utf-8")
+    archive = community.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"expired archive")
     expiry = (community._now() - timedelta(minutes=5)).isoformat()
     now = community._now().isoformat()
     with community.DB_LOCK, community._db() as conn:
@@ -292,9 +294,10 @@ def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
         community.get_file(job_id, user_id, "results.json")
     with pytest.raises(FileNotFoundError):
         community.get_archive(job_id, user_id)
-    assert community._get_job(job_id, user_id) is not None
-    assert community.purge_expired() == 1
     assert community._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+    assert community.purge_expired() == 0
 
 
 def test_unverified_training_reference_cannot_be_published_as_verified(community):
