@@ -705,7 +705,7 @@ def test_failed_job_cleanup_records_incomplete_artifacts_and_retries(community, 
     row = module._get_job(job_id, user_id)
     assert row is not None
     assert row["status"] == "failed"
-    assert row["error"] == module._FAILED_JOB_CLEANUP_ERROR
+    assert row["error"] == module._FAILED_JOB_ERROR + module._FAILED_JOB_CLEANUP_SUFFIX
     assert root.exists()
     assert not archive.exists()
 
@@ -752,7 +752,7 @@ def test_recovery_does_not_claim_artifacts_removed_when_cleanup_fails(community,
     row = module._get_job(job_id, user_id)
     assert row is not None
     assert row["status"] == "failed"
-    assert row["error"] == module._FAILED_JOB_CLEANUP_ERROR
+    assert row["error"] == module._INTERRUPTED_JOB_ERROR + module._FAILED_JOB_CLEANUP_SUFFIX
     assert root.exists()
     assert not archive.exists()
 
