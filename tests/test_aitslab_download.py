@@ -115,3 +115,52 @@ def test_archive_checksum_mismatch_never_publishes_partial_file(
     assert calls == downloader.DOWNLOAD_ATTEMPTS
     assert not destination.exists()
     assert not destination.with_name(destination.name + ".part").exists()
+
+def test_archive_download_verifies_sha256_publisher_checksum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"publisher archive with sha256 metadata"
+    expected_sha256 = hashlib.sha256(payload).hexdigest()
+    calls = 0
+
+    def fake_urlopen(_request, timeout):
+        nonlocal calls
+        assert timeout == downloader.DOWNLOAD_TIMEOUT_SECONDS
+        calls += 1
+        return FakeResponse(payload, {"Content-Length": str(len(payload))})
+
+    monkeypatch.setattr(downloader, "urlopen", fake_urlopen)
+    destination = tmp_path / "train.zip"
+
+    resolved = downloader.download_archive(
+        "https://example.test/train.zip",
+        destination,
+        {"checksum": f"sha256:{expected_sha256}"},
+    )
+
+    assert resolved == destination
+    assert destination.read_bytes() == payload
+    assert calls == 1
+
+
+def test_archive_download_rejects_unsupported_checksum_algorithm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    def fake_urlopen(_request, timeout):
+        nonlocal calls
+        calls += 1
+        return FakeResponse(b"archive bytes")
+
+    monkeypatch.setattr(downloader, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="Unsupported publisher checksum algorithm"):
+        downloader.download_archive(
+            "https://example.test/train.zip",
+            tmp_path / "train.zip",
+            {"checksum": "sha1:abc123"},
+        )
+
+    assert calls == 0
+
