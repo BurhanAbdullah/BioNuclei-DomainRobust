@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import requests
 import tifffile
+from pypdf import PdfReader
 from playwright.sync_api import sync_playwright
 
 SITE_URL = os.environ.get(
@@ -932,6 +933,17 @@ def main() -> None:
                             "ZIP PDF report does not have a valid PDF signature or is empty")
                     require(b"%%EOF" in pdf_bytes[-2048:],
                             "ZIP PDF report is missing its end-of-file marker")
+                    pdf_reader = PdfReader(io.BytesIO(pdf_bytes), strict=True)
+                    require(len(pdf_reader.pages) >= 1,
+                            "ZIP PDF report is not readable or contains no pages")
+                    pdf_text = "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
+                    for required_text in (
+                        "BioNuclei Quantitative Bioimaging Analysis Report",
+                        "Training provenance is not established",
+                    ):
+                        require(required_text in pdf_text,
+                                f"ZIP PDF report omitted required content: {required_text!r}")
+                    state["pdf_readability_verified"] = True
 
                     mask = np.asarray(tifffile.imread(io.BytesIO(archive.read("results/segmentation_mask.tif"))))
                     require(mask.shape == (512, 512), f"ZIP segmentation mask has wrong dimensions: {mask.shape!r}")
