@@ -1,101 +1,50 @@
-name: E6 aggregate repair
+name: E6 aggregate repair dispatcher
 
+# Single entry point into the maintained, provenance-checked E6 finalizer.
+# Never pin transient Actions artifact IDs in a repair workflow.
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/e6_aggregate_repair.yml"
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Optional successful E6 source run ID; empty selects the latest successful main run"
+        required: false
+        type: string
 
 permissions:
+  actions: write
   contents: read
-  actions: read
 
 jobs:
-  aggregate:
-    name: Rebuild E6 aggregate from verified fraction artifacts
+  dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download exact verified fraction artifacts
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 10048904584,10049300074,10055510835,10051231349
-          path: outputs/e6_fraction_evidence
-          merge-multiple: false
-          repository: BurhanAbdullah/BioNuclei-DomainRobust
-          run-id: 34208190019
-
-      - name: Aggregate and cross-check E6 evidence
+      - name: Resolve and validate source E6 run
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RUN_ID: ${{ inputs.source_run_id }}
         run: |
-          python - <<'PY'
-          import hashlib, json, pathlib
-
-          root = pathlib.Path('outputs/e6_fraction_evidence')
-          expected = {
-              0.01: ('01pct', 1),
-              0.05: ('05pct', 2),
-              0.10: ('10pct', 3),
-              0.25: ('25pct', 8),
+          set -euo pipefail
+          source_run_id="$INPUT_RUN_ID"
+          if [ -z "$source_run_id" ]; then
+            source_run_id="$(gh run list --workflow e6_external_few_shot.yml --branch main --status success --json databaseId --limit 1 --jq '.[0].databaseId')"
+          fi
+          test -n "$source_run_id" && test "$source_run_id" != "null" || {
+            echo "No successful E6 source run is available; no aggregate was generated."
+            exit 1
           }
-
-          # Discover evidence recursively because download-artifact extraction depth can vary.
-          provenance_files = sorted(root.rglob('provenance.json'))
-          assert provenance_files, f'no provenance.json found below {root}'
-          found = {}
-          for prov_path in provenance_files:
-              prov = json.loads(prov_path.read_text())
-              raw_frac = prov.get('fraction')
-              try:
-                  frac = float(raw_frac)
-              except (TypeError, ValueError):
-                  continue
-              if frac in expected:
-                  if frac in found:
-                      raise AssertionError(f'duplicate evidence for fraction {frac}: {prov_path} and {found[frac]}')
-                  found[frac] = prov_path
-
-          assert set(found) == set(expected), f'missing fractions: {sorted(set(expected)-set(found))}; found={sorted(found)}; provenance={provenance_files}'
-
-          rows = []
-          for frac, (label, n) in sorted(expected.items()):
-              prov_path = found[frac]
-              run = prov_path.parent
-              metrics_path = run / 'evaluation' / 'test_metrics.json'
-              assert metrics_path.is_file(), metrics_path
-              prov = json.loads(prov_path.read_text())
-              metrics = json.loads(metrics_path.read_text())
-              assert float(prov['fraction']) == frac
-              assert int(prov['n_adaptation_images']) == n
-              assert (int(prov['seed']), int(prov['epochs'])) == (42, 20)
-              assert metrics['n_images'] == 10
-              assert all(k in metrics['mean'] for k in ('dice', 'iou', 'aji', 'boundary_f1'))
-              assert prov['s_biad634_used_for_adaptation'] is False
-              assert prov['test_images_used_for_adaptation'] is False
-              assert prov['development_images_used_for_training_or_selection'] is False
-              assert prov.get('activation_checkpointing') is True
-              digest = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
-              assert digest == prov['test_metrics_sha256']
-              assert prov['dataset_archive_sha256']
-              assert prov['train_command'] and prov['evaluation_command']
-              rows.append({'label': label, 'fraction': frac, 'n_adaptation_images': n, 'mean': metrics['mean'], 'metrics_sha256': digest, 'provenance_sha256': hashlib.sha256(prov_path.read_bytes()).hexdigest()})
-
-          out = pathlib.Path('outputs/e6_external_few_shot_final')
-          out.mkdir(parents=True, exist_ok=True)
-          result = {'protocol': 'E6_cross_dataset_few_shot', 'source_run_id': 34208190019, 'fractions': rows, 'all_four_fractions_verified': True}
-          (out / 'aggregate_results.json').write_text(json.dumps(result, indent=2) + '\n')
-          print('E6 aggregate evidence cross-check: PASS')
-          PY
-
-      - name: Upload repaired final E6 evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: e6-external-few-shot-repaired-${{ github.run_id }}
-          path: outputs/e6_external_few_shot_final/**
-          if-no-files-found: error
-          retention-days: 30
-
-# Safe retrigger after validating the four source artifacts.
+          source="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}")"
+          test "$(jq -r '.conclusion' <<<"$source")" = "success"
+          test "$(jq -r '.head_branch' <<<"$source")" = "main"
+          echo "source_run_id=$source_run_id" >> "$GITHUB_OUTPUT"
+          echo "Verified successful E6 source run $source_run_id on main."
+      - name: Dispatch the maintained verified finalizer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ steps.source.outputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          gh workflow run e6_finalize_verified.yml --ref main -f "source_run_id=${SOURCE_RUN_ID}"
+          echo "Dispatched e6_finalize_verified.yml for source run ${SOURCE_RUN_ID}."
+          echo "The finalizer validates the exact live artifacts and remains the authority on success/failure."

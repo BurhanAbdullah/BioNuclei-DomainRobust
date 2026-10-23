@@ -1,0 +1,66 @@
+name: Tiled inference checkpoint validation
+
+on:
+  pull_request:
+    paths:
+      - "src/bionuclei/inference.py"
+      - "src/bionuclei/adaptive_agent.py"
+      - "src/bionuclei/expert_agents.py"
+      - "src/bionuclei/models.py"
+      - "webapp/community.py"
+      - "scripts/validate_tiled_checkpoint.py"
+      - ".github/workflows/tiled-checkpoint-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/bionuclei/inference.py"
+      - "src/bionuclei/adaptive_agent.py"
+      - "src/bionuclei/expert_agents.py"
+      - "src/bionuclei/models.py"
+      - "webapp/community.py"
+      - "scripts/validate_tiled_checkpoint.py"
+      - ".github/workflows/tiled-checkpoint-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tiled-checkpoint-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  released-checkpoint:
+    name: Real checkpoint → uint16 measurements → eight evidence-bound specialists
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact tested revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Download and verify immutable release checkpoint
+        env:
+          CHECKPOINT_URL: https://github.com/${{ github.repository }}/releases/download/checkpoint-bbbc039-v1/bionuclei_bbbc039.pt
+          EXPECTED_SHA256: 7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92
+          CHECKPOINT_PATH: ${{ runner.temp }}/bionuclei_bbbc039.pt
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 --retry-all-errors \
+            "$CHECKPOINT_URL" --output "$CHECKPOINT_PATH"
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$CHECKPOINT_PATH" | sha256sum --check --strict
+          echo "BIONUCLEI_CHECKPOINT=$CHECKPOINT_PATH" >> "$GITHUB_ENV"
+          echo "BIONUCLEI_EXPECTED_CHECKPOINT_SHA256=$EXPECTED_SHA256" >> "$GITHUB_ENV"
+
+      - name: Install production web dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[web]'
+
+      - name: Run real checkpoint worker and specialist evidence gate
+        run: python scripts/validate_tiled_checkpoint.py

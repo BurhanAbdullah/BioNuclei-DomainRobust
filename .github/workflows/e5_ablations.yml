@@ -19,7 +19,6 @@ on:
       - 'scripts/e5_run_ablation.py'
       - 'docs/E5_PREREGISTRATION.md'
       - 'docs/PROGRESS.md'
-      - '.github/workflows/e5_ablations.yml'
       - 'pyproject.toml'
   workflow_dispatch:
     inputs:
@@ -150,18 +149,34 @@ jobs:
                   assert p.get(k)
           print('all preregistered E5 variants complete')
           PY
-      - name: Verify matched conventional baseline
+      - name: Verify and download immutable baseline release asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
           mkdir -p outputs/strong_baseline_source
-          gh run download 33768426630 \
-            --repo "$GITHUB_REPOSITORY" \
-            --name bbbc039-baseline-33768426630 \
-            --dir outputs/strong_baseline_source
-          CKPT="outputs/strong_baseline_source/outputs/bbbc039_baseline/last.pt"
-          test -f "$CKPT"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/checkpoint-bbbc039-v1")"
+          asset_digest="$(jq -r '.assets[] | select(.name == "bionuclei_bbbc039.pt") | .digest' <<<"$release_json")"
+          asset_url="$(jq -r '.assets[] | select(.name == "bionuclei_bbbc039.pt") | .browser_download_url' <<<"$release_json")"
+          expected_asset_digest="sha256:7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+          expected_asset_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/checkpoint-bbbc039-v1/bionuclei_bbbc039.pt"
+          test "$asset_digest" = "$expected_asset_digest" || {
+            echo "Permanent BBBC039 checkpoint release digest mismatch: $asset_digest"
+            exit 1
+          }
+          test "$asset_url" = "$expected_asset_url"
+          CKPT="outputs/strong_baseline_source/bionuclei_bbbc039.pt"
+          curl --fail --location --silent --show-error "$asset_url" --output "$CKPT"
+          actual_checkpoint_digest="sha256:$(sha256sum "$CKPT" | cut -d' ' -f1)"
+          test "$actual_checkpoint_digest" = "$expected_asset_digest"
+          python - <<'PY'
+          import torch
+          path = "outputs/strong_baseline_source/bionuclei_bbbc039.pt"
+          obj = torch.load(path, map_location="cpu", weights_only=False)
+          assert isinstance(obj, dict) and "model" in obj, "released baseline is not a readable model checkpoint"
+          print("Permanent BBBC039 checkpoint: verified")
+          PY
           PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
             --checkpoint "$CKPT" \
             --data-root data/raw/S-BIAD634 \
@@ -173,12 +188,16 @@ jobs:
               h=hashlib.sha256(); h.update(p.read_bytes()); return h.hexdigest()
           m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
           assert m['n_images']==79 and len(m['per_image'])==79
-          ckpt=Path('outputs/strong_baseline_source/outputs/bbbc039_baseline/last.pt')
+          ckpt=Path('outputs/strong_baseline_source/bionuclei_bbbc039.pt')
           prov={
             'name':'corrected_bbbc039_boundary_unet_baseline',
             'type':'conventional_boundary_aware_unet_comparator',
             'source_run_id':33768426630,
-            'source_artifact_digest':'sha256:ec31fba69ee40de1f86d89ac0275d4341f58ec31a41f4129b33cf2501d3ce74f',
+            'source_artifact_id_at_publication':9901940761,
+            'source_artifact_digest_at_publication':'sha256:ec31fba69ee40de1f86d89ac0275d4341f58ec31a41f4129b33cf2501d3ce74f',
+            'source_release_tag':'checkpoint-bbbc039-v1',
+            'source_release_asset':'bionuclei_bbbc039.pt',
+            'source_release_asset_digest':'sha256:7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92',
             'checkpoint_sha256':sha256(ckpt),
             'config_sha256':sha256(Path('configs/bbbc039_baseline.yaml')),
             'source_split_manifest_sha256':sha256(Path('data/manifests/bbbc039_official_split.json')),
@@ -196,7 +215,7 @@ jobs:
           import json
           from pathlib import Path
           p=json.loads(Path('outputs/strong_baseline_target/provenance.json').read_text())
-          required=['source_run_id','source_artifact_digest','checkpoint_sha256','config_sha256','source_split_manifest_sha256','target_manifest_sha256','decoder','evaluator']
+          required=['source_run_id','source_artifact_id_at_publication','source_artifact_digest_at_publication','source_release_tag','source_release_asset','source_release_asset_digest','checkpoint_sha256','config_sha256','source_split_manifest_sha256','target_manifest_sha256','decoder','evaluator']
           assert all(p.get(k) for k in required)
           assert p['target_data_used_for_training'] is False
           m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
@@ -207,11 +226,11 @@ jobs:
           cat > outputs/e5/STRONG_BASELINE_GATE.md <<'EOF'
           # E5 strong-baseline gate
 
-          The retained corrected BBBC039 Boundary U-Net baseline is evaluated on the
-          identical 79-image S-BIAD634 target set using the corrected evaluator. Its
-          source run, artifact digest, checkpoint hash, source split, target manifest,
-          decoder and command provenance are retained in
-          `outputs/strong_baseline_target/provenance.json`.
+          The permanently released corrected BBBC039 Boundary U-Net baseline is
+          evaluated on the identical 79-image S-BIAD634 target set using the corrected
+          evaluator. Its original run/artifact identity, permanent release asset digest,
+          checkpoint hash, source split, target manifest, decoder and command provenance
+          are retained in `outputs/strong_baseline_target/provenance.json`.
 
           Eligibility is an evidence classification: this is a conventional,
           auditable comparator, not a copied published number. No biological-group

@@ -253,6 +253,26 @@ def test_archive_excludes_original_tiff_and_nd2_plane(community):
     assert "results/results.json" in names
 
 
+def test_expired_active_job_is_preserved_by_result_purge(community):
+    job_id = "expired-running-job"
+    user_id = "user-running"
+    root = community._job_dir(job_id)
+    root.mkdir(parents=True)
+    marker = root / "worker-state.txt"
+    marker.write_text("active", encoding="utf-8")
+    expiry = (community._now() - timedelta(minutes=5)).isoformat()
+    now = community._now().isoformat()
+    with community.DB_LOCK, community._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_sha256,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id,"running",now,now,expiry,user_id,"b"*64,"x.tif",0,0,"auto","intensity,nuclei"),
+        )
+        conn.commit()
+
+    assert community.purge_expired() == 0
+    assert community._get_job(job_id, user_id) is not None
+    assert marker.read_text(encoding="utf-8") == "active"
+
 def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
     job_id = "expired-at-access"
     user_id = "user-expired"
@@ -575,3 +595,22 @@ const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
                 or "e2e-512-uint16.tif" in name
                 for name in names
             )
+
+
+def test_failure_cleanup_refreshes_expiry_for_queryable_failure(community):
+    module = community
+    job_id = "expired-original-failure"
+    user_id = "guest:expired-original"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+
+    # _seed_job deliberately stores an expiry at "now". If a worker fails
+    # after the original TTL, the truthful failed record must still survive
+    # until its own short retention window elapses.
+    module._cleanup_failed_job(job_id, root)
+    assert module.purge_expired() == 0
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["expires_at"] > module._now().isoformat()
+    assert module.get_job(job_id, user_id)["status"] == "failed"
