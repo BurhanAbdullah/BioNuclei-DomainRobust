@@ -118,15 +118,20 @@ def test_default_tiling_bounds_every_512px_forward_pass():
     assert all(height <= 256 and width <= 256 for height, width in model.forward_shapes)
 
 
-def test_tiled_logits_match_boundary_unet_receptive_field_context():
-    """Exercise the actual U-Net topology, not only pointwise stitching fixtures."""
+@pytest.mark.parametrize("shape", [(512, 512), (319, 321), (512, 520), (600, 520)])
+def test_tiled_logits_match_boundary_unet_receptive_field_context(shape):
+    """Exercise the actual U-Net topology and seam context on square and irregular images."""
     torch.manual_seed(17)
     model = BoundaryUNet(base_channels=2).eval()
-    x = torch.linspace(0.0, 1.0, 512 * 512, dtype=torch.float32).reshape(1, 1, 512, 512)
+    height, width = shape
+    x = torch.linspace(0.0, 1.0, height * width, dtype=torch.float32).reshape(1, 1, height, width)
+    pad_height = (-height) % 8
+    pad_width = (-width) % 8
+    padded = F.pad(x, (0, pad_width, 0, pad_height), mode="replicate") if pad_height or pad_width else x
 
     with torch.inference_mode():
-        expected = model(x)
+        expected = model(padded)[..., :height, :width]
         actual = _predict_logits(model, x)
 
-    assert actual.shape == expected.shape == (1, 3, 512, 512)
+    assert actual.shape == expected.shape == (1, 3, height, width)
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=1e-6)
