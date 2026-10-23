@@ -72,6 +72,11 @@ def main() -> None:
         fixture = root / "live-uint16-sentinel.tif"
         fixture_sha = build_fixture(fixture)
 
+        # Direct script execution places scripts/ on sys.path, not the repository root.
+        import sys
+        repo_root = str(Path(__file__).resolve().parents[1])
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
         import webapp.community as community
 
         owner = "checkpoint-validation-owner"
