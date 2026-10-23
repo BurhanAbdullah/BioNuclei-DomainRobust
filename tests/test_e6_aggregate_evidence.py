@@ -87,7 +87,7 @@ def test_duplicate_fraction_fails_closed(tmp_path: Path) -> None:
 def test_metrics_digest_mismatch_fails_closed(tmp_path: Path) -> None:
     root = _fixture(tmp_path / "evidence")
     metrics = root / "e6-fraction-01pct-12345" / "outputs" / "e6_external_few_shot" / "01pct" / "evaluation" / "test_metrics.json"
-    metrics.write_text('{"n_images":10,"mean":{"dice":0.1}}\n', encoding="utf-8")
+    metrics.write_text('{"n_images":10,"mean":{"dice":0.1,"iou":0.2,"aji":0.3,"boundary_f1":0.4}}\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="test-metrics SHA-256"):
         aggregate_evidence(root)
