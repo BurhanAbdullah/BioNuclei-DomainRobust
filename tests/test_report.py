@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from pypdf import PdfReader
+
 from bionuclei.report import build_report
 
 
@@ -23,7 +25,7 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
             "intensity": {"mean_nuclear_intensity": 512.0},
         },
     }
-    build_report(payload, tmp_path)
+    pdf_path = build_report(payload, tmp_path)
     html = (tmp_path / "analysis_report.html").read_text()
     json_path = tmp_path / "analysis_report.json"
     assert "model weights are not updated" in html.lower()
@@ -33,6 +35,13 @@ def test_detailed_report_contains_non_training_boundary(tmp_path: Path) -> None:
     data = json.loads(json_path.read_text())
     assert data["n_instances"] == 7
 
+    assert pdf_path.is_file()
+    assert pdf_path.stat().st_size > 1000
+    reader = PdfReader(str(pdf_path), strict=True)
+    assert len(reader.pages) >= 1
+    pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "BioNuclei Quantitative Bioimaging Analysis Report" in pdf_text
+    assert "Training provenance is not established" in pdf_text
 
 
 def test_detailed_report_labels_not_applicable_specialists_truthfully(tmp_path: Path) -> None:
