@@ -69,6 +69,20 @@ def resolve_result_reference(payload: dict[str, object], reference: str) -> tupl
     return True, value
 
 
+NON_RUNTIME_PATHS = {
+    "scripts/live_public_agent_e2e.py",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+}
+NON_RUNTIME_PREFIXES = (".github/workflows/", "tests/", "docs/")
+
+
+def is_non_runtime_path(path: str) -> bool:
+    """Return true only for explicit test/documentation paths that do not ship to Render."""
+    return path in NON_RUNTIME_PATHS or path.startswith(NON_RUNTIME_PREFIXES)
+
+
 def verify_published_site(state: dict[str, object]) -> None:
     """Open the real published UI before probing its backend or creating a job."""
     with sync_playwright() as playwright:
@@ -187,9 +201,13 @@ def main() -> None:
             require(bool(re.fullmatch(r"[0-9a-f]{40}", expected_main_commit)),
                     f"GitHub returned an invalid current main commit: {expected_main_commit!r}")
             state["expected_main_commit"] = expected_main_commit
+            # Compare deployed -> main and inspect every changed path. A test-only
+            # commit must not make a healthy, runtime-identical Render deployment
+            # look stale, but any runtime, dependency, asset, or Render-config change
+            # still blocks the upload. This fails closed on divergence/truncation.
             comparison = requests.get(
                 "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/compare/"
-                f"{expected_main_commit}...{deployed_commit}",
+                f"{deployed_commit}...{expected_main_commit}",
                 headers={"Accept": "application/vnd.github+json"},
                 timeout=20,
             )
@@ -199,7 +217,22 @@ def main() -> None:
             comparison_payload = comparison.json()
             state["render_main_comparison_status"] = comparison_payload.get("status")
             require(comparison_payload.get("status") in {"ahead", "identical"},
-                    f"Render is stale relative to current main; deployed={deployed_commit}, main={expected_main_commit}, comparison={comparison_payload.get('status')!r}")
+                    f"Deployed Render commit is not an ancestor of current main; deployed={deployed_commit}, main={expected_main_commit}, comparison={comparison_payload.get('status')!r}")
+            merge_base = (comparison_payload.get("merge_base_commit") or {}).get("sha")
+            require(merge_base == deployed_commit,
+                    f"Render/main comparison has unexpected merge base: deployed={deployed_commit}, merge_base={merge_base!r}")
+            changed_files = comparison_payload.get("files")
+            require(isinstance(changed_files, list) and len(changed_files) < 300,
+                    "GitHub comparison omitted or may have truncated changed-file details; refusing to assume runtime parity")
+            changed_paths = [item.get("filename") for item in changed_files if isinstance(item, dict)]
+            require(len(changed_paths) == len(changed_files) and all(isinstance(path, str) and path for path in changed_paths),
+                    "GitHub comparison returned malformed changed-file details")
+            runtime_diff_files = sorted(path for path in changed_paths if not is_non_runtime_path(path))
+            state["render_main_diff_files"] = sorted(changed_paths)
+            state["render_runtime_diff_files"] = runtime_diff_files
+            state["render_runtime_tree_parity"] = not runtime_diff_files
+            require(not runtime_diff_files,
+                    f"Render runtime/config differs from current main: {runtime_diff_files}")
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 context = browser.new_context(accept_downloads=True)
