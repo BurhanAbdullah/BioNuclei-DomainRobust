@@ -59,6 +59,16 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def resolve_result_reference(payload: dict[str, object], reference: str) -> tuple[bool, object]:
+    """Resolve a specialist numeric claim against the actual computed result."""
+    value: object = payload
+    for component in reference.split("."):
+        if not isinstance(value, dict) or component not in value:
+            return False, None
+        value = value[component]
+    return True, value
+
+
 def verify_published_site(state: dict[str, object]) -> None:
     """Open the real published UI before probing its backend or creating a job."""
     with sync_playwright() as playwright:
@@ -450,6 +460,33 @@ def main() -> None:
                 require(job_response.status_code == 200, f"Owned job GET returned {job_response.status_code}")
                 job = job_response.json()
                 require(job.get("status") == "completed", f"Job status is {job.get('status')!r}, not completed")
+
+                # A separate guest must not read, download, poll, or delete this job.
+                other_guest_response = requests.post(f"{API_BASE}/guest-session", timeout=30)
+                require(other_guest_response.status_code == 200,
+                        f"Second guest session failed: {other_guest_response.status_code}")
+                other_token = other_guest_response.json().get("guest_token")
+                require(isinstance(other_token, str) and bool(other_token),
+                        "Second guest session did not return an owner token")
+                other_headers = {"X-BioNuclei-Guest-Token": other_token}
+                foreign_routes = {
+                    "job metadata": f"/jobs/{job_id}",
+                    "job progress": f"/jobs/{job_id}/progress",
+                    "specialist artifact": f"/jobs/{job_id}/files/expert_agents.json",
+                    "result archive": f"/jobs/{job_id}/download",
+                }
+                for label, route in foreign_routes.items():
+                    foreign_response = requests.get(f"{API_BASE}{route}", headers=other_headers, timeout=30)
+                    require(foreign_response.status_code == 404,
+                            f"Cross-owner {label} request returned {foreign_response.status_code}, not 404")
+                foreign_delete = requests.delete(f"{API_BASE}/jobs/{job_id}", headers=other_headers, timeout=30)
+                require(foreign_delete.status_code == 404,
+                        f"Cross-owner deletion returned {foreign_delete.status_code}, not 404")
+                owner_recheck = requests.get(f"{API_BASE}/jobs/{job_id}", headers=headers, timeout=30)
+                require(owner_recheck.status_code == 200 and owner_recheck.json().get("status") == "completed",
+                        "Cross-owner attempts changed or deleted the legitimate owner's job")
+                state["cross_owner_isolation_verified"] = True
+
                 result = job.get("result")
                 if not isinstance(result, dict):
                     result_response = requests.get(
@@ -467,19 +504,72 @@ def main() -> None:
                     result.get("model", {}).get("training_reference") == "Not established",
                     "Unverified training provenance was not labeled Not established",
                 )
-                profile = result.get("adaptive_plan", {}).get("profile", {})
+                plan = result.get("adaptive_plan", {})
+                require(isinstance(plan, dict), "Adaptive QC plan is missing")
+                require(plan.get("status") in {"READY", "CAUTION"},
+                        f"Input QC/CNN gate did not produce an analysable result: {plan.get('status')!r}")
+                profile = plan.get("profile", {})
                 require(profile.get("shape") == [512, 512], f"Unexpected input shape: {profile.get('shape')!r}")
                 require(profile.get("dtype") == "uint16", f"Input dtype was not preserved: {profile.get('dtype')!r}")
+                require(profile.get("min") == 512, f"Unexpected raw-image minimum: {profile.get('min')!r}")
                 require(profile.get("max") == 65535, f"Full uint16 range lost before specialist reasoning: {profile.get('max')!r}")
-                intensity = result.get("reports", {}).get("intensity", {})
+                require(profile.get("finite") is True, "Image QC did not confirm finite raw pixels")
+                std = profile.get("std")
+                require(isinstance(std, (int, float)) and np.isfinite(float(std)) and float(std) > 0,
+                        f"Image QC did not preserve non-constant intensity variation: {std!r}")
+                saturation_fraction = profile.get("saturation_fraction")
+                require(isinstance(saturation_fraction, (int, float)) and
+                        np.isfinite(float(saturation_fraction)) and 0 < float(saturation_fraction) <= 1,
+                        f"Image QC did not report the 16-bit saturation sentinel: {saturation_fraction!r}")
+                zero_fraction = profile.get("zero_fraction")
+                require(isinstance(zero_fraction, (int, float)) and float(zero_fraction) == 0,
+                        f"Unexpected zero-intensity fraction for the deterministic fixture: {zero_fraction!r}")
+
+                cnn = plan.get("cnn_pattern_check", {})
+                require(isinstance(cnn, dict) and cnn.get("executed") is True,
+                        "The real CNN analyseability/QC gate did not execute")
+                require(cnn.get("status") in {"PASS", "CAUTION"},
+                        f"CNN gate returned an invalid status: {cnn.get('status')!r}")
+                foreground_fraction = cnn.get("foreground_fraction")
+                confidence = cnn.get("mean_class_confidence")
+                entropy = cnn.get("mean_entropy")
+                components = cnn.get("connected_components")
+                require(isinstance(foreground_fraction, (int, float)) and
+                        np.isfinite(float(foreground_fraction)) and 0 <= float(foreground_fraction) <= 1,
+                        f"CNN foreground fraction is invalid: {foreground_fraction!r}")
+                require(isinstance(confidence, (int, float)) and
+                        np.isfinite(float(confidence)) and 0 <= float(confidence) <= 1,
+                        f"CNN mean class confidence is invalid: {confidence!r}")
+                require(isinstance(entropy, (int, float)) and
+                        np.isfinite(float(entropy)) and float(entropy) >= 0,
+                        f"CNN mean entropy is invalid: {entropy!r}")
+                require(isinstance(components, int) and not isinstance(components, bool) and components >= 0,
+                        f"CNN connected-component count is invalid: {components!r}")
+                actions = plan.get("actions", [])
+                require(any("Do not report a calibrated probability of correctness" in str(action) for action in actions),
+                        "The uncertainty policy no longer prevents unsupported calibrated-confidence claims")
+
+                reports = result.get("reports", {})
+                nuclei_count = reports.get("nuclei_count")
+                require(isinstance(nuclei_count, int) and not isinstance(nuclei_count, bool) and nuclei_count > 0,
+                        f"No valid measured instance count was produced: {nuclei_count!r}")
+                spatial = reports.get("spatial", {})
+                require(spatial.get("instance_count") == nuclei_count,
+                        "Spatial and primary instance counts disagree")
+                morphology = reports.get("morphology", {})
+                mean_area = morphology.get("mean_area")
+                require(isinstance(mean_area, (int, float)) and np.isfinite(float(mean_area)) and float(mean_area) > 0,
+                        f"Measured morphology is missing or invalid: {mean_area!r}")
+
+                intensity = reports.get("intensity", {})
                 require(
                     intensity.get("max_nuclear_intensity") == 65535,
                     "65535 did not survive into the measured nuclear intensity; the real model did not segment the sentinel-containing object",
                 )
-                require(
-                    float(intensity.get("mean_nuclear_intensity", 0)) > 255,
-                    "Nuclear intensity measurements do not demonstrate values above 8-bit range",
-                )
+                mean_intensity = intensity.get("mean_nuclear_intensity")
+                require(isinstance(mean_intensity, (int, float)) and
+                        np.isfinite(float(mean_intensity)) and float(mean_intensity) > 255,
+                        f"Nuclear intensity measurements do not demonstrate values above 8-bit range: {mean_intensity!r}")
 
                 artifact_response = requests.get(
                     f"{API_BASE}/jobs/{job_id}/files/expert_agents.json", headers=headers, timeout=30
@@ -492,12 +582,56 @@ def main() -> None:
                     artifact.get("execution", {}).get("input_sha256") == result.get("input_sha256"),
                     "Specialist artifact input hash differs from the scientific result",
                 )
+                training_status = artifact.get("training_status", {})
+                require(training_status.get("verified") is False,
+                        "Unverified training provenance was incorrectly marked verified")
+                require(training_status.get("claim_allowed") is False,
+                        "Unsupported training-history claims were permitted")
+                require(training_status.get("training_reference") == "Not established",
+                        "Specialist artifact invented or overstated training provenance")
+                require(
+                    "do not invent measurements, training provenance, or biological conclusions" in
+                    str(artifact.get("evidence_policy", "")).lower(),
+                    "Specialist artifact omitted the no-invention evidence policy",
+                )
+
                 agents = artifact.get("agents", [])
                 require(len(agents) == 8, f"Expected eight specialist outputs, received {len(agents)}")
                 require(
                     artifact.get("execution", {}).get("completed_agent_count") == 8,
                     "Not all eight specialist reviewers completed",
                 )
+                total_verified_claims = 0
+                for agent in agents:
+                    agent_name = agent.get("agent", "<unknown>")
+                    require(agent.get("status") == "completed", f"Specialist {agent_name} did not complete")
+                    digest = agent.get("evidence_sha256")
+                    evidence_payload = agent.get("evidence_payload")
+                    require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+                            f"Specialist {agent_name} has no valid evidence digest")
+                    require(isinstance(evidence_payload, str),
+                            f"Specialist {agent_name} has no serialized evidence payload")
+                    require(hashlib.sha256(evidence_payload.encode("utf-8")).hexdigest() == digest,
+                            f"Specialist {agent_name} evidence digest does not match its payload")
+                    references = agent.get("evidence_references", [])
+                    missing_references = agent.get("missing_evidence_references", [])
+                    require(isinstance(references, list) and references and not missing_references,
+                            f"Specialist {agent_name} has missing declared evidence references")
+                    claims = agent.get("quantitative_claims", [])
+                    require(isinstance(claims, list), f"Specialist {agent_name} quantitative claims are malformed")
+                    for claim in claims:
+                        reference = claim.get("reference")
+                        require(
+                            isinstance(reference, str) and any(
+                                reference == base or reference.startswith(base + ".") for base in references
+                            ),
+                            f"Specialist {agent_name} made a numeric claim outside its declared evidence references",
+                        )
+                        found, computed_value = resolve_result_reference(result, reference)
+                        require(found and computed_value == claim.get("value"),
+                                f"Specialist {agent_name} numeric claim does not match computed result at {reference!r}")
+                        total_verified_claims += 1
+
                 intensity_agent = next((a for a in agents if a.get("agent") == "intensity_agent"), None)
                 require(isinstance(intensity_agent, dict), "Intensity specialist output is missing")
                 require(
@@ -511,6 +645,24 @@ def main() -> None:
                     ),
                     "Intensity specialist lacks an evidence-bound 65535 claim",
                 )
+                segmentation_agent = next((a for a in agents if a.get("agent") == "segmentation_quality_agent"), None)
+                require(isinstance(segmentation_agent, dict) and any(
+                    "not an accuracy metric" in str(limit).lower() and "ground-truth comparison" in str(limit).lower()
+                    for limit in segmentation_agent.get("limitations", [])
+                ), "Specialist output did not disclaim unsupported per-upload accuracy")
+                scientific_review_agent = next((a for a in agents if a.get("agent") == "scientific_review_agent"), None)
+                require(isinstance(scientific_review_agent, dict) and any(
+                    "unsupported confidence" in str(limit).lower() and "training provenance" in str(limit).lower()
+                    for limit in scientific_review_agent.get("limitations", [])
+                ), "Scientific review did not enforce confidence/provenance limitations")
+                report_agent = next((a for a in agents if a.get("agent") == "report_agent"), None)
+                require(isinstance(report_agent, dict) and any(
+                    "does not create new measurements" in str(limit).lower() and "model accuracy" in str(limit).lower()
+                    for limit in report_agent.get("limitations", [])
+                ), "Report specialist did not disclaim invented measurements or model accuracy")
+
+                state["quantitative_claims_verified_against_result"] = total_verified_claims
+                state["training_provenance_claim_allowed"] = training_status.get("claim_allowed")
                 state["specialist_agents"] = [
                     {"agent": a.get("agent"), "status": a.get("status"), "evidence_sha256": a.get("evidence_sha256")}
                     for a in agents
@@ -529,7 +681,41 @@ def main() -> None:
                 zip_path = root / "public-analysis.zip"
                 download.save_as(str(zip_path))
                 with zipfile.ZipFile(zip_path) as archive:
-                    names = set(archive.namelist())
+                    archive_names = archive.namelist()
+                    names = set(archive_names)
+                    require(bool(names), "ZIP is empty")
+                    require(
+                        len(archive_names) == len(names),
+                        "ZIP contains duplicate artifact paths",
+                    )
+                    require(
+                        all(name.startswith("results/") for name in names),
+                        "ZIP contains an entry outside the approved results directory",
+                    )
+                    allowed_result_files = {
+                        "segmentation_mask.tif",
+                        "overlay.tif",
+                        "measurements.csv",
+                        "results.json",
+                        "provenance.json",
+                        "community_input.json",
+                        "nuclei_analysis.csv",
+                        "nuclei_report.json",
+                        "morphology_report.json",
+                        "intensity_report.json",
+                        "spatial_report.json",
+                        "adaptive_plan.json",
+                        "expert_agents.json",
+                        "analysis_report.pdf",
+                        "analysis_report.json",
+                        "analysis_report.html",
+                    }
+                    allowed_names = {f"results/{filename}" for filename in allowed_result_files}
+                    unapproved = sorted(names - allowed_names)
+                    require(
+                        not unapproved,
+                        f"ZIP contains unapproved artifacts: {unapproved}",
+                    )
                     required = {
                         "results/analysis_report.html",
                         "results/analysis_report.pdf",
