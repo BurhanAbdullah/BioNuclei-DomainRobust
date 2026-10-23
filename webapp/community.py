@@ -265,14 +265,39 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
         reject("canonical execution payload does not match specialist artifact")
 
 
+_RESULT_ARTIFACTS = frozenset({
+    "segmentation_mask.tif",
+    "overlay.tif",
+    "measurements.csv",
+    "results.json",
+    "provenance.json",
+    "community_input.json",
+    "nuclei_analysis.csv",
+    "nuclei_report.json",
+    "morphology_report.json",
+    "intensity_report.json",
+    "spatial_report.json",
+    "adaptive_plan.json",
+    "expert_agents.json",
+    "analysis_report.pdf",
+    "analysis_report.json",
+    "analysis_report.html",
+})
+
+
 def _archive(job_id: str) -> Path:
+    """Package only explicitly approved result artifacts, never the job tree."""
     root = _job_dir(job_id)
+    results_root = root / "results"
     archive = JOB_ROOT / f"{job_id}.zip"
-    excluded_source_files = {"input.tif", "input.tiff", "input.nd2", "input_plane.tif"}
     with ZipFile(archive, "w", ZIP_DEFLATED) as zf:
-        for path in root.rglob("*"):
-            if path.is_file() and path.name not in excluded_source_files:
-                zf.write(path, path.relative_to(root))
+        if results_root.is_dir() and not results_root.is_symlink():
+            for filename in sorted(_RESULT_ARTIFACTS):
+                path = results_root / filename
+                # Do not follow symlinks: a result-looking path must not expose
+                # the uploaded source or a file outside the result directory.
+                if path.is_file() and not path.is_symlink():
+                    zf.write(path, Path("results") / filename)
     return archive
 
 
@@ -720,14 +745,7 @@ def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
 
 
 def get_file(job_id: str, user_id: str, filename: str) -> Path:
-    allowed = {
-        "segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json",
-        "provenance.json", "community_input.json", "nuclei_analysis.csv",
-        "nuclei_report.json", "morphology_report.json", "intensity_report.json",
-        "adaptive_plan.json", "expert_agents.json", "analysis_report.pdf",
-        "analysis_report.json", "analysis_report.html",
-    }
-    if filename not in allowed:
+    if filename not in _RESULT_ARTIFACTS:
         raise ValueError("File is not a downloadable BioNuclei result")
     row = _live_owned_row(job_id, user_id)
     if row is None or row["status"] != "completed":

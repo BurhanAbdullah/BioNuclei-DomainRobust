@@ -390,11 +390,26 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
     assert any(claim["reference"] == "adaptive_plan.profile.max" and claim["value"] == 65535 for claim in intensity_agent["quantitative_claims"])
     assert any(claim["reference"] == "reports.intensity.mean_nuclear_intensity" and claim["value"] == mean_intensity for claim in intensity_agent["quantitative_claims"])
 
+    # The ZIP must be a result-only bundle, not a recursive snapshot of the job tree.
+    (root / "private.env").write_text("must not be archived", encoding="utf-8")
+    nested = root / "nested"
+    nested.mkdir()
+    (nested / "secret.txt").write_text("must not be archived", encoding="utf-8")
+    (root / "results" / "debug.log").write_text("must not be archived", encoding="utf-8")
+    (root / "results" / "uploaded-source.tif").write_bytes(b"raw source image")
+    symlink_target = root / "private-source.tif"
+    symlink_target.write_bytes(b"raw source image")
+    symlink_result = root / "results" / "nuclei_report.json"
+    symlink_result.unlink(missing_ok=True)
+    symlink_result.symlink_to(symlink_target)
+
     with ZipFile(module._archive(job_id)) as archive:
         names = set(archive.namelist())
         for required in ("results/analysis_report.html", "results/analysis_report.pdf", "results/expert_agents.json", "results/nuclei_analysis.csv", "results/segmentation_mask.tif", "results/overlay.tif"):
             assert required in names
+        assert names and all(name.startswith("results/") for name in names)
         assert not any(name.endswith("input.tif") or name.endswith("input_plane.tif") or "e2e-512-uint16.tif" in name for name in names)
+        assert not {"private.env", "nested/secret.txt", "results/debug.log", "results/uploaded-source.tif", "results/nuclei_report.json"} & names
 
 
 def test_public_upload_route_returns_job_bound_verified_specialist_result(community, monkeypatch):
