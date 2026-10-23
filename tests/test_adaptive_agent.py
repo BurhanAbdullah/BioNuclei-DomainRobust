@@ -104,7 +104,7 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     result = __import__("bionuclei.adaptive_agent", fromlist=["cnn_pattern_check"]).cnn_pattern_check(path)
     assert result.executed is True
     assert result.status == "PASS"
-    assert seen_shapes == [(1, 1, 256, 256)]
+    assert seen_shapes == [(1, 1, 192, 192)]
     assert loader_calls == [(checkpoint, "cpu")]
     assert events == ["acquire", "load", "model_cleanup", "release"]
     assert lock.held is False
