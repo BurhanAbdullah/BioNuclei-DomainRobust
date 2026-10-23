@@ -104,7 +104,7 @@ def progress(request:Request,job_id:str):
         ("expert_review", "5 · Expert evidence review", "Evidence-constrained specialist agents are reviewing the measured result.", 84),
         ("packaging", "6 · Report packaging", "The report and downloadable analysis package are being assembled.", 94),
         ("completed", "7 · Complete", "Analysis complete. The report is ready to download.", 100),
-        ("failed", "Analysis failed", "The server-side analysis job failed. No transient input/result artifacts were retained.", 0),
+        ("failed", "Analysis failed", "Analysis failed. Cleanup status is reported separately.", 0),
     ]
     phase = status if status in {name for name, *_ in stages} else "queued"
     if output.exists():
@@ -116,7 +116,54 @@ def progress(request:Request,job_id:str):
     if status == "failed": phase = "failed"
     if status not in {"completed","failed","planning","running"} and not output.exists(): phase = "queued"
     selected = next(item for item in stages if item[0] == phase)
-    return {"job_id":job_id,"status":status,"phase":phase,"label":selected[1],"message":selected[2],"progress":selected[3],"pipeline_truth_source":"filesystem artifacts plus job status","expert_agents_started":(output / "expert_agents.json").is_file() if output.exists() else False,"report_ready":(output / "analysis_report.pdf").is_file() if output.exists() else False}
+    message = selected[2]
+    cleanup_status = "pending"
+    if status == "completed":
+        # Completion is only persisted after transient input cleanup succeeds.
+        cleanup_status = "verified"
+    elif status == "failed":
+        error = str(payload.get("error") or "")
+        if error.endswith(community_service._FAILED_JOB_CLEANUP_SUFFIX):
+            cleanup_status = "incomplete"
+            message = (
+                "Analysis failed. Cleanup is incomplete; transient artifacts may remain. "
+                "Automatic cleanup retries will continue. Please retry later."
+            )
+        elif error in {
+            community_service._FAILED_JOB_ERROR,
+            community_service._INTERRUPTED_JOB_ERROR,
+        }:
+            cleanup_status = "verified"
+            message = (
+                "Analysis failed. Transient input/result artifacts were removed and "
+                "cleanup was verified. Please retry the analysis."
+            )
+        else:
+            # Legacy or unrecognized error records do not prove that cleanup succeeded.
+            cleanup_status = "unknown"
+            message = (
+                "Analysis failed. Cleanup status is unknown; do not assume transient "
+                "input/result artifacts were removed."
+            )
+    report_ready = (
+        status == "completed"
+        and output.exists()
+        and (output / "analysis_report.pdf").is_file()
+    )
+    return {
+        "job_id": job_id,
+        "status": status,
+        "phase": phase,
+        "label": selected[1],
+        "message": message,
+        "progress": selected[3],
+        "pipeline_truth_source": "filesystem artifacts plus job status",
+        "expert_agents_started": (
+            (output / "expert_agents.json").is_file() if output.exists() else False
+        ),
+        "report_ready": report_ready,
+        "cleanup_status": cleanup_status,
+    }
 
 @app.get("/jobs/{job_id}/preview/{filename}")
 def preview(request:Request,job_id:str,filename:str):
