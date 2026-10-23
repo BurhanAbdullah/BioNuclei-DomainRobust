@@ -91,4 +91,26 @@ jobs:
             --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
             --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
             bionuclei-memory-gate \
-            python -c 'import resource, subprocess, sys; result = subprocess.run([sys.executable, "scripts/validate_tiled_checkpoint.py"]); peak_mib = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024; print(f"Peak validation-worker RSS: {peak_mib:.1f} MiB", flush=True); sys.exit(result.returncode if result.returncode else (1 if peak_mib > 470 else 0))'
+            sh -lc ' \
+              set +e \
+              python scripts/validate_tiled_checkpoint.py \
+              worker_status=$? \
+              set -e \
+              if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.peak ]; then \
+                memory_limit=$(cat /sys/fs/cgroup/memory.max) \
+                memory_peak=$(cat /sys/fs/cgroup/memory.peak) \
+              elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ] && [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then \
+                memory_limit=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) \
+                memory_peak=$(cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes) \
+              else \
+                echo "Cannot verify cgroup memory accounting; refusing a false pass" >&2 \
+                exit 1 \
+              fi \
+              case "$memory_limit" in ""|*[!0-9]*) echo "Invalid cgroup memory limit: $memory_limit" >&2; exit 1;; esac \
+              case "$memory_peak" in ""|*[!0-9]*) echo "Invalid cgroup memory peak: $memory_peak" >&2; exit 1;; esac \
+              printf "Cgroup memory limit: %s bytes\\n" "$memory_limit" \
+              printf "Cgroup memory peak: %s bytes\\n" "$memory_peak" \
+              [ "$worker_status" -eq 0 ] || exit "$worker_status" \
+              [ "$memory_limit" -eq 503316480 ] || { echo "Expected an enforced 480 MiB cgroup limit" >&2; exit 1; } \
+              [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; } \
+            '
