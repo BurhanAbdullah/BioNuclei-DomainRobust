@@ -17,7 +17,26 @@ from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research
 
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
-allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
+PUBLIC_SITE_ORIGIN = "https://burhanabdullah.github.io"
+
+
+def _configured_origins(value: str | None) -> list[str]:
+    """Keep the published GitHub Pages analyzer able to call the public API.
+
+    Operators may restrict additional origins through BIONUCLEI_ALLOWED_ORIGINS,
+    but that setting must not accidentally disable the only supported public UI.
+    Wildcard mode remains available because this API intentionally uses no cookies.
+    """
+    raw = value if value is not None else "*"
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    if PUBLIC_SITE_ORIGIN not in origins:
+        origins.append(PUBLIC_SITE_ORIGIN)
+    return origins or [PUBLIC_SITE_ORIGIN]
+
+
+allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
