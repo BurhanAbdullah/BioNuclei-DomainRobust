@@ -213,8 +213,14 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
         model = _load_model(checkpoint, device)
         try:
             x = torch.from_numpy(_normalise(image)[None, None]).float().to(device)
+            # The public Render Free instance has a 512 MiB limit. Smaller CPU
+            # tiles reduce peak activation memory; retain 64 px context on each
+            # side of internal seams. GPU inference keeps the faster default.
+            tile_size, overlap = (192, 128) if device == "cpu" else (256, 128)
             with torch.no_grad():
-                instances = _split_instances(_predict_logits(model, x))
+                instances = _split_instances(
+                    _predict_logits(model, x, tile_size=tile_size, overlap=overlap)
+                )
         finally:
             del x
             del model
