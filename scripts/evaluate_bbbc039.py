@@ -32,23 +32,38 @@ def boundary_band(mask: np.ndarray) -> np.ndarray:
 
 
 def resolve_image_path(root: Path, image_name: str) -> Path:
-    """Resolve a manifest filename anywhere under the extracted BBBC038 tree."""
-    exact = root / "images" / image_name
-    if exact.exists():
-        return exact
+    """Resolve official split names to images, matching stems across extensions.
+
+    BBBC039 partition metadata can list a PNG basename for the paired mask while
+    the fluorescence image archive stores the corresponding image as TIFF. Search
+    only within the extracted images tree and require a unique stem match.
+    """
+    image_root = root / "images"
+    if not image_root.is_dir():
+        raise FileNotFoundError(f"Extracted BBBC039 image directory does not exist: {image_root}")
+
     target = Path(image_name).name
+    exact = image_root / target
+    if exact.is_file() and exact.suffix.lower() in IMAGE_EXTENSIONS:
+        return exact
+
+    target_stem = Path(target).stem.casefold()
     candidates = sorted(
-        p for p in root.rglob("*")
+        p for p in image_root.rglob("*")
         if p.is_file()
-        and p.parent.name == "images"
-        and p.name == target
         and p.suffix.lower() in IMAGE_EXTENSIONS
+        and p.stem.casefold() == target_stem
     )
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
-        raise FileNotFoundError(f"No downloaded image matches manifest entry {image_name}")
-    raise RuntimeError(f"Ambiguous downloaded image matches for {image_name}: {candidates}")
+        raise FileNotFoundError(
+            f"No downloaded image matches manifest entry {image_name!r} "
+            f"by stem under {image_root}"
+        )
+    raise RuntimeError(
+        f"Ambiguous downloaded images match manifest entry {image_name!r}: {candidates}"
+    )
 
 
 def mask_path(root: Path, image_name: str) -> Path:
