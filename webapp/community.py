@@ -527,15 +527,22 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
     finally:
         # Input planes are transient even when the worker fails. Record cleanup
         # failures rather than silently treating ignore_errors as successful deletion.
-        for transient in (image_path, root / "input_plane.tif"):
-            try:
-                transient.unlink(missing_ok=True)
-            except OSError as exc:
-                print(
-                    f"bionuclei: transient input cleanup deferred for job {job_id} "
-                    f"({type(exc).__name__})",
-                    flush=True,
-                )
+        try:
+            image_path.unlink(missing_ok=True)
+        except OSError as exc:
+            print(
+                f"bionuclei: source input cleanup deferred for job {job_id} "
+                f"({type(exc).__name__})",
+                flush=True,
+            )
+        try:
+            (root / "input_plane.tif").unlink(missing_ok=True)
+        except OSError as exc:
+            print(
+                f"bionuclei: extracted input-plane cleanup deferred for job {job_id} "
+                f"({type(exc).__name__})",
+                flush=True,
+            )
 
         current_row = _get_job(job_id, user_id)
         if current_row is None:
