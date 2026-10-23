@@ -1,4 +1,8 @@
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -48,3 +52,73 @@ def test_main_homepage_links_to_product_and_labels_visual_as_illustrative() -> N
     assert 'href="bionuclei.html"' in homepage
     assert "Illustrative fluorescence microscopy field used as a product visual" in homepage
     assert "Open Lab" in homepage
+
+
+def test_progress_adapter_displays_failed_job_as_terminal_alert() -> None:
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js is required for the browser progress-adapter test")
+
+    asset = DOCS / "assets" / "bionuclei-progress.js"
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const host = { hidden: true, innerHTML: "" };
+const runMsg = { innerHTML: "" };
+const input = { files: [], addEventListener() {} };
+const analyzeButton = { disabled: false };
+const guestButton = { addEventListener() {} };
+const elements = {
+  analysisProgress: host,
+  runMsg,
+  image: input,
+  analyzeButton,
+  guestButton
+};
+const response = payload => ({
+  ok: true,
+  status: 200,
+  json: async () => payload,
+  clone: () => ({ json: async () => payload })
+});
+const window = {
+  __BIONUCLEI_PROGRESS_BOOTED: false,
+  BIONUCLEI_CONFIG: { apiBase: "https://api.example" },
+  fetch: async url => {
+    if (String(url).endsWith("/analyze")) return response({ job_id: "job-1" });
+    if (String(url).endsWith("/jobs/job-1/progress")) {
+      return response({ phase: "failed", message: "Analysis worker failed safely." });
+    }
+    throw new Error("Unexpected request: " + url);
+  }
+};
+const document = {
+  readyState: "complete",
+  getElementById: id => elements[id] || null,
+  querySelector: () => null,
+  createElement: () => ({ hidden: true, innerHTML: "", className: "", appendChild() {} }),
+  addEventListener() {}
+};
+const context = { window, document, Headers, console, setTimeout, clearTimeout, Promise };
+vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), context);
+(async () => {
+  await window.fetch("https://api.example/analyze", { method: "POST" });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  if (window.__BIONUCLEI_ANALYSIS_ACTIVE !== false) throw new Error("failed job remained active");
+  if (!host.innerHTML.includes("role=\"alert\"")) throw new Error("failure alert not rendered");
+  if (!host.innerHTML.includes("Analysis worker failed safely.")) throw new Error("failure reason not rendered");
+  if (host.innerHTML.includes("role=\"progressbar\"")) throw new Error("failed job still displays active progress");
+  if (!runMsg.innerHTML.includes("Analysis worker failed safely.")) throw new Error("run message omitted failure reason");
+  process.stdout.write("terminal-failure-ui-ok\\n");
+})().catch(error => { console.error(error.stack || error); process.exit(1); });
+"""
+    result = subprocess.run(
+        [node, "-e", script, str(asset)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "terminal-failure-ui-ok" in result.stdout
+
