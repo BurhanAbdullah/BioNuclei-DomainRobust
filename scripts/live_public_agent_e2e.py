@@ -529,7 +529,41 @@ def main() -> None:
                 zip_path = root / "public-analysis.zip"
                 download.save_as(str(zip_path))
                 with zipfile.ZipFile(zip_path) as archive:
-                    names = set(archive.namelist())
+                    archive_names = archive.namelist()
+                    names = set(archive_names)
+                    require(bool(names), "ZIP is empty")
+                    require(
+                        len(archive_names) == len(names),
+                        "ZIP contains duplicate artifact paths",
+                    )
+                    require(
+                        all(name.startswith("results/") for name in names),
+                        "ZIP contains an entry outside the approved results directory",
+                    )
+                    allowed_result_files = {
+                        "segmentation_mask.tif",
+                        "overlay.tif",
+                        "measurements.csv",
+                        "results.json",
+                        "provenance.json",
+                        "community_input.json",
+                        "nuclei_analysis.csv",
+                        "nuclei_report.json",
+                        "morphology_report.json",
+                        "intensity_report.json",
+                        "spatial_report.json",
+                        "adaptive_plan.json",
+                        "expert_agents.json",
+                        "analysis_report.pdf",
+                        "analysis_report.json",
+                        "analysis_report.html",
+                    }
+                    allowed_names = {f"results/{filename}" for filename in allowed_result_files}
+                    unapproved = sorted(names - allowed_names)
+                    require(
+                        not unapproved,
+                        f"ZIP contains unapproved artifacts: {unapproved}",
+                    )
                     required = {
                         "results/analysis_report.html",
                         "results/analysis_report.pdf",
