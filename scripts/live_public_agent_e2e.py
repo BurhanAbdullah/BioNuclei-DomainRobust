@@ -126,19 +126,34 @@ def main() -> None:
                     f"Render health did not expose a valid deployed Git commit: {deployed_commit!r}")
             require(health.get("render_git_branch") == "main",
                     f"Public API is not deployed from main: branch={health.get('render_git_branch')!r}")
-            comparison = requests.get(
-                "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/compare/"
-                f"3f7d420f3ec005f8465888bd838d7dc1da0ee493...{deployed_commit}",
+            # Compare against the current default-branch head, not a fixed historical
+            # commit. A healthy Render instance can still be stale after a merge;
+            # it must not be used to validate a code revision it does not contain.
+            main_commit_response = requests.get(
+                "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/commits/main",
                 headers={"Accept": "application/vnd.github+json"},
                 timeout=20,
             )
-            state["backend_fix_commit_comparison_http_status"] = comparison.status_code
+            state["latest_main_commit_http_status"] = main_commit_response.status_code
+            require(main_commit_response.status_code == 200,
+                    f"Could not resolve current main commit: HTTP {main_commit_response.status_code}")
+            expected_main_commit = str(main_commit_response.json().get("sha") or "")
+            require(bool(re.fullmatch(r"[0-9a-f]{40}", expected_main_commit)),
+                    f"GitHub returned an invalid current main commit: {expected_main_commit!r}")
+            state["expected_main_commit"] = expected_main_commit
+            comparison = requests.get(
+                "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/compare/"
+                f"{expected_main_commit}...{deployed_commit}",
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=20,
+            )
+            state["render_main_comparison_http_status"] = comparison.status_code
             require(comparison.status_code == 200,
-                    f"Could not verify deployed Render commit ancestry: HTTP {comparison.status_code}")
+                    f"Could not verify Render/current-main ancestry: HTTP {comparison.status_code}")
             comparison_payload = comparison.json()
-            state["backend_fix_commit_comparison_status"] = comparison_payload.get("status")
+            state["render_main_comparison_status"] = comparison_payload.get("status")
             require(comparison_payload.get("status") in {"ahead", "identical"},
-                    f"Render is serving a commit that does not contain the backend fix; deployed={deployed_commit}, comparison={comparison_payload.get('status')!r}")
+                    f"Render is stale relative to current main; deployed={deployed_commit}, main={expected_main_commit}, comparison={comparison_payload.get('status')!r}")
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 context = browser.new_context(accept_downloads=True)
