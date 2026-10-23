@@ -4,10 +4,19 @@ on:
   schedule:
     - cron: "23 * * * *"
   workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "webapp/**"
+      - "src/bionuclei/**"
+      - "docs/bionuclei-app.html"
+      - "docs/assets/bionuclei-analyzer.js"
+      - "docs/assets/bionuclei-specialist-verification.js"
+      - "scripts/live_public_agent_e2e.py"
+      - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
       - "scripts/live_public_agent_e2e.py"
-      - ".github/workflows/live-public-agent-e2e.yml"
 
 permissions:
   contents: read
