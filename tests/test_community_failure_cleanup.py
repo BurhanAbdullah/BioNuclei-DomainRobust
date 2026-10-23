@@ -706,6 +706,7 @@ def test_failed_job_cleanup_records_incomplete_artifacts_and_retries(community, 
     assert row is not None
     assert row["status"] == "failed"
     assert row["error"] == module._FAILED_JOB_ERROR + module._FAILED_JOB_CLEANUP_SUFFIX
+    expiry_before_retry = row["expires_at"]
     assert root.exists()
     assert not archive.exists()
 
@@ -715,6 +716,7 @@ def test_failed_job_cleanup_records_incomplete_artifacts_and_retries(community, 
     assert row is not None
     assert row["status"] == "failed"
     assert row["error"] == module._FAILED_JOB_ERROR
+    assert row["expires_at"] == expiry_before_retry
     assert not root.exists()
     assert not archive.exists()
 
