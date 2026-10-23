@@ -61,6 +61,64 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def audit_browser_upload_storage(page, state: dict[str, object], phase: str) -> None:
+    """Fail closed if an uploaded image is persisted in browser-origin storage."""
+    snapshot = page.evaluate(
+        """async () => {
+            const keys = (storage) => {
+                const out = [];
+                for (let index = 0; index < storage.length; index += 1) {
+                    out.push(storage.key(index));
+                }
+                return out;
+            };
+            const values = (storage) => {
+                const out = [];
+                for (let index = 0; index < storage.length; index += 1) {
+                    out.push(storage.getItem(storage.key(index)) || "");
+                }
+                return out;
+            };
+            const databases = typeof indexedDB.databases === "function"
+                ? await indexedDB.databases()
+                : null;
+            const storedValues = [...values(localStorage), ...values(sessionStorage)];
+            return {
+                local_storage_keys: keys(localStorage),
+                session_storage_keys: keys(sessionStorage),
+                indexeddb_supported: Array.isArray(databases),
+                indexeddb_names: Array.isArray(databases)
+                    ? databases.map((database) => database.name || "")
+                    : null,
+                image_payload_persisted: storedValues.some((value) =>
+                    value.length > 16384 ||
+                    /(?:data:image\\/|data:application\\/octet-stream|blob:)/i.test(value)
+                ),
+            };
+        }"""
+    )
+    require(isinstance(snapshot, dict), "Browser storage audit returned malformed data")
+    require(snapshot.get("indexeddb_supported") is True,
+            "Browser cannot enumerate IndexedDB; refusing to claim upload storage is absent")
+    require(snapshot.get("indexeddb_names") == [],
+            f"Browser IndexedDB databases exist during {phase}: {snapshot.get('indexeddb_names')!r}")
+    storage_keys = list(snapshot.get("local_storage_keys") or []) + list(snapshot.get("session_storage_keys") or [])
+    sensitive_key = re.compile(r"(?:image|upload|microscopy|source|blob|file)", re.IGNORECASE)
+    require(not any(sensitive_key.search(str(key)) for key in storage_keys),
+            f"Browser storage contains image/upload-related keys during {phase}")
+    require(snapshot.get("image_payload_persisted") is False,
+            f"Browser storage contains a large or image-like payload during {phase}")
+    audits = state.setdefault("browser_storage_audits", [])
+    if isinstance(audits, list):
+        audits.append({
+            "phase": phase,
+            "local_storage_keys": snapshot.get("local_storage_keys", []),
+            "session_storage_keys": snapshot.get("session_storage_keys", []),
+            "indexeddb_names": snapshot.get("indexeddb_names", []),
+            "image_payload_persisted": snapshot.get("image_payload_persisted"),
+        })
+
+
 def resolve_result_reference(payload: dict[str, object], reference: str) -> tuple[bool, object]:
     """Resolve a specialist numeric claim against the actual computed result."""
     value: object = payload
@@ -396,6 +454,7 @@ def main() -> None:
                     state["browser_request_failures"] = state.get("browser_request_failures", [])
                 require(state["guest_token_seen"] is True, "Guest session response/token was not observed")
                 page.locator("#image").set_input_files(str(fixture))
+                audit_browser_upload_storage(page, state, "after_file_selection")
                 page.locator("#analyzeButton").click(timeout=30000)
                 # Get the job ID from the real response clone if the browser event
                 # listener did not receive the response body.
@@ -500,6 +559,7 @@ def main() -> None:
                     "() => { const p=document.querySelector('#resultPanel'); return !!p && !p.hidden; }",
                     timeout=60000,
                 )
+                audit_browser_upload_storage(page, state, "after_analysis_completed")
                 status_text = page.locator("#runMsg").inner_text()
                 state["run_message"] = status_text
                 if re.search(r"analysis status: failed", status_text, re.IGNORECASE):
