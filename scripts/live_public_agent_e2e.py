@@ -555,12 +555,56 @@ def main() -> None:
                     artifact.get("execution", {}).get("input_sha256") == result.get("input_sha256"),
                     "Specialist artifact input hash differs from the scientific result",
                 )
+                training_status = artifact.get("training_status", {})
+                require(training_status.get("verified") is False,
+                        "Unverified training provenance was incorrectly marked verified")
+                require(training_status.get("claim_allowed") is False,
+                        "Unsupported training-history claims were permitted")
+                require(training_status.get("training_reference") == "Not established",
+                        "Specialist artifact invented or overstated training provenance")
+                require(
+                    "do not invent measurements, training provenance, or biological conclusions" in
+                    str(artifact.get("evidence_policy", "")).lower(),
+                    "Specialist artifact omitted the no-invention evidence policy",
+                )
+
                 agents = artifact.get("agents", [])
                 require(len(agents) == 8, f"Expected eight specialist outputs, received {len(agents)}")
                 require(
                     artifact.get("execution", {}).get("completed_agent_count") == 8,
                     "Not all eight specialist reviewers completed",
                 )
+                total_verified_claims = 0
+                for agent in agents:
+                    agent_name = agent.get("agent", "<unknown>")
+                    require(agent.get("status") == "completed", f"Specialist {agent_name} did not complete")
+                    digest = agent.get("evidence_sha256")
+                    evidence_payload = agent.get("evidence_payload")
+                    require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+                            f"Specialist {agent_name} has no valid evidence digest")
+                    require(isinstance(evidence_payload, str),
+                            f"Specialist {agent_name} has no serialized evidence payload")
+                    require(hashlib.sha256(evidence_payload.encode("utf-8")).hexdigest() == digest,
+                            f"Specialist {agent_name} evidence digest does not match its payload")
+                    references = agent.get("evidence_references", [])
+                    missing_references = agent.get("missing_evidence_references", [])
+                    require(isinstance(references, list) and references and not missing_references,
+                            f"Specialist {agent_name} has missing declared evidence references")
+                    claims = agent.get("quantitative_claims", [])
+                    require(isinstance(claims, list), f"Specialist {agent_name} quantitative claims are malformed")
+                    for claim in claims:
+                        reference = claim.get("reference")
+                        require(
+                            isinstance(reference, str) and any(
+                                reference == base or reference.startswith(base + ".") for base in references
+                            ),
+                            f"Specialist {agent_name} made a numeric claim outside its declared evidence references",
+                        )
+                        found, computed_value = resolve_result_reference(result, reference)
+                        require(found and computed_value == claim.get("value"),
+                                f"Specialist {agent_name} numeric claim does not match computed result at {reference!r}")
+                        total_verified_claims += 1
+
                 intensity_agent = next((a for a in agents if a.get("agent") == "intensity_agent"), None)
                 require(isinstance(intensity_agent, dict), "Intensity specialist output is missing")
                 require(
@@ -574,6 +618,24 @@ def main() -> None:
                     ),
                     "Intensity specialist lacks an evidence-bound 65535 claim",
                 )
+                segmentation_agent = next((a for a in agents if a.get("agent") == "segmentation_quality_agent"), None)
+                require(isinstance(segmentation_agent, dict) and any(
+                    "not an accuracy metric" in str(limit).lower() and "ground-truth comparison" in str(limit).lower()
+                    for limit in segmentation_agent.get("limitations", [])
+                ), "Specialist output did not disclaim unsupported per-upload accuracy")
+                scientific_review_agent = next((a for a in agents if a.get("agent") == "scientific_review_agent"), None)
+                require(isinstance(scientific_review_agent, dict) and any(
+                    "unsupported confidence" in str(limit).lower() and "training provenance" in str(limit).lower()
+                    for limit in scientific_review_agent.get("limitations", [])
+                ), "Scientific review did not enforce confidence/provenance limitations")
+                report_agent = next((a for a in agents if a.get("agent") == "report_agent"), None)
+                require(isinstance(report_agent, dict) and any(
+                    "does not create new measurements" in str(limit).lower() and "model accuracy" in str(limit).lower()
+                    for limit in report_agent.get("limitations", [])
+                ), "Report specialist did not disclaim invented measurements or model accuracy")
+
+                state["quantitative_claims_verified_against_result"] = total_verified_claims
+                state["training_provenance_claim_allowed"] = training_status.get("claim_allowed")
                 state["specialist_agents"] = [
                     {"agent": a.get("agent"), "status": a.get("status"), "evidence_sha256": a.get("evidence_sha256")}
                     for a in agents
