@@ -276,24 +276,111 @@ def _archive(job_id: str) -> Path:
     return archive
 
 
-def _cleanup_failed_job(job_id: str, root: Path) -> None:
-    """Remove transient artifacts while preserving a truthful queryable failure."""
-    shutil.rmtree(root, ignore_errors=True)
-    (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+_FAILED_JOB_ERROR = (
+    "Analysis worker failed before producing a complete result. Please retry the analysis."
+)
+_FAILED_JOB_CLEANUP_ERROR = (
+    "Analysis worker failed before producing a complete result. Cleanup is incomplete; "
+    "transient artifacts may remain. Automatic cleanup retries will continue; "
+    "please retry the analysis later."
+)
+
+
+def _remove_job_artifacts(job_id: str, root: Path) -> bool:
+    """Best-effort remove all transient artifacts and report whether absence was verified."""
+    archive = JOB_ROOT / f"{job_id}.zip"
+    cleanup_failed = False
+
+    try:
+        if root.exists():
+            shutil.rmtree(root)
+    except OSError as exc:
+        cleanup_failed = True
+        print(
+            f"bionuclei: artifact cleanup deferred for job {job_id} ({type(exc).__name__})",
+            flush=True,
+        )
+
+    try:
+        archive.unlink(missing_ok=True)
+    except OSError as exc:
+        cleanup_failed = True
+        print(
+            f"bionuclei: archive cleanup deferred for job {job_id} ({type(exc).__name__})",
+            flush=True,
+        )
+
+    try:
+        if root.exists() or archive.exists():
+            cleanup_failed = True
+    except OSError as exc:
+        cleanup_failed = True
+        print(
+            f"bionuclei: artifact absence could not be verified for job {job_id} "
+            f"({type(exc).__name__})",
+            flush=True,
+        )
+
+    return not cleanup_failed
+
+
+def _cleanup_failed_job(job_id: str, root: Path) -> bool:
+    """Persist a truthful failed record and whether transient cleanup was verified."""
+    cleanup_ok = _remove_job_artifacts(job_id, root)
     failed_at = _now()
     expires_at = (failed_at + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
+    error = _FAILED_JOB_ERROR if cleanup_ok else _FAILED_JOB_CLEANUP_ERROR
     with DB_LOCK, _db() as conn:
         conn.execute(
             "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
+            ("failed", error, failed_at.isoformat(), expires_at, job_id),
+        )
+        conn.commit()
+    return cleanup_ok
+
+
+def _retry_failed_job_cleanup(job_id: str, user_id: str) -> bool:
+    """Retry only failed jobs whose previous artifact cleanup was explicitly incomplete."""
+    row = _get_job(job_id, user_id)
+    if (
+        row is None
+        or row["status"] != "failed"
+        or row["error"] != _FAILED_JOB_CLEANUP_ERROR
+    ):
+        return False
+
+    if not _remove_job_artifacts(job_id, _job_dir(job_id)):
+        return False
+
+    with DB_LOCK, _db() as conn:
+        updated = conn.execute(
+            "UPDATE jobs SET error = ?, updated_at = ? "
+            "WHERE id = ? AND user_id = ? AND status = 'failed' AND error = ?",
             (
-                "failed",
-                "Analysis worker failed before producing a complete result. Please retry the analysis.",
-                failed_at.isoformat(),
-                expires_at,
+                _FAILED_JOB_ERROR,
+                _now().isoformat(),
                 job_id,
+                user_id,
+                _FAILED_JOB_CLEANUP_ERROR,
             ),
         )
         conn.commit()
+    return updated.rowcount == 1
+
+
+def _retry_failed_cleanups() -> int:
+    """Retry incomplete failed-job cleanup without extending the retention deadline."""
+    with DB_LOCK, _db() as conn:
+        rows = conn.execute(
+            "SELECT id, user_id FROM jobs WHERE status = 'failed' AND error = ?",
+            (_FAILED_JOB_CLEANUP_ERROR,),
+        ).fetchall()
+
+    cleaned = 0
+    for row in rows:
+        if _retry_failed_job_cleanup(str(row["id"]), str(row["user_id"])):
+            cleaned += 1
+    return cleaned
 
 
 def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> dict[str, object]:
@@ -429,14 +516,28 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             print(f"bionuclei failure cleanup warning for {job_id}: {type(cleanup_exc).__name__}: {cleanup_exc}",flush=True)
         print(f"bionuclei job {job_id} failed: {type(exc).__name__}: {exc}",flush=True)
     finally:
-        # Do not leave files behind if the job was deleted or the watchdog
-        # marked the worker interrupted while a native operation was blocked.
+        # Input planes are transient even when the worker fails. Record cleanup
+        # failures rather than silently treating ignore_errors as successful deletion.
+        for transient in (image_path, root / "input_plane.tif"):
+            try:
+                transient.unlink(missing_ok=True)
+            except OSError as exc:
+                print(
+                    f"bionuclei: transient input cleanup deferred for job {job_id} "
+                    f"({type(exc).__name__})",
+                    flush=True,
+                )
+
         current_row = _get_job(job_id, user_id)
-        if current_row is None or current_row["status"] == "failed":
-            shutil.rmtree(root, ignore_errors=True)
-            (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
-        image_path.unlink(missing_ok=True)
-        (root / "input_plane.tif").unlink(missing_ok=True)
+        if current_row is None:
+            if not _remove_job_artifacts(job_id, root):
+                print(
+                    f"bionuclei: orphan artifact cleanup remains incomplete for job {job_id}",
+                    flush=True,
+                )
+        elif current_row["status"] == "failed":
+            _retry_failed_job_cleanup(job_id, user_id)
+
         with ACTIVE_JOB_THREADS_LOCK:
             if ACTIVE_JOB_THREADS.get(job_id) is threading.current_thread():
                 ACTIVE_JOB_THREADS.pop(job_id, None)
@@ -720,8 +821,8 @@ def recover_interrupted_jobs(
     lease = stale_after or timedelta(minutes=STALE_JOB_RECOVERY_MINUTES)
     cutoff = (current_time - lease).isoformat()
     message = (
-        "Analysis worker stopped before completing this job. Transient input and "
-        "result artifacts were removed; please retry the analysis."
+        "Analysis worker stopped before completing this job. Artifact cleanup is being "
+        "verified; please retry the analysis."
     )
     interrupted: list[str] = []
     active_statuses = ("queued", "planning", "running", "measuring", "expert_review", "packaging")
@@ -748,10 +849,13 @@ def recover_interrupted_jobs(
         conn.commit()
 
     for job_id in interrupted:
-        shutil.rmtree(_job_dir(job_id), ignore_errors=True)
-        (JOB_ROOT / f"{job_id}.zip").unlink(missing_ok=True)
+        _cleanup_failed_job(job_id, _job_dir(job_id))
     if interrupted:
-        print(f"bionuclei recovery marked {len(interrupted)} orphaned active job(s) as failed", flush=True)
+        print(
+            f"bionuclei recovery marked {len(interrupted)} orphaned active job(s) as failed "
+            "and verified artifact cleanup where possible",
+            flush=True,
+        )
     return len(interrupted)
 
 
@@ -759,6 +863,7 @@ def _cleanup_loop() -> None:
     next_expiry_sweep = 0.0
     while True:
         try:
+            _retry_failed_cleanups()
             recover_interrupted_jobs()
             if time.monotonic() >= next_expiry_sweep:
                 purge_expired()
