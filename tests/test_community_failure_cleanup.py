@@ -773,3 +773,97 @@ def test_recovery_does_not_claim_artifacts_removed_when_cleanup_fails(community,
     assert root.exists()
     assert not archive.exists()
 
+
+
+def test_artifact_cleanup_fails_closed_when_path_metadata_is_denied(community, monkeypatch):
+    module = community
+    job_id = "cleanup-metadata-denied"
+    user_id = "guest:metadata-denied"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"archive")
+
+    original_lstat = Path.lstat
+
+    def deny_root_metadata(path, *args, **kwargs):
+        if path == root:
+            raise PermissionError("synthetic metadata denial")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", deny_root_metadata)
+
+    assert module._remove_job_artifacts(job_id, root) is False
+    # Use the saved implementation to prove the root remains rather than
+    # trusting Path.exists(), which may suppress OSErrors on newer Python.
+    original_lstat(root)
+    assert not archive.exists()
+
+
+def test_source_input_cleanup_failure_never_publishes_completed_job(community, monkeypatch):
+    module = community
+    job_id = "source-cleanup-failure"
+    user_id = "guest:source-cleanup"
+    root = module._job_dir(job_id)
+    input_path = _seed_job(module, job_id, user_id, root)
+    checkpoint = root / "checkpoint.pt"
+    checkpoint.write_bytes(b"test-only checkpoint placeholder")
+
+    monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
+    monkeypatch.setattr(module, "to_dict", lambda _plan: {
+        "status": "READY",
+        "profile": {"shape": [512, 512], "dtype": "uint16", "max": 65535},
+        "cnn_pattern_check": {"executed": True, "status": "PASS"},
+    })
+    monkeypatch.setattr(module.gc, "collect", lambda: None)
+
+    def successful_inference(_input, _checkpoint, output, device="cpu"):
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "segmentation_mask.tif").write_bytes(b"mask")
+        return {"n_instances": 1}
+
+    monkeypatch.setattr(module, "predict", successful_inference)
+    monkeypatch.setattr(module, "_extended_reports", lambda *_args: {
+        "nuclei_count": 1,
+        "morphology": {},
+        "intensity": {},
+        "spatial": {},
+    })
+    monkeypatch.setattr(module, "run_expert_agents", lambda _result: {})
+    monkeypatch.setattr(module, "_validate_specialist_artifact", lambda *_args: None)
+    report_calls = []
+    archive_calls = []
+    monkeypatch.setattr(module, "build_report", lambda *_args: report_calls.append(True))
+    monkeypatch.setattr(module, "_archive", lambda *_args: archive_calls.append(True))
+
+    original_unlink = Path.unlink
+
+    def deny_source_unlink(path, *args, **kwargs):
+        if path == input_path:
+            raise PermissionError("synthetic source deletion denial")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny_source_unlink)
+
+    module._run(
+        job_id,
+        user_id,
+        input_path,
+        "input.tif",
+        False,
+        "auto",
+        {"nuclei", "morphology", "intensity"},
+        channel=0,
+        time=0,
+        z=0,
+        field=0,
+    )
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "failed"
+    assert "Analysis worker failed" in row["error"]
+    assert report_calls == []
+    assert archive_calls == []
+    assert not root.exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()

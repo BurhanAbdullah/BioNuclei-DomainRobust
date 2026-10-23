@@ -313,13 +313,37 @@ _FAILED_JOB_CLEANUP_SUFFIX = (
 )
 
 
+def _path_entry_exists(path: Path) -> bool:
+    """Check a filesystem entry without treating metadata errors as absence.
+
+    Path.exists() suppresses many OSErrors on newer Python versions. Cleanup
+    must fail closed when permissions or filesystem metadata prevent verification.
+    lstat() also detects dangling symlinks that exists() would miss.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _remove_transient_input(path: Path, label: str) -> None:
+    """Remove and verify one uploaded or extracted source artifact."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise OSError(f"Could not remove transient {label}") from exc
+    if _path_entry_exists(path):
+        raise OSError(f"Transient {label} remains after cleanup")
+
+
 def _remove_job_artifacts(job_id: str, root: Path) -> bool:
     """Best-effort remove all transient artifacts and report whether absence was verified."""
     archive = JOB_ROOT / f"{job_id}.zip"
     cleanup_failed = False
 
     try:
-        if root.exists():
+        if _path_entry_exists(root):
             shutil.rmtree(root)
     except OSError as exc:
         cleanup_failed = True
@@ -338,7 +362,7 @@ def _remove_job_artifacts(job_id: str, root: Path) -> bool:
         )
 
     try:
-        if root.exists() or archive.exists():
+        if _path_entry_exists(root) or _path_entry_exists(archive):
             cleanup_failed = True
     except OSError as exc:
         cleanup_failed = True
@@ -530,6 +554,11 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             gc.collect()
         _set_job(job_id, status="measuring")
         report_summary = _extended_reports(inference_input, output, analysis_modules)
+        # Do not publish a completed job until all source bytes have been removed.
+        # If removal cannot be verified, the exception path marks the job failed and
+        # retries full artifact cleanup rather than exposing results with retained input.
+        _remove_transient_input(image_path, "uploaded source image")
+        _remove_transient_input(root / "input_plane.tif", "extracted input plane")
         result.update({"job_id":job_id,"analysis_profile":algorithm_profile,"analysis_modules":sorted(analysis_modules),"scientific_execution":True,"input_sha256":input_sha256,"source_filename":original_name,"input_metadata":input_metadata,"reports":report_summary,"adaptive_plan":to_dict(plan),"model":{"architecture":"Boundary U-Net","prediction_target":["background","nuclear interior","nuclear boundary"],"training_reference":"Not established","weights_updated_during_analysis":False}})
         _set_job(job_id, status="expert_review")
         expert = run_expert_agents(result)
@@ -674,10 +703,10 @@ def _remove_expired_job(job_id: str, user_id: str | None = None) -> bool:
     root = _job_dir(job_id)
     archive = JOB_ROOT / f"{job_id}.zip"
     try:
-        if root.exists():
+        if _path_entry_exists(root):
             shutil.rmtree(root)
         archive.unlink(missing_ok=True)
-        if root.exists() or archive.exists():
+        if _path_entry_exists(root) or _path_entry_exists(archive):
             raise OSError("expired job artifacts remain after cleanup")
     except OSError as exc:
         print(
@@ -772,10 +801,10 @@ def delete_job(job_id: str, user_id: str) -> bool:
     root = _job_dir(job_id)
     archive = JOB_ROOT / f"{job_id}.zip"
     try:
-        if root.exists():
+        if _path_entry_exists(root):
             shutil.rmtree(root)
         archive.unlink(missing_ok=True)
-        if root.exists() or archive.exists():
+        if _path_entry_exists(root) or _path_entry_exists(archive):
             raise OSError("job artifacts remain after cleanup")
     except OSError as exc:
         # Keep the owner-scoped row so the owner can retry deletion. Never report
@@ -805,9 +834,9 @@ def delete_research_copy(job_id: str, user_id: str) -> bool:
 
     root = _job_dir(job_id) / "research_copy"
     try:
-        if root.exists():
+        if _path_entry_exists(root):
             shutil.rmtree(root)
-        if root.exists():
+        if _path_entry_exists(root):
             raise OSError("research-copy artifacts remain after cleanup")
     except OSError as exc:
         # Preserve consent/retention metadata until deletion is confirmed.
