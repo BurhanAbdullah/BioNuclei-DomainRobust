@@ -64,3 +64,31 @@ jobs:
 
       - name: Run real checkpoint worker and specialist evidence gate
         run: python scripts/validate_tiled_checkpoint.py
+
+      - name: Build isolated image for constrained-memory validation
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/Dockerfile.bionuclei-memory" <<'EOF'
+          FROM python:3.11-slim-bookworm
+          RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
+          WORKDIR /app
+          COPY . /app
+          RUN python -m pip install --no-cache-dir --upgrade pip && python -m pip install --no-cache-dir -e '.[web]'
+          EOF
+          docker build --file "$RUNNER_TEMP/Dockerfile.bionuclei-memory" --tag bionuclei-memory-gate .
+
+      - name: Run real checkpoint worker with a 480 MiB hard memory limit
+        env:
+          EXPECTED_SHA256: 7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --memory=503316480 \
+            --memory-swap=503316480 \
+            --cpus=1 \
+            --pids-limit=256 \
+            --env BIONUCLEI_CHECKPOINT=/checkpoint.pt \
+            --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
+            --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
+            bionuclei-memory-gate \
+            python -c 'import resource, subprocess, sys; result = subprocess.run([sys.executable, "scripts/validate_tiled_checkpoint.py"]); peak_mib = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024; print(f"Peak validation-worker RSS: {peak_mib:.1f} MiB", flush=True); sys.exit(result.returncode if result.returncode else (1 if peak_mib > 470 else 0))'
