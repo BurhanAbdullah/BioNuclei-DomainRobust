@@ -39,6 +39,7 @@ def sha256(path: Path) -> str:
 DOWNLOAD_TIMEOUT_SECONDS = 60
 DOWNLOAD_ATTEMPTS = 4
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+MAX_METADATA_BYTES = 8 * 1024 * 1024
 
 
 def _retry_delay(attempt: int, error: BaseException) -> float:
@@ -58,14 +59,35 @@ def _is_retryable(error: BaseException) -> bool:
     return isinstance(error, (URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, json.JSONDecodeError))
 
 
+def _read_bounded_metadata(response, url: str) -> bytes:
+    """Read publisher metadata with a strict byte ceiling, even without Content-Length."""
+    declared_size = response.headers.get("Content-Length")
+    if declared_size not in (None, ""):
+        try:
+            declared_bytes = int(declared_size)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid Content-Length for Zenodo metadata from {url}") from exc
+        if declared_bytes < 0:
+            raise RuntimeError(f"Invalid Content-Length for Zenodo metadata from {url}")
+        if declared_bytes > MAX_METADATA_BYTES:
+            raise RuntimeError(
+                f"Zenodo metadata exceeds the {MAX_METADATA_BYTES}-byte limit: {declared_bytes} bytes"
+            )
+
+    payload = response.read(MAX_METADATA_BYTES + 1)
+    if len(payload) > MAX_METADATA_BYTES:
+        raise RuntimeError(f"Zenodo metadata exceeds the {MAX_METADATA_BYTES}-byte limit")
+    return payload
+
+
 def get_json(url: str) -> dict:
-    """Fetch Zenodo metadata with bounded network timeouts and transient retries."""
+    """Fetch Zenodo metadata with bounded bytes, network timeouts and transient retries."""
     last_error: BaseException | None = None
     for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
         try:
             request = Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})
             with urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
-                payload = json.loads(response.read())
+                payload = json.loads(_read_bounded_metadata(response, url))
             if not isinstance(payload, dict):
                 raise RuntimeError(f"Expected a JSON object from {url}")
             return payload

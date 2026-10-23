@@ -16,6 +16,7 @@ from scripts import download_aitslab_bioimaging1 as downloader
 class FakeResponse:
     def __init__(self, payload: bytes, headers: dict[str, str] | None = None) -> None:
         self._stream = io.BytesIO(payload)
+        self.read_sizes: list[int] = []
         self.headers = Message()
         for key, value in (headers or {}).items():
             self.headers[key] = value
@@ -27,6 +28,7 @@ class FakeResponse:
         self._stream.close()
 
     def read(self, size: int = -1) -> bytes:
+        self.read_sizes.append(size)
         return self._stream.read(size)
 
 
@@ -164,3 +166,33 @@ def test_archive_download_rejects_unsupported_checksum_algorithm(
 
     assert calls == 0
 
+
+
+def test_get_json_rejects_declared_oversized_metadata_without_reading_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(downloader, "MAX_METADATA_BYTES", 32)
+    response = FakeResponse(b'{"id":6657260,"files":[]}' + b" " * 64, {"Content-Length": "88"})
+    monkeypatch.setattr(downloader, "urlopen", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(RuntimeError, match="Could not download Zenodo metadata") as exc_info:
+        downloader.get_json(downloader.RECORD_API)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "exceeds the 32-byte limit" in str(exc_info.value.__cause__)
+    assert response.read_sizes == []
+
+
+def test_get_json_bounds_read_when_content_length_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(downloader, "MAX_METADATA_BYTES", 32)
+    response = FakeResponse(b'{"id":6657260,"files":[]}' + b" " * 64)
+    monkeypatch.setattr(downloader, "urlopen", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(RuntimeError, match="Could not download Zenodo metadata") as exc_info:
+        downloader.get_json(downloader.RECORD_API)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "exceeds the 32-byte limit" in str(exc_info.value.__cause__)
+    assert response.read_sizes == [33]
