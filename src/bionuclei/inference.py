@@ -1,9 +1,11 @@
 """User-facing BioNuclei inference and deterministic result bundles."""
 from __future__ import annotations
 
+import ctypes
 import gc
 import json
 import platform
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +32,26 @@ try:
 except RuntimeError:
     # PyTorch may already have initialized its thread pools.
     pass
+
+
+def _trim_cpu_allocator() -> bool:
+    """Return free glibc heap pages to the OS after CPU inference when possible.
+
+    PyTorch CPU tensors are freed below, but glibc can otherwise retain their
+    arenas in a long-lived 512 MiB web worker. On non-Linux/non-glibc systems
+    this is a safe no-op; inference correctness never depends on trimming.
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        trim = getattr(ctypes.CDLL(None), "malloc_trim", None)
+        if trim is None:
+            return False
+        trim.argtypes = [ctypes.c_size_t]
+        trim.restype = ctypes.c_int
+        return bool(trim(0))
+    except (AttributeError, OSError, TypeError):
+        return False
 
 
 def _normalise(image: np.ndarray) -> np.ndarray:
@@ -197,6 +219,8 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
             del x
             del model
             gc.collect()
+            if device == "cpu":
+                _trim_cpu_allocator()
             if device == "cuda" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
