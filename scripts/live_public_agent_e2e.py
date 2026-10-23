@@ -80,20 +80,40 @@ def main() -> None:
             # verifying the source commit avoids attributing a stale deployment
             # failure to the newly merged implementation.
             health_response = None
-            for attempt in range(3):
+            health_attempts: list[dict[str, object]] = []
+            # Render cold starts can outlast a short three-request probe. Give the
+            # actual API a bounded 119-second readiness window, recording sanitized
+            # diagnostics for every attempt. This never substitutes a fake response
+            # and still fails closed if the service is not genuinely healthy.
+            for attempt in range(8):
+                attempt_started = time.monotonic()
+                attempt_record: dict[str, object] = {"attempt": attempt + 1}
                 try:
-                    health_response = requests.get(f"{API_BASE}/health", timeout=15)
+                    health_response = requests.get(f"{API_BASE}/health", timeout=10)
+                    attempt_record["http_status"] = health_response.status_code
+                    attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
                     state["api_health_http_status"] = health_response.status_code
                     if health_response.status_code == 200:
+                        attempt_record["result"] = "http_200"
+                        health_attempts.append(attempt_record)
+                        state["api_health_attempts"] = health_attempts
                         break
+                    attempt_record["body_excerpt"] = health_response.text[:240]
                     state["api_health_body"] = health_response.text[:240]
                 except requests.RequestException as exc:
+                    attempt_record["error"] = type(exc).__name__
+                    attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
                     state["api_health_request_error"] = type(exc).__name__
-                if attempt < 2:
-                    time.sleep(2 * (attempt + 1))
+                health_attempts.append(attempt_record)
+                state["api_health_attempts"] = health_attempts
+                if attempt < 7:
+                    delay = min(8, 2 ** attempt)
+                    attempt_record["retry_delay_seconds"] = delay
+                    time.sleep(delay)
             require(
                 health_response is not None and health_response.status_code == 200,
-                f"Public API health check failed before upload: HTTP {state.get('api_health_http_status')!r}",
+                f"Public API health check failed after {len(health_attempts)} attempts: "
+                f"HTTP {state.get('api_health_http_status')!r}",
             )
             health = health_response.json()
             state["render_git_commit"] = health.get("render_git_commit")
