@@ -460,6 +460,33 @@ def main() -> None:
                 require(job_response.status_code == 200, f"Owned job GET returned {job_response.status_code}")
                 job = job_response.json()
                 require(job.get("status") == "completed", f"Job status is {job.get('status')!r}, not completed")
+
+                # A separate guest must not read, download, poll, or delete this job.
+                other_guest_response = requests.post(f"{API_BASE}/guest-session", timeout=30)
+                require(other_guest_response.status_code == 200,
+                        f"Second guest session failed: {other_guest_response.status_code}")
+                other_token = other_guest_response.json().get("guest_token")
+                require(isinstance(other_token, str) and bool(other_token),
+                        "Second guest session did not return an owner token")
+                other_headers = {"X-BioNuclei-Guest-Token": other_token}
+                foreign_routes = {
+                    "job metadata": f"/jobs/{job_id}",
+                    "job progress": f"/jobs/{job_id}/progress",
+                    "specialist artifact": f"/jobs/{job_id}/files/expert_agents.json",
+                    "result archive": f"/jobs/{job_id}/download",
+                }
+                for label, route in foreign_routes.items():
+                    foreign_response = requests.get(f"{API_BASE}{route}", headers=other_headers, timeout=30)
+                    require(foreign_response.status_code == 404,
+                            f"Cross-owner {label} request returned {foreign_response.status_code}, not 404")
+                foreign_delete = requests.delete(f"{API_BASE}/jobs/{job_id}", headers=other_headers, timeout=30)
+                require(foreign_delete.status_code == 404,
+                        f"Cross-owner deletion returned {foreign_delete.status_code}, not 404")
+                owner_recheck = requests.get(f"{API_BASE}/jobs/{job_id}", headers=headers, timeout=30)
+                require(owner_recheck.status_code == 200 and owner_recheck.json().get("status") == "completed",
+                        "Cross-owner attempts changed or deleted the legitimate owner's job")
+                state["cross_owner_isolation_verified"] = True
+
                 result = job.get("result")
                 if not isinstance(result, dict):
                     result_response = requests.get(
