@@ -58,9 +58,15 @@ def main() -> None:
         metrics = metrics_result.get("structured_content")
         if not isinstance(metrics, dict):
             raise AssertionError("compute_instance_metrics did not return structured metrics")
+        # Boundary-F1 is accumulated from floating-point distances; identical
+        # masks can produce 0.999999995 rather than exactly 1.0. Keep this
+        # strict enough to catch a real metric regression without assuming
+        # bit-exact arithmetic.
         for key in ("dice", "iou", "aji", "boundary_f1"):
-            if key not in metrics or not math.isclose(float(metrics[key]), 1.0, rel_tol=0.0, abs_tol=1e-9):
-                raise AssertionError(f"Expected identical-mask {key}=1.0, got {metrics.get(key)!r}")
+            if key not in metrics or not math.isclose(
+                float(metrics[key]), 1.0, rel_tol=0.0, abs_tol=1e-8
+            ):
+                raise AssertionError(f"Expected identical-mask {key}=1.0 within 1e-8, got {metrics.get(key)!r}")
 
         print(json.dumps({
             "status": "PASS",
