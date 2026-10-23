@@ -119,7 +119,6 @@ def test_default_tiling_bounds_every_512px_forward_pass():
     assert all(height <= 256 and width <= 256 for height, width in model.forward_shapes)
 
 
-@pytest.mark.parametrize("shape", [(512, 512), (319, 321), (512, 520), (600, 520)])
 def test_192px_cpu_tiles_match_boundary_unet_receptive_field_context():
     """The lower-memory CPU geometry must preserve the actual U-Net seam outputs."""
     torch.manual_seed(23)
@@ -134,6 +133,7 @@ def test_192px_cpu_tiles_match_boundary_unet_receptive_field_context():
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=1e-6)
 
 
+@pytest.mark.parametrize("shape", [(512, 512), (319, 321), (512, 520), (600, 520)])
 def test_tiled_logits_match_boundary_unet_receptive_field_context(shape):
     """Exercise the actual U-Net topology and seam context on square and irregular images."""
     torch.manual_seed(17)
