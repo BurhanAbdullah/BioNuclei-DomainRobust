@@ -153,3 +153,109 @@ def test_recover_interrupted_job_does_not_delete_a_live_worker(isolated_jobs):
         assert marker.read_bytes() == b"still owned by live worker"
     finally:
         module.ACTIVE_JOB_THREADS.pop(job_id, None)
+
+def _seed_expired_terminal_job(
+    module,
+    job_id: str,
+    user_id: str,
+    *,
+    status: str = "failed",
+    expires_at: str | None = None,
+):
+    now = module._now()
+    root = module._job_dir(job_id)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "input.tif").write_bytes(b"transient input")
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"transient archive")
+    expiry = expires_at or (now - timedelta(minutes=1)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,input_name,retained_copy,research_consent,algorithm_profile,user_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (job_id, status, now.isoformat(), now.isoformat(), expiry, "input.tif", 0, 0, "auto", user_id),
+        )
+        conn.commit()
+    return root, archive
+
+
+def test_expired_failed_job_is_removed_before_metadata_access(isolated_jobs):
+    module = isolated_jobs
+    job_id = "expired-failed-access"
+    user_id = "owner-a"
+    root, archive = _seed_expired_terminal_job(module, job_id, user_id)
+
+    assert module.get_job(job_id, user_id) is None
+    assert module._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+
+
+def test_expired_failed_job_is_removed_before_user_listing(isolated_jobs):
+    module = isolated_jobs
+    job_id = "expired-failed-listing"
+    user_id = "owner-a"
+    root, archive = _seed_expired_terminal_job(module, job_id, user_id)
+
+    assert module.get_jobs_for_user(user_id) == []
+    assert module._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+
+
+def test_malformed_terminal_expiry_fails_closed_and_cleans_artifacts(isolated_jobs):
+    module = isolated_jobs
+    job_id = "malformed-expiry"
+    user_id = "owner-a"
+    root, archive = _seed_expired_terminal_job(
+        module, job_id, user_id, status="completed", expires_at="not-a-timestamp"
+    )
+
+    assert module.get_job(job_id, user_id) is None
+    assert module._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+
+
+def test_expired_job_cleanup_failure_denies_access_and_preserves_metadata(
+    isolated_jobs, monkeypatch: pytest.MonkeyPatch
+):
+    module = isolated_jobs
+    job_id = "expired-cleanup-failure"
+    user_id = "owner-a"
+    root, archive = _seed_expired_terminal_job(module, job_id, user_id)
+
+    def fail_rmtree(_path):
+        raise PermissionError("synthetic cleanup denial")
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_rmtree)
+
+    assert module.get_job(job_id, user_id) is None
+    assert module._get_job(job_id, user_id) is not None
+    assert root.exists()
+    assert archive.exists()
+    assert module.purge_expired() == 0
+    assert module._get_job(job_id, user_id) is not None
+
+
+def test_expired_timestamp_does_not_hide_active_job(isolated_jobs):
+    module = isolated_jobs
+    job_id = "active-expired-timestamp"
+    user_id = "owner-a"
+    now = module._now()
+    root = module._job_dir(job_id)
+    root.mkdir(parents=True)
+    (root / "input.tif").write_bytes(b"live worker input")
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,input_name,retained_copy,research_consent,algorithm_profile,user_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id, "running", now.isoformat(), now.isoformat(),
+                (now - timedelta(minutes=1)).isoformat(), "input.tif", 0, 0, "auto", user_id,
+            ),
+        )
+        conn.commit()
+
+    payload = module.get_job(job_id, user_id)
+    assert payload is not None and payload["status"] == "running"
+    assert root.exists()
+

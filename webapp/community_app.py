@@ -17,7 +17,26 @@ from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research
 
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
-allowed_origins=[o.strip() for o in os.getenv("BIONUCLEI_ALLOWED_ORIGINS","*").split(",") if o.strip()]
+PUBLIC_SITE_ORIGIN = "https://burhanabdullah.github.io"
+
+
+def _configured_origins(value: str | None) -> list[str]:
+    """Keep the published GitHub Pages analyzer able to call the public API.
+
+    Operators may restrict additional origins through BIONUCLEI_ALLOWED_ORIGINS,
+    but that setting must not accidentally disable the only supported public UI.
+    Wildcard mode remains available because this API intentionally uses no cookies.
+    """
+    raw = value if value is not None else "*"
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    if PUBLIC_SITE_ORIGIN not in origins:
+        origins.append(PUBLIC_SITE_ORIGIN)
+    return origins or [PUBLIC_SITE_ORIGIN]
+
+
+allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
@@ -40,6 +59,11 @@ def guest_session():
 
 @app.post("/analyze")
 async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research_consent:Annotated[bool,Form()]=False,algorithm_profile:Annotated[str,Form()]="auto",analysis_modules:Annotated[str,Form()]="nuclei,morphology,intensity",nd2_channel:Annotated[int,Form()]=0,nd2_time:Annotated[int,Form()]=0,nd2_z:Annotated[int,Form()]=0,nd2_field:Annotated[int,Form()]=0):
+    if research_consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
+        )
     user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
@@ -80,7 +104,7 @@ def progress(request:Request,job_id:str):
         ("expert_review", "5 · Expert evidence review", "Evidence-constrained specialist agents are reviewing the measured result.", 84),
         ("packaging", "6 · Report packaging", "The report and downloadable analysis package are being assembled.", 94),
         ("completed", "7 · Complete", "Analysis complete. The report is ready to download.", 100),
-        ("failed", "Analysis failed", "The server-side analysis job failed. No transient input/result artifacts were retained.", 0),
+        ("failed", "Analysis failed", "Analysis failed. Cleanup status is reported separately.", 0),
     ]
     phase = status if status in {name for name, *_ in stages} else "queued"
     if output.exists():
@@ -92,7 +116,54 @@ def progress(request:Request,job_id:str):
     if status == "failed": phase = "failed"
     if status not in {"completed","failed","planning","running"} and not output.exists(): phase = "queued"
     selected = next(item for item in stages if item[0] == phase)
-    return {"job_id":job_id,"status":status,"phase":phase,"label":selected[1],"message":selected[2],"progress":selected[3],"pipeline_truth_source":"filesystem artifacts plus job status","expert_agents_started":(output / "expert_agents.json").is_file() if output.exists() else False,"report_ready":(output / "analysis_report.pdf").is_file() if output.exists() else False}
+    message = selected[2]
+    cleanup_status = "pending"
+    if status == "completed":
+        # Completion is only persisted after transient input cleanup succeeds.
+        cleanup_status = "verified"
+    elif status == "failed":
+        error = str(payload.get("error") or "")
+        if error.endswith(community_service._FAILED_JOB_CLEANUP_SUFFIX):
+            cleanup_status = "incomplete"
+            message = (
+                "Analysis failed. Cleanup is incomplete; transient artifacts may remain. "
+                "Automatic cleanup retries will continue. Please retry later."
+            )
+        elif error in {
+            community_service._FAILED_JOB_ERROR,
+            community_service._INTERRUPTED_JOB_ERROR,
+        }:
+            cleanup_status = "verified"
+            message = (
+                "Analysis failed. Transient input/result artifacts were removed and "
+                "cleanup was verified. Please retry the analysis."
+            )
+        else:
+            # Legacy or unrecognized error records do not prove that cleanup succeeded.
+            cleanup_status = "unknown"
+            message = (
+                "Analysis failed. Cleanup status is unknown; do not assume transient "
+                "input/result artifacts were removed."
+            )
+    report_ready = (
+        status == "completed"
+        and output.exists()
+        and (output / "analysis_report.pdf").is_file()
+    )
+    return {
+        "job_id": job_id,
+        "status": status,
+        "phase": phase,
+        "label": selected[1],
+        "message": message,
+        "progress": selected[3],
+        "pipeline_truth_source": "filesystem artifacts plus job status",
+        "expert_agents_started": (
+            (output / "expert_agents.json").is_file() if output.exists() else False
+        ),
+        "report_ready": report_ready,
+        "cleanup_status": cleanup_status,
+    }
 
 @app.get("/jobs/{job_id}/preview/{filename}")
 def preview(request:Request,job_id:str,filename:str):

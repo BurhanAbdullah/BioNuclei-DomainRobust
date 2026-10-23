@@ -1,0 +1,66 @@
+name: Live public agent E2E
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "webapp/**"
+      - "src/bionuclei/**"
+      - "docs/bionuclei-app.html"
+      - "docs/assets/bionuclei-analyzer.js"
+      - "docs/assets/bionuclei-specialist-verification.js"
+      - "scripts/live_public_agent_e2e.py"
+      - ".github/workflows/live-public-agent-e2e.yml"
+  pull_request:
+    paths:
+      - "scripts/live_public_agent_e2e.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-public-agent-e2e
+  # Queue revisions until the current disposable analysis has finished, so a
+  # newly fixed harness does not cancel a live GPU/CPU inference mid-run.
+  cancel-in-progress: false
+
+jobs:
+  public-upload-to-agent:
+    name: Public upload → real inference → verified specialists → UI/reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact tested revision
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install browser E2E dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy tifffile requests playwright "pypdf>=5.0"
+          python -m playwright install --with-deps chromium
+      - name: Validate test syntax
+        run: python -m py_compile scripts/live_public_agent_e2e.py
+      - name: Exercise public upload and real scientific pipeline
+        env:
+          BIONUCLEI_PUBLIC_SITE_URL: https://burhanabdullah.github.io/BioNuclei-DomainRobust/bionuclei-app.html
+          BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
+          BIONUCLEI_ANALYSIS_TIMEOUT_MS: "1200000"
+          BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS: "240"
+        run: python scripts/live_public_agent_e2e.py
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-public-agent-e2e-failure-${{ github.run_id }}
+          path: |
+            live-agent-e2e-failure.png
+            live-agent-e2e-failure.json
+          if-no-files-found: ignore
+          retention-days: 7

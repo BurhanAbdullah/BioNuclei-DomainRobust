@@ -273,12 +273,14 @@ def test_expired_active_job_is_preserved_by_result_purge(community):
     assert community._get_job(job_id, user_id) is not None
     assert marker.read_text(encoding="utf-8") == "active"
 
-def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
+def test_expired_completed_job_is_removed_at_access(community):
     job_id = "expired-at-access"
     user_id = "user-expired"
     root = community._job_dir(job_id)
     (root / "results").mkdir(parents=True)
     (root / "results" / "results.json").write_text("{}", encoding="utf-8")
+    archive = community.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"expired archive")
     expiry = (community._now() - timedelta(minutes=5)).isoformat()
     now = community._now().isoformat()
     with community.DB_LOCK, community._db() as conn:
@@ -292,9 +294,10 @@ def test_expired_completed_job_is_denied_before_periodic_cleanup(community):
         community.get_file(job_id, user_id, "results.json")
     with pytest.raises(FileNotFoundError):
         community.get_archive(job_id, user_id)
-    assert community._get_job(job_id, user_id) is not None
-    assert community.purge_expired() == 1
     assert community._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+    assert community.purge_expired() == 0
 
 
 def test_unverified_training_reference_cannot_be_published_as_verified(community):
@@ -387,11 +390,26 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
     assert any(claim["reference"] == "adaptive_plan.profile.max" and claim["value"] == 65535 for claim in intensity_agent["quantitative_claims"])
     assert any(claim["reference"] == "reports.intensity.mean_nuclear_intensity" and claim["value"] == mean_intensity for claim in intensity_agent["quantitative_claims"])
 
+    # The ZIP must be a result-only bundle, not a recursive snapshot of the job tree.
+    (root / "private.env").write_text("must not be archived", encoding="utf-8")
+    nested = root / "nested"
+    nested.mkdir()
+    (nested / "secret.txt").write_text("must not be archived", encoding="utf-8")
+    (root / "results" / "debug.log").write_text("must not be archived", encoding="utf-8")
+    (root / "results" / "uploaded-source.tif").write_bytes(b"raw source image")
+    symlink_target = root / "private-source.tif"
+    symlink_target.write_bytes(b"raw source image")
+    symlink_result = root / "results" / "nuclei_report.json"
+    symlink_result.unlink(missing_ok=True)
+    symlink_result.symlink_to(symlink_target)
+
     with ZipFile(module._archive(job_id)) as archive:
         names = set(archive.namelist())
         for required in ("results/analysis_report.html", "results/analysis_report.pdf", "results/expert_agents.json", "results/nuclei_analysis.csv", "results/segmentation_mask.tif", "results/overlay.tif"):
             assert required in names
+        assert names and all(name.startswith("results/") for name in names)
         assert not any(name.endswith("input.tif") or name.endswith("input_plane.tif") or "e2e-512-uint16.tif" in name for name in names)
+        assert not {"private.env", "nested/secret.txt", "results/debug.log", "results/uploaded-source.tif", "results/nuclei_report.json"} & names
 
 
 def test_public_upload_route_returns_job_bound_verified_specialist_result(community, monkeypatch):
@@ -614,3 +632,238 @@ def test_failure_cleanup_refreshes_expiry_for_queryable_failure(community):
     assert row["status"] == "failed"
     assert row["expires_at"] > module._now().isoformat()
     assert module.get_job(job_id, user_id)["status"] == "failed"
+
+
+
+def test_delete_job_preserves_metadata_when_physical_cleanup_fails(community, monkeypatch):
+    module = community
+    job_id = "delete-job-cleanup-failure"
+    user_id = "owner-delete"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"owner-scoped transient archive")
+    original_rmtree = module.shutil.rmtree
+
+    def fail_job_root(path, *args, **kwargs):
+        if Path(path) == root:
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_job_root)
+    with pytest.raises(OSError, match="metadata was retained for retry"):
+        module.delete_job(job_id, user_id)
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert root.exists()
+    assert archive.exists()
+
+
+def test_delete_research_copy_preserves_consent_metadata_when_cleanup_fails(
+    community, monkeypatch
+):
+    module = community
+    job_id = "delete-research-copy-cleanup-failure"
+    user_id = "owner-research"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    research_copy = root / "research_copy"
+    research_copy.mkdir()
+    (research_copy / "retained-image.tif").write_bytes(b"consented copy")
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "UPDATE jobs SET research_consent = 1, retained_copy = 1 WHERE id = ? AND user_id = ?",
+            (job_id, user_id),
+        )
+        conn.commit()
+    original_rmtree = module.shutil.rmtree
+
+    def fail_research_copy(path, *args, **kwargs):
+        if Path(path) == research_copy:
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_research_copy)
+    with pytest.raises(OSError, match="metadata was retained for retry"):
+        module.delete_research_copy(job_id, user_id)
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["research_consent"] == 1
+    assert row["retained_copy"] == 1
+    assert research_copy.exists()
+    assert (research_copy / "retained-image.tif").exists()
+
+def test_failed_job_cleanup_records_incomplete_artifacts_and_retries(community, monkeypatch):
+    module = community
+    job_id = "failure-cleanup-retry"
+    user_id = "guest:cleanup-retry"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"archive")
+
+    original_rmtree = module.shutil.rmtree
+    attempts = 0
+
+    def fail_once(path, *args, **kwargs):
+        nonlocal attempts
+        if Path(path) == root and attempts == 0:
+            attempts += 1
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_once)
+
+    assert module._cleanup_failed_job(job_id, root) is False
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_ERROR + module._FAILED_JOB_CLEANUP_SUFFIX
+    expiry_before_retry = row["expires_at"]
+    assert root.exists()
+    assert not archive.exists()
+
+    # This is the same retry path the periodic cleanup loop invokes.
+    assert module._retry_failed_cleanups() == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_ERROR
+    assert row["expires_at"] == expiry_before_retry
+    assert not root.exists()
+    assert not archive.exists()
+
+
+def test_recovery_does_not_claim_artifacts_removed_when_cleanup_fails(community, monkeypatch):
+    module = community
+    job_id = "recovery-cleanup-failure"
+    user_id = "guest:recovery-cleanup"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"archive")
+
+    now = module._now()
+    stale_at = (now - timedelta(hours=2)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ? AND user_id = ?",
+            (stale_at, job_id, user_id),
+        )
+        conn.commit()
+
+    original_rmtree = module.shutil.rmtree
+
+    def deny_root(path, *args, **kwargs):
+        if Path(path) == root:
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", deny_root)
+
+    assert module.recover_interrupted_jobs(
+        now=now, stale_after=timedelta(minutes=5)
+    ) == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["error"] == module._INTERRUPTED_JOB_ERROR + module._FAILED_JOB_CLEANUP_SUFFIX
+    assert root.exists()
+    assert not archive.exists()
+
+
+
+def test_artifact_cleanup_fails_closed_when_path_metadata_is_denied(community, monkeypatch):
+    module = community
+    job_id = "cleanup-metadata-denied"
+    user_id = "guest:metadata-denied"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"archive")
+
+    original_lstat = Path.lstat
+
+    def deny_root_metadata(path, *args, **kwargs):
+        if path == root:
+            raise PermissionError("synthetic metadata denial")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", deny_root_metadata)
+
+    assert module._remove_job_artifacts(job_id, root) is False
+    # Use the saved implementation to prove the root remains rather than
+    # trusting Path.exists(), which may suppress OSErrors on newer Python.
+    original_lstat(root)
+    assert not archive.exists()
+
+
+def test_source_input_cleanup_failure_never_publishes_completed_job(community, monkeypatch):
+    module = community
+    job_id = "source-cleanup-failure"
+    user_id = "guest:source-cleanup"
+    root = module._job_dir(job_id)
+    input_path = _seed_job(module, job_id, user_id, root)
+    checkpoint = root / "checkpoint.pt"
+    checkpoint.write_bytes(b"test-only checkpoint placeholder")
+
+    monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
+    monkeypatch.setattr(module, "to_dict", lambda _plan: {
+        "status": "READY",
+        "profile": {"shape": [512, 512], "dtype": "uint16", "max": 65535},
+        "cnn_pattern_check": {"executed": True, "status": "PASS"},
+    })
+    monkeypatch.setattr(module.gc, "collect", lambda: None)
+
+    def successful_inference(_input, _checkpoint, output, device="cpu"):
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "segmentation_mask.tif").write_bytes(b"mask")
+        return {"n_instances": 1}
+
+    monkeypatch.setattr(module, "predict", successful_inference)
+    monkeypatch.setattr(module, "_extended_reports", lambda *_args: {
+        "nuclei_count": 1,
+        "morphology": {},
+        "intensity": {},
+        "spatial": {},
+    })
+    monkeypatch.setattr(module, "run_expert_agents", lambda _result: {})
+    monkeypatch.setattr(module, "_validate_specialist_artifact", lambda *_args: None)
+    report_calls = []
+    archive_calls = []
+    monkeypatch.setattr(module, "build_report", lambda *_args: report_calls.append(True))
+    monkeypatch.setattr(module, "_archive", lambda *_args: archive_calls.append(True))
+
+    original_unlink = Path.unlink
+
+    def deny_source_unlink(path, *args, **kwargs):
+        if path == input_path:
+            raise PermissionError("synthetic source deletion denial")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny_source_unlink)
+
+    module._run(
+        job_id,
+        user_id,
+        input_path,
+        "input.tif",
+        False,
+        "auto",
+        {"nuclei", "morphology", "intensity"},
+        channel=0,
+        time=0,
+        z=0,
+        field=0,
+    )
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "failed"
+    assert "Analysis worker failed" in row["error"]
+    assert report_calls == []
+    assert archive_calls == []
+    assert not root.exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
