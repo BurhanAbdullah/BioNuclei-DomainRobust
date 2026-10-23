@@ -48,7 +48,7 @@ def test_adaptive_plan_fails_closed_when_checkpoint_is_unavailable(tmp_path: Pat
 
 def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path: Path, monkeypatch) -> None:
     import torch
-    import bionuclei.models
+    import bionuclei.inference
 
     image = np.full((512, 512), 512, dtype=np.uint16)
     image[120:392, 120:392] = 8192
@@ -57,18 +57,30 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     checkpoint = tmp_path / "checkpoint.pt"
     checkpoint.write_bytes(b"test checkpoint placeholder")
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(checkpoint))
-    monkeypatch.setattr(torch, "load", lambda *_args, **_kwargs: {"config": {"model": {}}, "model": {}})
     seen_shapes = []
+    events = []
+
+    class TrackingLock:
+        def __init__(self):
+            self.held = False
+
+        def __enter__(self):
+            assert not self.held
+            self.held = True
+            events.append("acquire")
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            events.append("release")
+            self.held = False
+            return False
+
+    lock = TrackingLock()
+    monkeypatch.setattr(bionuclei.inference, "_INFERENCE_LOCK", lock)
 
     class FakeModel:
-        def __init__(self, **_kwargs):
-            pass
-
-        def load_state_dict(self, _state):
-            return None
-
-        def eval(self):
-            return self
+        def __del__(self):
+            events.append("model_cleanup")
 
         def __call__(self, x):
             seen_shapes.append(tuple(x.shape))
@@ -78,8 +90,21 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
                    x.shape[-1] // 4 : 3 * x.shape[-1] // 4] = 8.0
             return logits
 
-    monkeypatch.setattr(bionuclei.models, "BoundaryUNet", FakeModel)
+    loader_calls = []
+
+    def fake_load_model(checkpoint_path, device):
+        assert lock.held is True
+        assert checkpoint_path == checkpoint
+        assert device == "cpu"
+        loader_calls.append((checkpoint_path, device))
+        events.append("load")
+        return FakeModel()
+
+    monkeypatch.setattr(bionuclei.inference, "_load_model", fake_load_model)
     result = __import__("bionuclei.adaptive_agent", fromlist=["cnn_pattern_check"]).cnn_pattern_check(path)
     assert result.executed is True
     assert result.status == "PASS"
     assert seen_shapes == [(1, 1, 256, 256)]
+    assert loader_calls == [(checkpoint, "cpu")]
+    assert events == ["acquire", "load", "model_cleanup", "release"]
+    assert lock.held is False
