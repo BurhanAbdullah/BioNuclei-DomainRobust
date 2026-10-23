@@ -111,8 +111,7 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
     try:
         # Share the lock used by full inference so simultaneous jobs cannot load
         # separate U-Nets and run competing forward passes on a small CPU worker.
-        from bionuclei.inference import _INFERENCE_LOCK
-        from bionuclei.models import BoundaryUNet
+        from bionuclei.inference import _INFERENCE_LOCK, _load_model
         checkpoint_path = Path(os.getenv("BIONUCLEI_CHECKPOINT", ""))
         if not checkpoint_path.is_file():
             return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", ("Released checkpoint is not available for the CNN gate.",))
@@ -135,46 +134,54 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
             x = torch.nn.functional.interpolate(x, size=(target_height, target_width), mode="area")
         else:
             x = torch.from_numpy(normalised[None, None]).float()
+        # Do not retain an extra full-resolution float32 copy while the model is loaded.
+        del normalised
 
         model = None
         probabilities = None
+        confidence = None
+        classes = None
+        foreground = None
+        entropy = None
         try:
             with _INFERENCE_LOCK:
-                state = torch.load(checkpoint_path, map_location="cpu")
-                cfg = state.get("config", {}).get("model", {})
-                model = BoundaryUNet(
-                    in_channels=int(cfg.get("in_channels", 1)),
-                    out_channels=int(cfg.get("out_channels", 3)),
-                    base_channels=int(cfg.get("base_channels", 32)),
-                )
-                model.load_state_dict(state["model"])
-                model.eval()
-                with torch.inference_mode():
-                    probabilities = torch.softmax(model(x), dim=1)[0]
-                    confidence, classes = probabilities.max(dim=0)
-                    foreground = classes != 0
-                    foreground_fraction = float(foreground.float().mean().item())
-                    entropy = -(probabilities.clamp_min(1e-8) * probabilities.clamp_min(1e-8).log()).sum(dim=0)
-                    mean_confidence = float(confidence.mean().item())
-                    mean_entropy = float(entropy.mean().item())
-                    components = int(ndimage.label(foreground.cpu().numpy(), structure=np.ones((3, 3), dtype=np.uint8))[1])
-                reasons: list[str] = []
-                if foreground_fraction <= 0.001:
-                    reasons.append("CNN found negligible nuclear foreground support.")
-                if foreground_fraction >= 0.98:
-                    reasons.append("CNN classified nearly the entire image as foreground.")
-                if mean_confidence < 0.55:
-                    reasons.append("CNN class confidence is low.")
-                if components == 0:
-                    reasons.append("CNN produced no connected foreground component.")
-                status = "PASS" if not reasons else "CAUTION"
-                return CNNPatternCheck(True, "Boundary U Net", foreground_fraction, mean_confidence, mean_entropy, components, status, tuple(reasons))
-        finally:
-            del probabilities
-            del model
-            del x
-            import gc
-            gc.collect()
+                try:
+                    # Reuse the exact memory-bounded, weights-only loader used by
+                    # final inference; the preflight must not keep a second full
+                    # checkpoint state dict resident on the constrained worker.
+                    model = _load_model(checkpoint_path, "cpu")
+                    with torch.inference_mode():
+                        probabilities = torch.softmax(model(x), dim=1)[0]
+                        confidence, classes = probabilities.max(dim=0)
+                        foreground = classes != 0
+                        foreground_fraction = float(foreground.float().mean().item())
+                        entropy = -(probabilities.clamp_min(1e-8) * probabilities.clamp_min(1e-8).log()).sum(dim=0)
+                        mean_confidence = float(confidence.mean().item())
+                        mean_entropy = float(entropy.mean().item())
+                        components = int(ndimage.label(foreground.cpu().numpy(), structure=np.ones((3, 3), dtype=np.uint8))[1])
+                    reasons: list[str] = []
+                    if foreground_fraction <= 0.001:
+                        reasons.append("CNN found negligible nuclear foreground support.")
+                    if foreground_fraction >= 0.98:
+                        reasons.append("CNN classified nearly the entire image as foreground.")
+                    if mean_confidence < 0.55:
+                        reasons.append("CNN class confidence is low.")
+                    if components == 0:
+                        reasons.append("CNN produced no connected foreground component.")
+                    status = "PASS" if not reasons else "CAUTION"
+                    return CNNPatternCheck(True, "Boundary U Net", foreground_fraction, mean_confidence, mean_entropy, components, status, tuple(reasons))
+                finally:
+                    # Release the model and all activation-sized tensors before
+                    # allowing another inference/preflight to acquire the lock.
+                    del entropy
+                    del foreground
+                    del classes
+                    del confidence
+                    del probabilities
+                    del model
+                    del x
+                    import gc
+                    gc.collect()
     except Exception as exc:
         return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", (f"CNN gate could not execute: {type(exc).__name__}.",))
 
