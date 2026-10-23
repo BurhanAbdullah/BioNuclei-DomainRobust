@@ -578,20 +578,23 @@ def _live_owned_row(job_id: str, user_id: str) -> sqlite3.Row | None:
     if row is None:
         return None
     if _terminal_job_is_expired(row):
-        _rdef purge_expired() -> int:
-    """Purge expired terminal jobs only after their artifacts are removed."""
+        _remove_expired_job(job_id, user_id)
+        return None
+    return row
+
+
+def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
+    row = _live_owned_row(job_id, user_id)
+    return serialize(row) if row is not None else None
+
+
+def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
     with DB_LOCK, _db() as conn:
         rows = conn.execute(
-            "SELECT id, user_id, status, expires_at FROM jobs WHERE status IN ('completed', 'failed')"
+            "SELECT id FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+            (user_id,),
         ).fetchall()
-    removed = 0
-    for row in rows:
-        if _terminal_job_is_expired(row) and _remove_expired_job(row["id"], row["user_id"]):
-            removed += 1
-    return removed
-
-
-3.Row] = []
+    live_rows: list[sqlite3.Row] = []
     for row in rows:
         live = _live_owned_row(row["id"], user_id)
         if live is not None:
@@ -656,16 +659,15 @@ def delete_research_copy(job_id: str, user_id: str) -> bool:
 
 
 def purge_expired() -> int:
-    removed=0
-    now=_now()
+    """Purge expired terminal jobs only after their artifacts are removed."""
     with DB_LOCK, _db() as conn:
-        rows=conn.execute("SELECT id FROM jobs WHERE expires_at < ? AND status IN ('completed', 'failed')",(now.isoformat(),)).fetchall()
-        for row in rows:
-            shutil.rmtree(_job_dir(row["id"]),ignore_errors=True)
-            (JOB_ROOT/f"{row['id']}.zip").unlink(missing_ok=True)
-            conn.execute("DELETE FROM jobs WHERE id = ?",(row["id"],))
+        rows = conn.execute(
+            "SELECT id, user_id, status, expires_at FROM jobs WHERE status IN ('completed', 'failed')"
+        ).fetchall()
+    removed = 0
+    for row in rows:
+        if _terminal_job_is_expired(row) and _remove_expired_job(row["id"], row["user_id"]):
             removed += 1
-        conn.commit()
     return removed
 
 
