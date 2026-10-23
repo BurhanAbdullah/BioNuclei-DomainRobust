@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import re
 import shutil
+import socket
 import tempfile
+import time
 import zipfile
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen, Request
 
 import skimage.io
@@ -32,9 +36,158 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+DOWNLOAD_TIMEOUT_SECONDS = 60
+DOWNLOAD_ATTEMPTS = 4
+DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+MAX_METADATA_BYTES = 8 * 1024 * 1024
+
+
+def _retry_delay(attempt: int, error: BaseException) -> float:
+    """Bound backoff and honor a valid server Retry-After hint when supplied."""
+    headers = getattr(error, "headers", None)
+    if headers is not None:
+        try:
+            return min(30.0, max(1.0, float(headers.get("Retry-After", ""))))
+        except (TypeError, ValueError):
+            pass
+    return float(min(30, 2 ** attempt))
+
+
+def _is_retryable(error: BaseException) -> bool:
+    if isinstance(error, HTTPError):
+        return error.code in {408, 425, 429} or 500 <= error.code <= 599
+    return isinstance(error, (URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, json.JSONDecodeError))
+
+
+def _read_bounded_metadata(response, url: str) -> bytes:
+    """Read publisher metadata with a strict byte ceiling, even without Content-Length."""
+    declared_size = response.headers.get("Content-Length")
+    if declared_size not in (None, ""):
+        try:
+            declared_bytes = int(declared_size)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid Content-Length for Zenodo metadata from {url}") from exc
+        if declared_bytes < 0:
+            raise RuntimeError(f"Invalid Content-Length for Zenodo metadata from {url}")
+        if declared_bytes > MAX_METADATA_BYTES:
+            raise RuntimeError(
+                f"Zenodo metadata exceeds the {MAX_METADATA_BYTES}-byte limit: {declared_bytes} bytes"
+            )
+
+    payload = response.read(MAX_METADATA_BYTES + 1)
+    if len(payload) > MAX_METADATA_BYTES:
+        raise RuntimeError(f"Zenodo metadata exceeds the {MAX_METADATA_BYTES}-byte limit")
+    return payload
+
+
 def get_json(url: str) -> dict:
-    with urlopen(Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})) as r:
-        return json.load(r)
+    """Fetch Zenodo metadata with bounded bytes, network timeouts and transient retries."""
+    last_error: BaseException | None = None
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            request = Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})
+            with urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+                payload = json.loads(_read_bounded_metadata(response, url))
+            if not isinstance(payload, dict):
+                raise RuntimeError(f"Expected a JSON object from {url}")
+            return payload
+        except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+            if not _is_retryable(exc) or attempt == DOWNLOAD_ATTEMPTS:
+                break
+            delay = _retry_delay(attempt, exc)
+            print(
+                f"Metadata request failed (attempt {attempt}/{DOWNLOAD_ATTEMPTS}; "
+                f"{type(exc).__name__}); retrying in {delay:.0f}s.",
+                flush=True,
+            )
+            time.sleep(delay)
+    raise RuntimeError(
+        f"Could not download Zenodo metadata after {attempt} attempt(s): "
+        f"{type(last_error).__name__ if last_error else 'unknown error'}"
+    ) from last_error
+
+
+def download_archive(url: str, destination: Path, metadata: dict) -> Path:
+    """Download one publisher archive atomically, with timeout/retry/checksum guards."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_name(destination.name + ".part")
+    expected_checksum = str(metadata.get("checksum") or "").strip()
+    algorithm, separator, expected_digest = expected_checksum.partition(":")
+    algorithm = algorithm.lower()
+    if expected_checksum and (not separator or not expected_digest):
+        raise RuntimeError("Malformed publisher checksum metadata")
+    if separator and algorithm not in {"md5", "sha256"}:
+        raise RuntimeError(f"Unsupported publisher checksum algorithm: {algorithm}")
+    last_error: BaseException | None = None
+
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            partial.unlink(missing_ok=True)
+            request = Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})
+            sha256 = hashlib.sha256()
+            md5 = hashlib.md5(usedforsecurity=False) if algorithm == "md5" and separator else None
+            total = 0
+            with urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response, partial.open("wb") as out:
+                expected_size = response.headers.get("Content-Length")
+                print(
+                    f"Downloading {destination.name} "
+                    f"(attempt {attempt}/{DOWNLOAD_ATTEMPTS}; expected_bytes={expected_size or 'unknown'}).",
+                    flush=True,
+                )
+                while True:
+                    chunk = response.read(DOWNLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    sha256.update(chunk)
+                    if md5 is not None:
+                        md5.update(chunk)
+                    total += len(chunk)
+                    if total and total % (64 * 1024 * 1024) < len(chunk):
+                        print(f"{destination.name}: downloaded {total} bytes.", flush=True)
+            if total == 0:
+                raise RuntimeError(f"Downloaded archive is empty: {destination.name}")
+            if expected_size not in (None, "") and total != int(expected_size):
+                raise RuntimeError(
+                    f"Archive size mismatch for {destination.name}: expected {expected_size}, got {total}"
+                )
+            if algorithm == "sha256" and sha256.hexdigest().lower() != expected_digest.lower():
+                raise RuntimeError(
+                    f"Publisher checksum mismatch for {destination.name}: "
+                    f"expected {expected_digest}, got {sha256.hexdigest()}"
+                )
+            if md5 is not None and md5.hexdigest().lower() != expected_digest.lower():
+                raise RuntimeError(
+                    f"Publisher checksum mismatch for {destination.name}: "
+                    f"expected {expected_digest}, got {md5.hexdigest()}"
+                )
+            partial.replace(destination)
+            print(
+                f"Downloaded {destination.name}: bytes={total}, sha256={sha256.hexdigest()}.",
+                flush=True,
+            )
+            return destination
+        except (HTTPError, URLError, TimeoutError, socket.timeout, ConnectionError, OSError, http.client.HTTPException, RuntimeError, ValueError) as exc:
+            last_error = exc
+            partial.unlink(missing_ok=True)
+            if not _is_retryable(exc) and not isinstance(exc, RuntimeError):
+                break
+            if attempt == DOWNLOAD_ATTEMPTS:
+                break
+            delay = _retry_delay(attempt, exc)
+            print(
+                f"Archive download failed for {destination.name} "
+                f"(attempt {attempt}/{DOWNLOAD_ATTEMPTS}; {type(exc).__name__}); "
+                f"retrying in {delay:.0f}s.",
+                flush=True,
+            )
+            time.sleep(delay)
+
+    raise RuntimeError(
+        f"Could not download archive {destination.name} after {attempt} attempt(s): "
+        f"{type(last_error).__name__ if last_error else 'unknown error'}"
+    ) from last_error
 
 
 def _split_match(name: str, split: str) -> bool:
@@ -250,12 +403,12 @@ def main() -> None:
             url = f.get("links", {}).get("self") or f.get("links", {}).get("download")
             if not url:
                 raise RuntimeError(f"No download URL for {split} archive")
-            with urlopen(Request(url, headers={"User-Agent": "BioNuclei-DomainRobust/1.0"})) as r, archive.open("wb") as out:
-                shutil.copyfileobj(r, out)
+            download_archive(url, archive, f)
             manifest["archives"][split] = {
                 "name": name,
                 "md5": f.get("checksum"),
                 "sha256": sha256(archive),
+                "bytes": archive.stat().st_size,
             }
             rows = normalize_archive(archive, split, args.output)
             manifest["partitions"][split] = rows
