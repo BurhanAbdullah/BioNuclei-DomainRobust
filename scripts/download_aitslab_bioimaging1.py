@@ -90,9 +90,13 @@ def download_archive(url: str, destination: Path, metadata: dict) -> Path:
     """Download one publisher archive atomically, with timeout/retry/checksum guards."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".part")
-    expected_checksum = str(metadata.get("checksum") or "")
+    expected_checksum = str(metadata.get("checksum") or "").strip()
     algorithm, separator, expected_digest = expected_checksum.partition(":")
     algorithm = algorithm.lower()
+    if expected_checksum and (not separator or not expected_digest):
+        raise RuntimeError("Malformed publisher checksum metadata")
+    if separator and algorithm not in {"md5", "sha256"}:
+        raise RuntimeError(f"Unsupported publisher checksum algorithm: {algorithm}")
     last_error: BaseException | None = None
 
     for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
@@ -125,6 +129,11 @@ def download_archive(url: str, destination: Path, metadata: dict) -> Path:
             if expected_size not in (None, "") and total != int(expected_size):
                 raise RuntimeError(
                     f"Archive size mismatch for {destination.name}: expected {expected_size}, got {total}"
+                )
+            if algorithm == "sha256" and sha256.hexdigest().lower() != expected_digest.lower():
+                raise RuntimeError(
+                    f"Publisher checksum mismatch for {destination.name}: "
+                    f"expected {expected_digest}, got {sha256.hexdigest()}"
                 )
             if md5 is not None and md5.hexdigest().lower() != expected_digest.lower():
                 raise RuntimeError(
