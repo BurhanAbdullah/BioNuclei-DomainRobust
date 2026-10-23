@@ -490,9 +490,13 @@ def serialize(row: sqlite3.Row) -> dict[str, object]:
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
 
 
-def _completed_job_is_expired(row: sqlite3.Row | None) -> bool:
-    """Fail closed on malformed expiry while leaving active jobs queryable."""
-    if row is None or row["status"] != "completed":
+def _terminal_job_is_expired(row: sqlite3.Row | None) -> bool:
+    """Treat completed and failed jobs as expiring terminal records.
+
+    Active jobs remain visible while their worker is running. Malformed expiry
+    metadata on a terminal job fails closed.
+    """
+    if row is None or row["status"] not in {"completed", "failed"}:
         return False
     try:
         expiry = datetime.fromisoformat(str(row["expires_at"]))
@@ -503,32 +507,121 @@ def _completed_job_is_expired(row: sqlite3.Row | None) -> bool:
         return True
 
 
-def get_job(job_id: str, user_id: str) -> dict[str, object] | None:
-    row = _get_job(job_id, user_id)
-    if row is None or _completed_job_is_expired(row):
-        return None
-    return serialize(row)
+def _remove_expired_job(job_id: str, user_id: str | None = None) -> bool:
+    """Remove expired terminal artifacts before deleting their metadata.
 
-
-def get_jobs_for_user(user_id: str) -> list[dict[str, object]]:
+    If physical cleanup fails, leave the row for retry but never return the
+    expired job or its artifacts to a caller.
+    """
     with DB_LOCK, _db() as conn:
-        rows=conn.execute("SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",(user_id,)).fetchall()
-    return [serialize(row) for row in rows if not _completed_job_is_expired(row)]
+        if user_id is None:
+            row = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
+                (job_id, user_id),
+            ).fetchone()
+    if row is None:
+        return True
+    if not _terminal_job_is_expired(row):
+        return False
+
+    root = _job_dir(job_id)
+    archive = JOB_ROOT / f"{job_id}.zip"
+    try:
+        if root.exists():
+            shutil.rmtree(root)
+        archive.unlink(missing_ok=True)
+        if root.exists() or archive.exists():
+            raise OSError("expired job artifacts remain after cleanup")
+    except OSError as exc:
+        print(
+            f"bionuclei: expiry cleanup deferred for job {job_id} ({type(exc).__name__})",
+            flush=True,
+        )
+        return False
+
+    with DB_LOCK, _db() as conn:
+        if user_id is None:
+            current = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        else:
+            current = conn.execute(
+                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
+                (job_id, user_id),
+            ).fetchone()
+        if current is None:
+            return True
+        if not _terminal_job_is_expired(current):
+            return False
+        if user_id is None:
+            deleted = conn.execute(
+                "DELETE FROM jobs WHERE id = ? AND status IN ('completed', 'failed')",
+                (job_id,),
+            )
+        else:
+            deleted = conn.execute(
+                "DELETE FROM jobs WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed')",
+                (job_id, user_id),
+            )
+        conn.commit()
+        return deleted.rowcount == 1
 
 
-def get_file(job_id: str,user_id: str,filename: str) -> Path:
-    allowed={"segmentation_mask.tif","overlay.tif","measurements.csv","results.json","provenance.json","community_input.json","nuclei_analysis.csv","nuclei_report.json","morphology_report.json","intensity_report.json","adaptive_plan.json","expert_agents.json","analysis_report.pdf","analysis_report.json","analysis_report.html"}
-    if filename not in allowed: raise ValueError("File is not a downloadable BioNuclei result")
-    row=_get_job(job_id,user_id)
-    if not row or row["status"] != "completed" or _completed_job_is_expired(row): raise FileNotFoundError(job_id)
-    path=_job_dir(job_id)/"results"/filename
-    if not path.is_file(): raise FileNotFoundError(filename)
+def _live_owned_row(job_id: str, user_id: str) -> sqlite3.Row | None:
+    row = _get_job(job_id, user_id)
+    if row is None:
+        return None
+    if _terminal_job_is_expired(row):
+        _rdef purge_expired() -> int:
+    """Purge expired terminal jobs only after their artifacts are removed."""
+    with DB_LOCK, _db() as conn:
+        rows = conn.execute(
+            "SELECT id, user_id, status, expires_at FROM jobs WHERE status IN ('completed', 'failed')"
+        ).fetchall()
+    removed = 0
+    for row in rows:
+        if _terminal_job_is_expired(row) and _remove_expired_job(row["id"], row["user_id"]):
+            removed += 1
+    return removed
+
+
+3.Row] = []
+    for row in rows:
+        live = _live_owned_row(row["id"], user_id)
+        if live is not None:
+            live_rows.append(live)
+    return [serialize(row) for row in live_rows]
+
+
+def get_file(job_id: str, user_id: str, filename: str) -> Path:
+    allowed = {
+        "segmentation_mask.tif", "overlay.tif", "measurements.csv", "results.json",
+        "provenance.json", "community_input.json", "nuclei_analysis.csv",
+        "nuclei_report.json", "morphology_report.json", "intensity_report.json",
+        "adaptive_plan.json", "expert_agents.json", "analysis_report.pdf",
+        "analysis_report.json", "analysis_report.html",
+    }
+    if filename not in allowed:
+        raise ValueError("File is not a downloadable BioNuclei result")
+    row = _live_owned_row(job_id, user_id)
+    if row is None or row["status"] != "completed":
+        raise FileNotFoundError(job_id)
+    path = _job_dir(job_id) / "results" / filename
+    if not path.is_file():
+        raise FileNotFoundError(filename)
     return path
 
 
-def get_archive(job_id: str,user_id: str) -> Path:
-    row=_get_job(job_id,user_id)
-    if not row or row["status"] != "completed" or _completed_job_is_expired(row): raise FileNotFoundError(job_id)
+def get_archive(job_id: str, user_id: str) -> Path:
+    row = _live_owned_row(job_id, user_id)
+    if row is None or row["status"] != "completed":
+        raise FileNotFoundError(job_id)
     return _archive(job_id)
 
 
