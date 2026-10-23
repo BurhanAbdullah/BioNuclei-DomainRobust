@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 import tifffile
 
+import bionuclei.inference as inference
 from bionuclei.inference import (
     _axis_tile_starts,
     _measure,
@@ -135,3 +136,68 @@ def test_tiled_logits_match_boundary_unet_receptive_field_context(shape):
 
     assert actual.shape == expected.shape == (1, 3, height, width)
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=1e-6)
+
+def test_trim_cpu_allocator_calls_glibc_when_available(monkeypatch):
+    calls = []
+
+    class FakeFunction:
+        argtypes = None
+        restype = None
+
+        def __call__(self, padding):
+            calls.append(padding)
+            return 1
+
+    fake_trim = FakeFunction()
+
+    class FakeLibc:
+        malloc_trim = fake_trim
+
+    monkeypatch.setattr(inference.sys, "platform", "linux")
+    monkeypatch.setattr(inference.ctypes, "CDLL", lambda _name: FakeLibc())
+
+    assert inference._trim_cpu_allocator() is True
+    assert calls == [0]
+    assert fake_trim.argtypes == [inference.ctypes.c_size_t]
+    assert fake_trim.restype == inference.ctypes.c_int
+
+
+def test_trim_cpu_allocator_is_safe_when_symbol_or_platform_is_unsupported(monkeypatch):
+    monkeypatch.setattr(inference.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        inference.ctypes,
+        "CDLL",
+        lambda _name: (_ for _ in ()).throw(AssertionError("must not load libc off Linux")),
+    )
+    assert inference._trim_cpu_allocator() is False
+
+    monkeypatch.setattr(inference.sys, "platform", "linux")
+    monkeypatch.setattr(inference.ctypes, "CDLL", lambda _name: object())
+    assert inference._trim_cpu_allocator() is False
+
+
+def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
+    input_path = tmp_path / "input.tif"
+    tifffile.imwrite(input_path, np.arange(64, dtype=np.uint16).reshape(8, 8))
+    output_path = tmp_path / "results"
+    events = []
+
+    class DummyModel:
+        pass
+
+    mask = np.where(np.indices((8, 8))[0] < 4, 1, 2).astype(np.int32)
+    monkeypatch.setattr(inference, "_load_model", lambda *_args, **_kwargs: DummyModel())
+    monkeypatch.setattr(
+        inference,
+        "_predict_logits",
+        lambda _model, x: torch.zeros((1, 3, *x.shape[-2:]), dtype=torch.float32),
+    )
+    monkeypatch.setattr(inference, "_split_instances", lambda _logits: mask.copy())
+    monkeypatch.setattr(inference.gc, "collect", lambda: events.append("gc"))
+    monkeypatch.setattr(inference, "_trim_cpu_allocator", lambda: events.append("trim"))
+
+    result = inference.predict(input_path, tmp_path / "checkpoint.pt", output_path)
+
+    assert result["n_instances"] == 2
+    assert (output_path / "segmentation_mask.tif").is_file()
+    assert events[-2:] == ["gc", "trim"]
