@@ -59,6 +59,38 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def verify_published_site(state: dict[str, object]) -> None:
+    """Open the real published UI before probing its backend or creating a job."""
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        try:
+            response = page.goto(SITE_URL, wait_until="domcontentloaded", timeout=90000)
+            state["site_http_status"] = response.status if response is not None else None
+            state["site_final_url_path"] = page.url.split("?", 1)[0][-240:]
+            require(response is not None and response.status == 200,
+                    f"Published website did not return HTTP 200: {state['site_http_status']!r}")
+            page.wait_for_function(
+                "() => window.BIONUCLEI_CONFIG && window.BIONUCLEI_CONFIG.apiBase",
+                timeout=30000,
+            )
+            configured_api = str(page.evaluate("window.BIONUCLEI_CONFIG.apiBase")).rstrip("/")
+            state["published_ui_api_base"] = configured_api
+            require(
+                configured_api == API_BASE,
+                f"Published UI API mismatch: page={configured_api!r}, expected={API_BASE!r}",
+            )
+            state["published_ui_preflight"] = "passed"
+        except Exception:
+            try:
+                page.screenshot(path="live-agent-e2e-failure.png", full_page=True, timeout=15000)
+            except Exception:
+                pass
+            raise
+        finally:
+            browser.close()
+
+
 def main() -> None:
     state: dict[str, object] = {
         "site_url": SITE_URL,
@@ -75,6 +107,10 @@ def main() -> None:
         browser = None
         page = None
         try:
+            # Open the actual published browser application before probing the API.
+            # The full upload is still gated on verifying that Render runs current
+            # main, so a stale backend can never be mistaken for a release pass.
+            verify_published_site(state)
             # Fail fast if the public API is serving code older than the merged
             # runtime fix. Render exposes both its branch and deployment commit;
             # verifying the source commit avoids attributing a stale deployment
