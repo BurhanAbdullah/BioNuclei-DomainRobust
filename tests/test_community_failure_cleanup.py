@@ -617,3 +617,65 @@ def test_failure_cleanup_refreshes_expiry_for_queryable_failure(community):
     assert row["status"] == "failed"
     assert row["expires_at"] > module._now().isoformat()
     assert module.get_job(job_id, user_id)["status"] == "failed"
+
+
+
+def test_delete_job_preserves_metadata_when_physical_cleanup_fails(community, monkeypatch):
+    module = community
+    job_id = "delete-job-cleanup-failure"
+    user_id = "owner-delete"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"owner-scoped transient archive")
+    original_rmtree = module.shutil.rmtree
+
+    def fail_job_root(path, *args, **kwargs):
+        if Path(path) == root:
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_job_root)
+    with pytest.raises(OSError, match="metadata was retained for retry"):
+        module.delete_job(job_id, user_id)
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert root.exists()
+    assert archive.exists()
+
+
+def test_delete_research_copy_preserves_consent_metadata_when_cleanup_fails(
+    community, monkeypatch
+):
+    module = community
+    job_id = "delete-research-copy-cleanup-failure"
+    user_id = "owner-research"
+    root = module._job_dir(job_id)
+    _seed_job(module, job_id, user_id, root)
+    research_copy = root / "research_copy"
+    research_copy.mkdir()
+    (research_copy / "retained-image.tif").write_bytes(b"consented copy")
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "UPDATE jobs SET research_consent = 1, retained_copy = 1 WHERE id = ? AND user_id = ?",
+            (job_id, user_id),
+        )
+        conn.commit()
+    original_rmtree = module.shutil.rmtree
+
+    def fail_research_copy(path, *args, **kwargs):
+        if Path(path) == research_copy:
+            raise PermissionError("synthetic filesystem denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_research_copy)
+    with pytest.raises(OSError, match="metadata was retained for retry"):
+        module.delete_research_copy(job_id, user_id)
+
+    row = module._get_job(job_id, user_id)
+    assert row is not None
+    assert row["research_consent"] == 1
+    assert row["retained_copy"] == 1
+    assert research_copy.exists()
+    assert (research_copy / "retained-image.tif").exists()
