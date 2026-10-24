@@ -792,11 +792,27 @@ def get_archive(job_id: str, user_id: str) -> Path:
     return _archive(job_id)
 
 
+class ActiveJobDeletionError(RuntimeError):
+    """Raised when an active worker may still access transient job files."""
+
+
 def delete_job(job_id: str, user_id: str) -> bool:
     """Delete an owner's job only after transient artifacts are physically removed."""
     row = _get_job(job_id, user_id)
     if row is None:
         raise FileNotFoundError(job_id)
+
+    # A live worker may still hold the source bytes or recreate result files.
+    # Never acknowledge deletion until the worker has stopped and cleanup can
+    # be verified. The worker removes its registry entry only at the end of
+    # its final cleanup path, so this check is conservative under races.
+    with ACTIVE_JOB_THREADS_LOCK:
+        worker = ACTIVE_JOB_THREADS.get(job_id)
+        if worker is not None and worker.is_alive():
+            raise ActiveJobDeletionError(
+                "Analysis is still running; deletion was not performed. "
+                "Wait for a terminal job state and retry."
+            )
 
     root = _job_dir(job_id)
     archive = JOB_ROOT / f"{job_id}.zip"
