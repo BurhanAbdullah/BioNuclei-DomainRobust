@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
-from webapp import community
+from webapp import community, community_app
 
 
 @pytest.fixture
@@ -24,6 +26,51 @@ def test_create_job_rejects_unknown_algorithm(isolated_jobs):
 def test_delete_research_copy_requires_existing_job(isolated_jobs):
     with pytest.raises(FileNotFoundError):
         isolated_jobs.delete_research_copy("missing", "user-1")
+
+
+def test_delete_active_job_returns_conflict_without_removing_transient_data(
+    isolated_jobs, monkeypatch: pytest.MonkeyPatch
+):
+    module = isolated_jobs
+    job_id = "delete-active-job"
+    user_id = "owner-active"
+    now = module._now()
+    root = module._job_dir(job_id)
+    root.mkdir(parents=True)
+    source = root / "input.tif"
+    source.write_bytes(b"private source bytes")
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"existing archive")
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id, "running", now.isoformat(), now.isoformat(),
+                (now + timedelta(hours=1)).isoformat(), user_id, "input.tif",
+                0, 0, "auto", "intensity,nuclei",
+            ),
+        )
+        conn.commit()
+
+    with module.ACTIVE_JOB_THREADS_LOCK:
+        module.ACTIVE_JOB_THREADS[job_id] = SimpleNamespace(is_alive=lambda: True)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id=user_id, email=None, guest=True),
+    )
+    try:
+        with TestClient(community_app.app) as client:
+            response = client.delete(f"/jobs/{job_id}")
+        assert response.status_code == 409
+        assert "deletion was not performed" in response.json()["detail"]
+        row = module._get_job(job_id, user_id)
+        assert row is not None and row["status"] == "running"
+        assert source.read_bytes() == b"private source bytes"
+        assert archive.read_bytes() == b"existing archive"
+    finally:
+        with module.ACTIVE_JOB_THREADS_LOCK:
+            module.ACTIVE_JOB_THREADS.pop(job_id, None)
 
 
 def test_serialize_contains_consent_and_retention_fields(isolated_jobs):
