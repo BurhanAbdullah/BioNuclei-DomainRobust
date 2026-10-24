@@ -385,3 +385,54 @@ def test_expired_timestamp_does_not_hide_active_job(isolated_jobs):
     assert payload is not None and payload["status"] == "running"
     assert root.exists()
 
+def test_recovery_uses_registry_before_database_lock(isolated_jobs, monkeypatch: pytest.MonkeyPatch):
+    module = isolated_jobs
+    job_id = "stale-recovery-lock-order"
+    user_id = "owner-recovery"
+    now = module._now()
+    stale = (now - timedelta(hours=1)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,"
+            "retained_copy,research_consent,algorithm_profile,analysis_modules) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id, "queued", stale, stale, (now + timedelta(hours=1)).isoformat(),
+                user_id, "stale.tif", 0, 0, "auto", "nuclei",
+            ),
+        )
+        conn.commit()
+
+    class LockOrderGuard:
+        state = threading.local()
+
+        def __init__(self, name: str):
+            self.name = name
+            self.lock = threading.Lock()
+
+        def __enter__(self):
+            held = list(getattr(self.state, "held", []))
+            if self.name == "active" and "db" in held:
+                raise AssertionError("lock inversion: registry lock acquired while DB lock held")
+            self.lock.acquire()
+            held.append(self.name)
+            self.state.held = held
+            return self
+
+        def __exit__(self, *_):
+            held = list(getattr(self.state, "held", []))
+            assert held and held[-1] == self.name
+            held.pop()
+            self.state.held = held
+            self.lock.release()
+
+    monkeypatch.setattr(module, "DB_LOCK", LockOrderGuard("db"))
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS_LOCK", LockOrderGuard("active"))
+    monkeypatch.setattr(module, "_cleanup_failed_job", lambda *_args, **_kwargs: None)
+
+    assert module.recover_interrupted_jobs(
+        now=now, stale_after=timedelta(minutes=1)
+    ) == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "failed"
+
