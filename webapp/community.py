@@ -634,9 +634,6 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     input_path = root / f"input{suffix}"
     input_path.write_bytes(data)
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
-    with DB_LOCK, _db() as conn:
-        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
-        conn.commit()
     worker = threading.Thread(
         target=_run,
         args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
@@ -644,15 +641,31 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         name=f"bionuclei-job-{job_id[:8]}",
         daemon=True,
     )
+    start_error: Exception | None = None
+    # Publish the row and start the worker atomically with respect to deletion.
+    # Otherwise DELETE can observe a queued row before registration, or a
+    # registered-but-not-started Thread whose is_alive() is still false.
     with ACTIVE_JOB_THREADS_LOCK:
+        with DB_LOCK, _db() as conn:
+            conn.execute(
+                "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id, "queued", _now().isoformat(), _now().isoformat(),
+                    expires.isoformat(), user_id, original_name, 0, 0,
+                    algorithm_profile, ",".join(sorted(modules)),
+                ),
+            )
+            conn.commit()
         ACTIVE_JOB_THREADS[job_id] = worker
-    try:
-        worker.start()
-    except Exception as exc:
-        with ACTIVE_JOB_THREADS_LOCK:
+        try:
+            worker.start()
+        except Exception as exc:
             ACTIVE_JOB_THREADS.pop(job_id, None)
+            start_error = exc
+
+    if start_error is not None:
         _cleanup_failed_job(job_id, root)
-        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
+        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from start_error
     return job_id
 
 

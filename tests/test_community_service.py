@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -71,6 +72,84 @@ def test_delete_active_job_returns_conflict_without_removing_transient_data(
     finally:
         with module.ACTIVE_JOB_THREADS_LOCK:
             module.ACTIVE_JOB_THREADS.pop(job_id, None)
+
+
+def test_delete_cannot_race_worker_start(isolated_jobs, monkeypatch: pytest.MonkeyPatch):
+    module = isolated_jobs
+    real_thread = threading.Thread
+    start_entered = threading.Event()
+    allow_start = threading.Event()
+    delete_lookup_done = threading.Event()
+    delete_done = threading.Event()
+    outcome: dict[str, object] = {}
+
+    class PausedWorker:
+        def __init__(self, *args, **kwargs):
+            self.started = False
+
+        def start(self):
+            start_entered.set()
+            if not allow_start.wait(timeout=5):
+                raise RuntimeError("test worker start was not released")
+            self.started = True
+
+        def is_alive(self):
+            return self.started
+
+    monkeypatch.setattr(module.threading, "Thread", PausedWorker)
+    creator = real_thread(
+        target=lambda: outcome.update(
+            job_id=module.create_job(b"fixture", "race.tif", "owner-race", False, "auto")
+        )
+    )
+    creator.start()
+    assert start_entered.wait(timeout=5)
+
+    with module.DB_LOCK, module._db() as conn:
+        row = conn.execute("SELECT id FROM jobs WHERE user_id = ?", ("owner-race",)).fetchone()
+    assert row is not None
+    job_id = str(row["id"])
+
+    original_get_job = module._get_job
+
+    def observe_lookup(lookup_id, user_id=None):
+        result = original_get_job(lookup_id, user_id)
+        if lookup_id == job_id:
+            delete_lookup_done.set()
+        return result
+
+    monkeypatch.setattr(module, "_get_job", observe_lookup)
+
+    def delete_attempt():
+        try:
+            module.delete_job(job_id, "owner-race")
+        except Exception as exc:
+            outcome["delete_error"] = exc
+        else:
+            outcome["deleted"] = True
+        finally:
+            delete_done.set()
+
+    deleter = real_thread(target=delete_attempt)
+    deleter.start()
+    assert delete_lookup_done.wait(timeout=5)
+    # The creator holds the registry lock until Thread.start() has returned;
+    # deletion must not pass the active-worker check during this window.
+    assert not delete_done.wait(timeout=0.1)
+
+    allow_start.set()
+    creator.join(timeout=5)
+    deleter.join(timeout=5)
+    assert not creator.is_alive()
+    assert not deleter.is_alive()
+    assert outcome.get("job_id") == job_id
+    assert isinstance(outcome.get("delete_error"), module.ActiveJobDeletionError)
+
+    # Remove the synthetic worker and prove the owner can then delete the job.
+    with module.ACTIVE_JOB_THREADS_LOCK:
+        worker = module.ACTIVE_JOB_THREADS.pop(job_id)
+        worker.started = False
+    assert module.delete_job(job_id, "owner-race") is True
 
 
 def test_serialize_contains_consent_and_retention_fields(isolated_jobs):
