@@ -14,6 +14,7 @@ def _configure_checkpoint(tmp_path, monkeypatch, expected: str | None = None):
     path = tmp_path / "checkpoint.pt"
     path.write_bytes(b"deterministic checkpoint fixture")
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", actual)
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", expected or actual)
     return path, actual
@@ -50,6 +51,29 @@ def test_checkpoint_digest_mismatch_blocks_inference_and_degrades_health(tmp_pat
     for payload in (scientific_app.health(), community_app.health()):
         assert payload["status"] == "degraded"
         assert payload["checkpoint_available"] is True
+        assert payload["checkpoint_verified"] is False
+        assert payload["checkpoint_sha256"] == actual
+
+
+def test_environment_digest_cannot_override_pinned_release(tmp_path, monkeypatch):
+    path = tmp_path / "checkpoint.pt"
+    path.write_bytes(b"checkpoint that is not the pinned release")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", actual)
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", "0" * 64)
+
+    identity_path, digest, verified = _checkpoint_identity()
+    assert identity_path == path.resolve()
+    assert digest == actual
+    assert verified is False
+
+    with pytest.raises(HTTPException) as exc_info:
+        _checkpoint()
+    assert exc_info.value.status_code == 503
+
+    for payload in (scientific_app.health(), community_app.health()):
+        assert payload["status"] == "degraded"
         assert payload["checkpoint_verified"] is False
         assert payload["checkpoint_sha256"] == actual
 
