@@ -634,9 +634,6 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     input_path = root / f"input{suffix}"
     input_path.write_bytes(data)
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
-    with DB_LOCK, _db() as conn:
-        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
-        conn.commit()
     worker = threading.Thread(
         target=_run,
         args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
@@ -644,15 +641,31 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         name=f"bionuclei-job-{job_id[:8]}",
         daemon=True,
     )
+    start_error: Exception | None = None
+    # Publish the row and start the worker atomically with respect to deletion.
+    # Otherwise DELETE can observe a queued row before registration, or a
+    # registered-but-not-started Thread whose is_alive() is still false.
     with ACTIVE_JOB_THREADS_LOCK:
+        with DB_LOCK, _db() as conn:
+            conn.execute(
+                "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id, "queued", _now().isoformat(), _now().isoformat(),
+                    expires.isoformat(), user_id, original_name, 0, 0,
+                    algorithm_profile, ",".join(sorted(modules)),
+                ),
+            )
+            conn.commit()
         ACTIVE_JOB_THREADS[job_id] = worker
-    try:
-        worker.start()
-    except Exception as exc:
-        with ACTIVE_JOB_THREADS_LOCK:
+        try:
+            worker.start()
+        except Exception as exc:
             ACTIVE_JOB_THREADS.pop(job_id, None)
+            start_error = exc
+
+    if start_error is not None:
         _cleanup_failed_job(job_id, root)
-        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
+        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from start_error
     return job_id
 
 
@@ -792,11 +805,27 @@ def get_archive(job_id: str, user_id: str) -> Path:
     return _archive(job_id)
 
 
+class ActiveJobDeletionError(RuntimeError):
+    """Raised when an active worker may still access transient job files."""
+
+
 def delete_job(job_id: str, user_id: str) -> bool:
     """Delete an owner's job only after transient artifacts are physically removed."""
     row = _get_job(job_id, user_id)
     if row is None:
         raise FileNotFoundError(job_id)
+
+    # A live worker may still hold the source bytes or recreate result files.
+    # Never acknowledge deletion until the worker has stopped and cleanup can
+    # be verified. The worker removes its registry entry only at the end of
+    # its final cleanup path, so this check is conservative under races.
+    with ACTIVE_JOB_THREADS_LOCK:
+        worker = ACTIVE_JOB_THREADS.get(job_id)
+        if worker is not None and worker.is_alive():
+            raise ActiveJobDeletionError(
+                "Analysis is still running; deletion was not performed. "
+                "Wait for a terminal job state and retry."
+            )
 
     root = _job_dir(job_id)
     archive = JOB_ROOT / f"{job_id}.zip"
