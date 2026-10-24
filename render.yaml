@@ -9,6 +9,8 @@ services:
     envVars:
       - key: BIONUCLEI_CHECKPOINT
         sync: false
+      - key: BIONUCLEI_CHECKPOINT_SHA256
+        value: "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
       - key: BIONUCLEI_ALLOWED_ORIGINS
         value: https://burhanabdullah.github.io
       - key: BIONUCLEI_MAX_UPLOAD_BYTES
@@ -28,6 +30,8 @@ services:
     envVars:
       - key: BIONUCLEI_CHECKPOINT
         sync: false
+      - key: BIONUCLEI_CHECKPOINT_SHA256
+        value: "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
       - key: BIONUCLEI_JOB_DIR
         value: /data/bionuclei-community-jobs
       - key: BIONUCLEI_ALLOWED_ORIGINS
