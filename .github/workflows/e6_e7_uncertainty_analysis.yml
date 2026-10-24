@@ -158,6 +158,8 @@ jobs:
           echo "Selected E7 run $selected_run artifact $selected_artifact"
 
       - name: Verify evidence layout, provenance, and record exact artifact identities
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
           import json
