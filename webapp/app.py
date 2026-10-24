@@ -64,6 +64,7 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
         expected = expected.removeprefix("sha256:")
     if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
         raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT_SHA256 must be a valid SHA-256 digest")
+    configured_release_matches = hmac.compare_digest(expected, RELEASE_CHECKPOINT_SHA256)
 
     digest = hashlib.sha256()
     try:
@@ -73,7 +74,8 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
     except OSError as exc:
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
     actual = digest.hexdigest()
-    return path, actual, hmac.compare_digest(actual, expected)
+    verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
+    return path, actual, verified
 
 
 def _checkpoint() -> Path:
