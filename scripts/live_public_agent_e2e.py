@@ -37,6 +37,7 @@ API_BASE = os.environ.get(
     "https://bionuclei-community-analyzer.onrender.com",
 ).rstrip("/")
 ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "1200000"))
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
 
 def build_uint16_fixture(path: Path) -> str:
@@ -307,6 +308,16 @@ def main() -> None:
             state["render_runtime_tree_parity"] = not runtime_diff_files
             require(not runtime_diff_files,
                     f"Render runtime/config differs from current main: {runtime_diff_files}")
+            state["checkpoint_sha256"] = health.get("checkpoint_sha256")
+            state["checkpoint_verified"] = health.get("checkpoint_verified")
+            require(
+                health.get("checkpoint_verified") is True,
+                "Public API did not verify the configured checkpoint against its release SHA-256",
+            )
+            require(
+                health.get("checkpoint_sha256") == EXPECTED_CHECKPOINT_SHA256,
+                f"Public API checkpoint digest differs from the pinned release: {health.get('checkpoint_sha256')!r}",
+            )
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 context = browser.new_context(accept_downloads=True)
