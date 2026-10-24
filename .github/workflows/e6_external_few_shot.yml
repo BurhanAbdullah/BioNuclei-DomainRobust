@@ -14,6 +14,7 @@ on:
       - "scripts/download_aitslab_bioimaging1.py"
       - "scripts/train_domain_robust.py"
       - "scripts/evaluate_instance_manifest.py"
+      - "scripts/aggregate_e6_fraction_evidence.py"
       - "src/bionuclei/data.py"
       - "src/bionuclei/losses.py"
       - "src/bionuclei/masks.py"
@@ -250,32 +251,9 @@ jobs:
           merge-multiple: true
       - name: Aggregate and cross-check E6 evidence
         run: |
-          python - <<'PY'
-          import hashlib, json, pathlib
-          root=pathlib.Path('outputs/e6_fraction_evidence')
-          expected=[('01pct',0.01,1),('05pct',0.05,2),('10pct',0.10,3),('25pct',0.25,8)]
-          rows=[]
-          for label,frac,n in expected:
-              candidates=[root/label, root/label/label, root]
-              run=next((p for p in candidates if (p/'provenance.json').is_file() and json.loads((p/'provenance.json').read_text()).get('fraction')==frac), None)
-              assert run is not None, f'missing {label}'
-              prov=json.loads((run/'provenance.json').read_text())
-              metrics=json.loads((run/'evaluation'/'test_metrics.json').read_text())
-              assert prov['fraction'] == frac
-              assert prov['n_adaptation_images'] == n
-              assert (prov['seed'],prov['epochs']) == (42,20)
-              assert metrics['n_images'] == 10
-              assert all(k in metrics['mean'] for k in ('dice','iou','aji','boundary_f1'))
-              assert prov['s_biad634_used_for_adaptation'] is False
-              assert prov['test_images_used_for_adaptation'] is False
-              assert prov['development_images_used_for_training_or_selection'] is False
-              digest=hashlib.sha256((run/'evaluation'/'test_metrics.json').read_bytes()).hexdigest()
-              assert digest == prov['test_metrics_sha256']
-              rows.append({'label':label,'fraction':frac,'n_adaptation_images':n,'mean':metrics['mean'],'metrics_sha256':digest,'provenance_sha256':hashlib.sha256((run/'provenance.json').read_bytes()).hexdigest()})
-          out=pathlib.Path('outputs/e6_external_few_shot_final'); out.mkdir(parents=True,exist_ok=True)
-          (out/'aggregate_results.json').write_text(json.dumps({'protocol':'E6_cross_dataset_few_shot','fractions':rows,'all_four_fractions_verified':True},indent=2)+'\n')
-          print('E6 aggregate evidence cross-check: PASS')
-          PY
+          python scripts/aggregate_e6_fraction_evidence.py \
+            --root outputs/e6_fraction_evidence \
+            --output outputs/e6_external_few_shot_final/aggregate_results.json
       - name: Upload final E6 evidence
         uses: actions/upload-artifact@v4
         with:
