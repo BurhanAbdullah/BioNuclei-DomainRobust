@@ -41,6 +41,15 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         self.assertFalse(dispatch)
         self.assertIn("already queued or running", reason)
 
+    def test_does_not_duplicate_exact_main_run_waiting_for_approval(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(status="waiting")],
+            now=self.now,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("already queued or running", reason)
+
     def test_does_not_duplicate_recent_completed_exact_main_run(self):
         dispatch, reason = should_dispatch(
             self.main_sha,
