@@ -1,0 +1,54 @@
+name: Public E2E schedule watchdog
+
+on:
+  schedule:
+    # Run 30 minutes after the primary E2E cron to recover a missed tick.
+    - cron: "53 * * * *"
+  pull_request:
+    paths:
+      - ".github/workflows/public-e2e-schedule-watchdog.yml"
+      - "scripts/public_e2e_schedule_watchdog.py"
+      - "tests/test_public_e2e_schedule_watchdog.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-e2e-schedule-watchdog
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Test dispatch decisions
+        run: python -m unittest discover -s tests -p 'test_public_e2e_schedule_watchdog.py' -v
+      - name: Compile watchdog
+        run: python -m py_compile scripts/public_e2e_schedule_watchdog.py
+      - name: Validate workflow YAML syntax
+        run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); puts "YAML syntax OK"' .github/workflows/public-e2e-schedule-watchdog.yml
+
+  recover-missed-e2e:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check schedule freshness and dispatch if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/public_e2e_schedule_watchdog.py
