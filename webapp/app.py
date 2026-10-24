@@ -9,6 +9,8 @@ Run locally with:
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -45,13 +47,42 @@ app.add_middleware(
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 
-def _checkpoint() -> Path:
+RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+
+
+def _checkpoint_identity() -> tuple[Path, str, bool]:
+    """Return the actual checkpoint digest and whether it matches the pinned release."""
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
     if not raw:
         raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT is not configured on this server")
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
+
+    expected = os.getenv("BIONUCLEI_CHECKPOINT_SHA256", RELEASE_CHECKPOINT_SHA256).strip().lower()
+    if expected.startswith("sha256:"):
+        expected = expected.removeprefix("sha256:")
+    if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+        raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT_SHA256 must be a valid SHA-256 digest")
+
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
+    actual = digest.hexdigest()
+    return path, actual, hmac.compare_digest(actual, expected)
+
+
+def _checkpoint() -> Path:
+    path, _actual, verified = _checkpoint_identity()
+    if not verified:
+        raise HTTPException(
+            status_code=503,
+            detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+        )
     return path
 
 
@@ -106,11 +137,19 @@ def _artifact_payload(output: Path, *, original: Path | None = None) -> dict[str
 
 @app.get("/health")
 def health() -> dict[str, object]:
-    checkpoint = os.getenv("BIONUCLEI_CHECKPOINT")
+    checkpoint_configured = bool(os.getenv("BIONUCLEI_CHECKPOINT"))
+    try:
+        checkpoint, digest, verified = _checkpoint_identity()
+        available = checkpoint.is_file()
+    except HTTPException:
+        available, digest, verified = False, None, False
     return {
-        "status": "ok" if checkpoint and Path(checkpoint).expanduser().is_file() else "degraded",
+        "status": "ok" if available and verified else "degraded",
         "scientific_engine": "bionuclei-domainrobust",
-        "checkpoint_configured": bool(checkpoint),
+        "checkpoint_configured": checkpoint_configured,
+        "checkpoint_available": available,
+        "checkpoint_sha256": digest,
+        "checkpoint_verified": verified,
     }
 
 
