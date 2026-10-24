@@ -919,26 +919,30 @@ def recover_interrupted_jobs(
     interrupted: list[str] = []
     active_statuses = ("queued", "planning", "running", "measuring", "expert_review", "packaging")
     placeholders = ",".join("?" for _ in active_statuses)
-    with DB_LOCK, _db() as conn:
-        rows = conn.execute(
-            f"SELECT id FROM jobs WHERE status IN ({placeholders}) AND updated_at < ?",
-            (*active_statuses, cutoff),
-        ).fetchall()
-        for row in rows:
-            job_id = str(row["id"])
-            with ACTIVE_JOB_THREADS_LOCK:
+    # Keep the same lock order as create_job: registry lock before database.
+    # Holding DB_LOCK and then waiting for ACTIVE_JOB_THREADS_LOCK can deadlock
+    # with a concurrent creator that holds the registry lock while inserting
+    # and starting its worker.
+    with ACTIVE_JOB_THREADS_LOCK:
+        with DB_LOCK, _db() as conn:
+            rows = conn.execute(
+                f"SELECT id FROM jobs WHERE status IN ({placeholders}) AND updated_at < ?",
+                (*active_statuses, cutoff),
+            ).fetchall()
+            for row in rows:
+                job_id = str(row["id"])
                 worker = ACTIVE_JOB_THREADS.get(job_id)
                 if worker is not None and worker.is_alive():
                     continue
-            expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
-            result = conn.execute(
-                f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
-                f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
-                (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
-            )
-            if result.rowcount:
-                interrupted.append(job_id)
-        conn.commit()
+                expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
+                result = conn.execute(
+                    f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
+                    f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
+                    (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
+                )
+                if result.rowcount:
+                    interrupted.append(job_id)
+            conn.commit()
 
     for job_id in interrupted:
         _cleanup_failed_job(
