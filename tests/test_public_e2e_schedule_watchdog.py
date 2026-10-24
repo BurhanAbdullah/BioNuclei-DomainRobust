@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 import unittest
 
 from scripts.public_e2e_schedule_watchdog import should_dispatch
@@ -8,6 +9,21 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 10, 24, 7, 0, tzinfo=timezone.utc)
         self.main_sha = "a" * 40
+
+    def test_workflow_supports_manual_recovery_only_on_main(self):
+        workflow_path = (
+            Path(__file__).resolve().parents[1]
+            / ".github"
+            / "workflows"
+            / "public-e2e-schedule-watchdog.yml"
+        )
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("  workflow_dispatch:\n", workflow)
+        self.assertIn(
+            "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'",
+            workflow,
+        )
+        self.assertIn("      actions: write", workflow)
 
     def run_record(
         self,
