@@ -45,7 +45,7 @@ def should_dispatch(
         run
         for run in main_runs
         if run.get("head_sha") == main_sha
-        and run.get("status") in {"queued", "in_progress"}
+        and run.get("status") in {"queued", "in_progress", "waiting", "requested", "pending"}
     ]
     if active_current:
         return False, "an exact-current-main E2E is already queued or running"
