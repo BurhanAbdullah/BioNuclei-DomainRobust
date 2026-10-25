@@ -15,6 +15,10 @@ from urllib.request import Request, urlopen
 WORKFLOW_FILE = "live-public-agent-e2e.yml"
 MAX_AGE_SECONDS = 75 * 60
 API_VERSION = "2022-11-28"
+PUBLIC_API_URL = os.environ.get(
+    "BIONUCLEI_PUBLIC_API_URL",
+    "https://bionuclei-community-analyzer.onrender.com",
+).rstrip("/")
 
 
 def _timestamp(value: str) -> datetime:
@@ -31,11 +35,14 @@ def should_dispatch(
     *,
     now: datetime | None = None,
     max_age_seconds: int = MAX_AGE_SECONDS,
+    deployed_sha: str | None = None,
 ) -> tuple[bool, str]:
     """Decide whether an E2E for current main is missing or stale.
 
     A queued/running exact-main run suppresses a duplicate. A recent completed
-    run for an older SHA does not satisfy current-main acceptance. Runs on
+    run for an older SHA does not satisfy current-main acceptance. After an
+    exact-main failure, do not repeat against an unverified or still-stale Render
+    deployment; retry once the deployed runtime reaches current main. Runs on
     non-main branches are ignored.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -59,6 +66,18 @@ def should_dispatch(
         age_seconds = (now - _timestamp(str(latest["created_at"]))).total_seconds()
     except (KeyError, TypeError, ValueError):
         return True, "latest main E2E timestamp is missing or invalid"
+
+    if latest_sha == main_sha and latest.get("conclusion") == "failure":
+        if deployed_sha is None:
+            return False, (
+                "latest exact-main E2E failed and deployed Render SHA is unverified; "
+                "refusing duplicate dispatch"
+            )
+        if deployed_sha != main_sha:
+            return False, (
+                "latest exact-main E2E failed while Render is still behind current main "
+                f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing duplicate dispatch"
+            )
 
     if latest_sha == main_sha and age_seconds < max_age_seconds:
         return False, f"current-main E2E is recent ({int(age_seconds)} seconds old)"
@@ -108,6 +127,35 @@ def _api_request(
     return parsed
 
 
+def _deployed_runtime_sha() -> str | None:
+    """Return Render's verified main SHA, or None when health is inconclusive."""
+    request = Request(
+        f"{PUBLIC_API_URL}/health",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "bionuclei-public-e2e-schedule-watchdog",
+        },
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            if response.status != 200:
+                return None
+            raw = response.read(16_384)
+    except (URLError, OSError):
+        return None
+
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("render_git_branch") != "main":
+        return None
+    sha = str(payload.get("render_git_commit") or "")
+    if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
+        return None
+    return sha
+
+
 def main() -> int:
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GH_TOKEN", "")
@@ -132,7 +180,19 @@ def main() -> int:
     if not main_sha or not isinstance(runs, list):
         raise RuntimeError("GitHub API returned malformed main SHA or workflow runs")
 
-    dispatch, reason = should_dispatch(main_sha, runs)
+    main_runs = [run for run in runs if run.get("head_branch") == "main"]
+    latest_main = max(main_runs, key=lambda run: str(run.get("created_at", "")), default=None)
+    deployed_sha = None
+    if (
+        latest_main is not None
+        and latest_main.get("head_sha") == main_sha
+        and latest_main.get("conclusion") == "failure"
+    ):
+        # A failed exact-main run cannot be usefully repeated while Render still
+        # serves an older revision. If health is inconclusive, fail closed.
+        deployed_sha = _deployed_runtime_sha()
+
+    dispatch, reason = should_dispatch(main_sha, runs, deployed_sha=deployed_sha)
     print(f"Public E2E watchdog: {reason}")
     if not dispatch:
         return 0
