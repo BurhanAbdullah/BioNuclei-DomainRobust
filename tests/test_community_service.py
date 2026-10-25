@@ -54,14 +54,63 @@ def test_create_job_cleans_partial_upload_when_persistence_fails(isolated_jobs, 
         return original_write_bytes(path, data)
 
     monkeypatch.setattr(Path, "write_bytes", fail_after_partial_write)
-    with pytest.raises(RuntimeError, match="cleanup was verified"):
+    with pytest.raises(module.JobCreationError, match="cleanup was verified") as exc_info:
         module.create_job(b"private upload bytes", "input.tif", owner_id, False, "auto")
 
+    assert exc_info.value.job_id == job_id
+    assert exc_info.value.stage == "upload_persistence"
+    assert exc_info.value.cleanup_status == "verified"
     row = module._get_job(job_id, owner_id)
     assert row is not None and row["status"] == "failed"
     assert row["error"] == module._FAILED_JOB_ERROR
     assert not module._job_dir(job_id).exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
+def test_analyze_surfaces_truthful_upload_cleanup_status(isolated_jobs, monkeypatch):
+    module = isolated_jobs
+    job_id = "api-upload-write-failure"
+    owner_id = "owner-api-failure"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+    input_path = module._job_dir(job_id) / "input.tif"
+    original_write_bytes = Path.write_bytes
+
+    def fail_after_partial_write(path: Path, data: bytes) -> int:
+        if path == input_path:
+            original_write_bytes(path, data[:5])
+            raise OSError("simulated disk-full failure")
+        return original_write_bytes(path, data)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_after_partial_write)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id=owner_id, email=None, guest=True),
+    )
+
+    with TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            files={"image": ("input.tif", b"private upload bytes", "image/tiff")},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": (
+            "Could not persist the uploaded image; cleanup was verified "
+            "and the job was recorded as failed. "
+            "(job api-upload-write-failure; stage upload_persistence; "
+            "cleanup status verified)"
+        ),
+        "error": "job_creation_failed",
+        "job_id": job_id,
+        "stage": "upload_persistence",
+        "cleanup_status": "verified",
+    }
+    row = module._get_job(job_id, owner_id)
+    assert row is not None and row["status"] == "failed"
+    assert not module._job_dir(job_id).exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
 
 def test_create_job_cleans_upload_when_worker_start_fails(isolated_jobs, monkeypatch):
     module = isolated_jobs
@@ -80,9 +129,12 @@ def test_create_job_cleans_upload_when_worker_start_fails(isolated_jobs, monkeyp
             return False
 
     monkeypatch.setattr(module.threading, "Thread", FailingWorker)
-    with pytest.raises(RuntimeError, match="cleanup was verified"):
+    with pytest.raises(module.JobCreationError, match="cleanup was verified") as exc_info:
         module.create_job(b"private upload bytes", "input.tif", owner_id, False, "auto")
 
+    assert exc_info.value.job_id == job_id
+    assert exc_info.value.stage == "worker_start"
+    assert exc_info.value.cleanup_status == "verified"
     row = module._get_job(job_id, owner_id)
     assert row is not None and row["status"] == "failed"
     assert row["error"] == module._FAILED_JOB_ERROR
