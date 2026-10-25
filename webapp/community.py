@@ -697,6 +697,14 @@ def _remove_expired_job(job_id: str, user_id: str | None = None) -> bool:
     If physical cleanup fails, leave the row for retry but never return the
     expired job or its artifacts to a caller.
     """
+    # A terminal status can be published just before the worker's final input
+    # cleanup and registry removal. Defer expiry while that worker is alive so
+    # the sweeper cannot race its last filesystem operations.
+    with ACTIVE_JOB_THREADS_LOCK:
+        worker = ACTIVE_JOB_THREADS.get(job_id)
+        if worker is not None and worker.is_alive():
+            return False
+
     with DB_LOCK, _db() as conn:
         if user_id is None:
             row = conn.execute(

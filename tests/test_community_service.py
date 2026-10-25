@@ -363,6 +363,38 @@ def test_expired_job_cleanup_failure_denies_access_and_preserves_metadata(
     assert module._get_job(job_id, user_id) is not None
 
 
+def test_expired_terminal_job_cleanup_waits_for_active_worker(isolated_jobs):
+    module = isolated_jobs
+    job_id = "expired-active-worker"
+    user_id = "owner-a"
+    root, archive = _seed_expired_terminal_job(
+        module, job_id, user_id, status="completed"
+    )
+
+    with module.ACTIVE_JOB_THREADS_LOCK:
+        module.ACTIVE_JOB_THREADS[job_id] = SimpleNamespace(is_alive=lambda: True)
+
+    try:
+        # Expiry denies access immediately but must not unlink files while the
+        # worker is still in its final cleanup path.
+        assert module.get_job(job_id, user_id) is None
+        assert module._get_job(job_id, user_id) is not None
+        assert root.exists()
+        assert archive.exists()
+        assert module.purge_expired() == 0
+        assert module._get_job(job_id, user_id) is not None
+    finally:
+        with module.ACTIVE_JOB_THREADS_LOCK:
+            module.ACTIVE_JOB_THREADS.pop(job_id, None)
+
+    # Once the worker is gone, the next access verifies deletion before
+    # removing the expired metadata.
+    assert module.get_job(job_id, user_id) is None
+    assert module._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+
+
 def test_expired_timestamp_does_not_hide_active_job(isolated_jobs):
     module = isolated_jobs
     job_id = "active-expired-timestamp"
