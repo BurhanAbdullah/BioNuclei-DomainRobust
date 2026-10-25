@@ -62,11 +62,6 @@ def should_dispatch(
 
     latest = max(main_runs, key=lambda run: str(run.get("created_at", "")))
     latest_sha = str(latest.get("head_sha", ""))
-    try:
-        age_seconds = (now - _timestamp(str(latest["created_at"]))).total_seconds()
-    except (KeyError, TypeError, ValueError):
-        return True, "latest main E2E timestamp is missing or invalid"
-
     if latest_sha == main_sha and latest.get("conclusion") == "failure":
         if deployed_sha is None:
             return False, (
@@ -78,6 +73,11 @@ def should_dispatch(
                 "latest exact-main E2E failed while Render is still behind current main "
                 f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing duplicate dispatch"
             )
+
+    try:
+        age_seconds = (now - _timestamp(str(latest["created_at"]))).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return True, "latest main E2E timestamp is missing or invalid"
 
     if latest_sha == main_sha and age_seconds < max_age_seconds:
         return False, f"current-main E2E is recent ({int(age_seconds)} seconds old)"
