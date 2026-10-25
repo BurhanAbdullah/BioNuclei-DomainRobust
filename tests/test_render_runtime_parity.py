@@ -52,6 +52,15 @@ class RenderRuntimeParityTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         excluded_prefixes = {".github", "tests", "scripts"}
         broad_sources = {".", "./", "*", "./*", "**", "./**"}
+        allowed_sources = {
+            "pyproject.toml",
+            "README.md",
+            "src",
+            "webapp",
+            "configs",
+            "docs/RESEARCH_PROTOCOL.md",
+            "docs/DATASETS.md",
+        }
 
         for relative in ("webapp/community.Dockerfile", "webapp/Dockerfile"):
             dockerfile = root / relative
@@ -85,6 +94,11 @@ class RenderRuntimeParityTests(unittest.TestCase):
                         self.fail(
                             f"{relative}:{line_number}: COPY/ADD source {source!r} "
                             "includes a path excluded from runtime parity"
+                        )
+                    if normalized not in allowed_sources:
+                        self.fail(
+                            f"{relative}:{line_number}: unreviewed COPY/ADD source {source!r}; "
+                            "review the source explicitly before changing parity exclusions"
                         )
 
 
