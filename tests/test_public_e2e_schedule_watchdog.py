@@ -99,6 +99,16 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         self.assertFalse(dispatch)
         self.assertIn("unverified", reason)
 
+    def test_suppresses_failed_exact_main_run_even_when_timestamp_is_invalid(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(conclusion="failure", created_at="not-a-timestamp")],
+            now=self.now,
+            deployed_sha="b" * 40,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("Render is still behind", reason)
+
     def test_retries_stale_failed_run_after_render_reaches_current_main(self):
         dispatch, reason = should_dispatch(
             self.main_sha,
