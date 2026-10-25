@@ -15,12 +15,14 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         sha=None,
         branch="main",
         status="completed",
+        conclusion="success",
         created_at="2026-10-24T06:30:00Z",
     ):
         return {
             "head_branch": branch,
             "head_sha": sha or self.main_sha,
             "status": status,
+            "conclusion": conclusion,
             "created_at": created_at,
         }
 
@@ -73,6 +75,46 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
             self.main_sha,
             [self.run_record(created_at="2026-10-24T05:40:00Z")],
             now=self.now,
+        )
+        self.assertTrue(dispatch)
+        self.assertIn("stale for current main", reason)
+
+    def test_suppresses_repeat_failed_exact_main_run_while_render_is_behind(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(conclusion="failure", created_at="2026-10-24T05:00:00Z")],
+            now=self.now,
+            deployed_sha="b" * 40,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("Render is still behind", reason)
+
+    def test_suppresses_repeat_failed_exact_main_run_when_render_sha_is_unverified(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(conclusion="failure", created_at="2026-10-24T05:00:00Z")],
+            now=self.now,
+            deployed_sha=None,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("unverified", reason)
+
+    def test_retries_stale_failed_run_after_render_reaches_current_main(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(conclusion="failure", created_at="2026-10-24T05:00:00Z")],
+            now=self.now,
+            deployed_sha=self.main_sha,
+        )
+        self.assertTrue(dispatch)
+        self.assertIn("stale for current main", reason)
+
+    def test_dispatches_when_failed_run_targets_old_sha(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(sha="b" * 40, conclusion="failure", created_at="2026-10-24T06:59:00Z")],
+            now=self.now,
+            deployed_sha="c" * 40,
         )
         self.assertTrue(dispatch)
         self.assertIn("stale for current main", reason)
