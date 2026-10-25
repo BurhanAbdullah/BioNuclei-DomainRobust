@@ -68,6 +68,17 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
     try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,False,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
+    except community_service.JobCreationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "job_creation_failed",
+                "message": str(exc),
+                "job_id": exc.job_id,
+                "stage": exc.stage,
+                "cleanup_status": exc.cleanup_status,
+            },
+        ) from exc
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
     return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","progress":f"/jobs/{job_id}/progress","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
 

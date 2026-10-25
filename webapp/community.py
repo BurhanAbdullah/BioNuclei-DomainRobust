@@ -307,6 +307,18 @@ _FAILED_JOB_ERROR = (
 _INTERRUPTED_JOB_ERROR = (
     "Analysis worker stopped before completing this job. Please retry the analysis."
 )
+
+
+class JobCreationError(RuntimeError):
+    """Job setup failed; expose the owner-scoped job and truthful cleanup outcome."""
+
+    def __init__(self, job_id: str, stage: str, cleanup_status: str, message: str) -> None:
+        super().__init__(message)
+        self.job_id = job_id
+        self.stage = stage
+        self.cleanup_status = cleanup_status
+
+
 _FAILED_JOB_CLEANUP_SUFFIX = (
     " Cleanup is incomplete; transient artifacts may remain. "
     "Automatic cleanup retries will continue; please retry the analysis later."
@@ -684,28 +696,34 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
 
     if upload_error is not None:
         if upload_cleanup_error is not None:
-            raise RuntimeError(
-                "Could not persist the uploaded image; cleanup status could not be recorded."
+            raise JobCreationError(
+                job_id, "upload_persistence", "unknown",
+                "Could not persist the uploaded image; cleanup status could not be recorded.",
             ) from upload_cleanup_error
         if upload_cleanup_ok:
-            raise RuntimeError(
-                "Could not persist the uploaded image; cleanup was verified and the job was recorded as failed."
+            raise JobCreationError(
+                job_id, "upload_persistence", "verified",
+                "Could not persist the uploaded image; cleanup was verified and the job was recorded as failed.",
             ) from upload_error
-        raise RuntimeError(
-            "Could not persist the uploaded image; cleanup is incomplete and automatic retries will continue."
+        raise JobCreationError(
+            job_id, "upload_persistence", "incomplete",
+            "Could not persist the uploaded image; cleanup is incomplete and automatic retries will continue.",
         ) from upload_error
 
     if start_error is not None:
         if start_cleanup_error is not None:
-            raise RuntimeError(
-                "Could not start the analysis worker; cleanup status could not be recorded."
+            raise JobCreationError(
+                job_id, "worker_start", "unknown",
+                "Could not start the analysis worker; cleanup status could not be recorded.",
             ) from start_cleanup_error
         if start_cleanup_ok:
-            raise RuntimeError(
-                "Could not start the analysis worker; cleanup was verified and the job was recorded as failed."
+            raise JobCreationError(
+                job_id, "worker_start", "verified",
+                "Could not start the analysis worker; cleanup was verified and the job was recorded as failed.",
             ) from start_error
-        raise RuntimeError(
-            "Could not start the analysis worker; cleanup is incomplete and automatic retries will continue."
+        raise JobCreationError(
+            job_id, "worker_start", "incomplete",
+            "Could not start the analysis worker; cleanup is incomplete and automatic retries will continue.",
         ) from start_error
     return job_id
 
