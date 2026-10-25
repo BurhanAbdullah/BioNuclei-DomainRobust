@@ -23,6 +23,46 @@ def test_create_job_rejects_unknown_algorithm(isolated_jobs):
     with pytest.raises(ValueError, match="Unsupported analysis profile"):
         isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "unknown")
 
+def test_create_job_does_not_write_upload_before_database_insert(isolated_jobs, monkeypatch):
+    module = isolated_jobs
+    job_id = "queue-database-failure"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+
+    def fail_database():
+        raise RuntimeError("simulated database failure")
+
+    monkeypatch.setattr(module, "_db", fail_database)
+    with pytest.raises(RuntimeError, match="simulated database failure"):
+        module.create_job(b"private upload bytes", "input.tif", "owner-db-failure", False, "auto")
+
+    assert not module._job_dir(job_id).exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
+
+def test_create_job_cleans_partial_upload_when_persistence_fails(isolated_jobs, monkeypatch):
+    module = isolated_jobs
+    job_id = "queue-upload-write-failure"
+    owner_id = "owner-write-failure"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+    input_path = module._job_dir(job_id) / "input.tif"
+    original_write_bytes = Path.write_bytes
+
+    def fail_after_partial_write(path: Path, data: bytes) -> int:
+        if path == input_path:
+            original_write_bytes(path, data[:5])
+            raise OSError("simulated disk-full failure")
+        return original_write_bytes(path, data)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_after_partial_write)
+    with pytest.raises(RuntimeError, match="cleanup was verified"):
+        module.create_job(b"private upload bytes", "input.tif", owner_id, False, "auto")
+
+    row = module._get_job(job_id, owner_id)
+    assert row is not None and row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_ERROR
+    assert not module._job_dir(job_id).exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
 
 def test_delete_research_copy_requires_existing_job(isolated_jobs):
     with pytest.raises(FileNotFoundError):
