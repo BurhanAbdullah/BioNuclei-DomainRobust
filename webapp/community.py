@@ -630,9 +630,7 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         raise ValueError("ND2 indices must be non-negative")
     job_id = uuid.uuid4().hex
     root = _job_dir(job_id)
-    root.mkdir(parents=True, exist_ok=True)
     input_path = root / f"input{suffix}"
-    input_path.write_bytes(data)
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
     worker = threading.Thread(
         target=_run,
@@ -641,10 +639,16 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         name=f"bionuclei-job-{job_id[:8]}",
         daemon=True,
     )
+    upload_error: Exception | None = None
+    upload_cleanup_ok = False
+    upload_cleanup_error: Exception | None = None
     start_error: Exception | None = None
-    # Publish the row and start the worker atomically with respect to deletion.
-    # Otherwise DELETE can observe a queued row before registration, or a
-    # registered-but-not-started Thread whose is_alive() is still false.
+    start_cleanup_ok = False
+    start_cleanup_error: Exception | None = None
+
+    # Persist the owner-scoped row before writing any uploaded bytes. Hold the
+    # registry lock through row creation, input persistence, and worker start so
+    # deletion cannot race a queued job that has no registered worker yet.
     with ACTIVE_JOB_THREADS_LOCK:
         with DB_LOCK, _db() as conn:
             conn.execute(
@@ -656,19 +660,54 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
                 ),
             )
             conn.commit()
-        ACTIVE_JOB_THREADS[job_id] = worker
+
         try:
-            worker.start()
+            root.mkdir(parents=True, exist_ok=True)
+            input_path.write_bytes(data)
         except Exception as exc:
-            ACTIVE_JOB_THREADS.pop(job_id, None)
-            start_error = exc
+            upload_error = exc
+            try:
+                upload_cleanup_ok = _cleanup_failed_job(job_id, root)
+            except Exception as cleanup_exc:
+                upload_cleanup_error = cleanup_exc
+        else:
+            ACTIVE_JOB_THREADS[job_id] = worker
+            try:
+                worker.start()
+            except Exception as exc:
+                ACTIVE_JOB_THREADS.pop(job_id, None)
+                start_error = exc
+                try:
+                    start_cleanup_ok = _cleanup_failed_job(job_id, root)
+                except Exception as cleanup_exc:
+                    start_cleanup_error = cleanup_exc
+
+    if upload_error is not None:
+        if upload_cleanup_error is not None:
+            raise RuntimeError(
+                "Could not persist the uploaded image; cleanup status could not be recorded."
+            ) from upload_cleanup_error
+        if upload_cleanup_ok:
+            raise RuntimeError(
+                "Could not persist the uploaded image; cleanup was verified and the job was recorded as failed."
+            ) from upload_error
+        raise RuntimeError(
+            "Could not persist the uploaded image; cleanup is incomplete and automatic retries will continue."
+        ) from upload_error
 
     if start_error is not None:
-        _cleanup_failed_job(job_id, root)
-        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from start_error
+        if start_cleanup_error is not None:
+            raise RuntimeError(
+                "Could not start the analysis worker; cleanup status could not be recorded."
+            ) from start_cleanup_error
+        if start_cleanup_ok:
+            raise RuntimeError(
+                "Could not start the analysis worker; cleanup was verified and the job was recorded as failed."
+            ) from start_error
+        raise RuntimeError(
+            "Could not start the analysis worker; cleanup is incomplete and automatic retries will continue."
+        ) from start_error
     return job_id
-
-
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
