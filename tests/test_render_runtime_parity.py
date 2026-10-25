@@ -68,7 +68,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
                 if len(operands) < 2:
                     self.fail(f"{relative}:{line_number}: malformed COPY/ADD instruction")
                 for source in operands[:-1]:
-                    normalized = source.replace("\\\\", "/")
+                    normalized = source.replace("\\", "/")
                     if normalized in broad_sources:
                         self.fail(
                             f"{relative}:{line_number}: broad COPY/ADD source {source!r} "
