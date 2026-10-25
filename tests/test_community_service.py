@@ -94,12 +94,14 @@ def test_analyze_surfaces_truthful_upload_cleanup_status(isolated_jobs, monkeypa
         )
 
     assert response.status_code == 500
-    assert response.json()["detail"] == {
-        "error": "job_creation_failed",
-        "message": (
+    assert response.json() == {
+        "detail": (
             "Could not persist the uploaded image; cleanup was verified "
-            "and the job was recorded as failed."
+            "and the job was recorded as failed. "
+            "(job api-upload-write-failure; stage upload_persistence; "
+            "cleanup status verified)"
         ),
+        "error": "job_creation_failed",
         "job_id": job_id,
         "stage": "upload_persistence",
         "cleanup_status": "verified",

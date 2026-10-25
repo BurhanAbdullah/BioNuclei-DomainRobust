@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
@@ -69,16 +69,21 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
     try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,False,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
     except community_service.JobCreationError as exc:
-        raise HTTPException(
+        # Keep detail a string for the existing browser client while also
+        # exposing structured fields to API clients.
+        return JSONResponse(
             status_code=500,
-            detail={
+            content={
+                "detail": (
+                    f"{exc} (job {exc.job_id}; stage {exc.stage}; "
+                    f"cleanup status {exc.cleanup_status})"
+                ),
                 "error": "job_creation_failed",
-                "message": str(exc),
                 "job_id": exc.job_id,
                 "stage": exc.stage,
                 "cleanup_status": exc.cleanup_status,
             },
-        ) from exc
+        )
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
     return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","progress":f"/jobs/{job_id}/progress","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
 
