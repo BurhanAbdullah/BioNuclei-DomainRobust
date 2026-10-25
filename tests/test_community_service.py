@@ -63,6 +63,33 @@ def test_create_job_cleans_partial_upload_when_persistence_fails(isolated_jobs, 
     assert not module._job_dir(job_id).exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
 
+def test_create_job_cleans_upload_when_worker_start_fails(isolated_jobs, monkeypatch):
+    module = isolated_jobs
+    job_id = "queue-worker-start-failure"
+    owner_id = "owner-start-failure"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+
+    class FailingWorker:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("simulated worker start failure")
+
+        def is_alive(self):
+            return False
+
+    monkeypatch.setattr(module.threading, "Thread", FailingWorker)
+    with pytest.raises(RuntimeError, match="cleanup was verified"):
+        module.create_job(b"private upload bytes", "input.tif", owner_id, False, "auto")
+
+    row = module._get_job(job_id, owner_id)
+    assert row is not None and row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_ERROR
+    assert job_id not in module.ACTIVE_JOB_THREADS
+    assert not module._job_dir(job_id).exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
 
 def test_delete_research_copy_requires_existing_job(isolated_jobs):
     with pytest.raises(FileNotFoundError):
