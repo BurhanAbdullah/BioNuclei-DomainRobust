@@ -708,6 +708,8 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
             "Could not start the analysis worker; cleanup is incomplete and automatic retries will continue."
         ) from start_error
     return job_id
+
+
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
