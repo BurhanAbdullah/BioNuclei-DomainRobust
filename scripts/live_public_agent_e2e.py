@@ -23,6 +23,11 @@ import tifffile
 from pypdf import PdfReader
 from playwright.sync_api import sync_playwright
 
+try:
+    from scripts.e2e_health_state import clear_recovered_health_errors
+except ModuleNotFoundError:  # Support direct execution of the E2E script.
+    from e2e_health_state import clear_recovered_health_errors
+
 SITE_URL = os.environ.get(
     "BIONUCLEI_PUBLIC_SITE_URL",
     "https://burhanabdullah.github.io/BioNuclei-DomainRobust/bionuclei-app.html",
@@ -235,6 +240,7 @@ def main() -> None:
                     attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
                     state["api_health_http_status"] = health_response.status_code
                     if health_response.status_code == 200:
+                        clear_recovered_health_errors(state)
                         attempt_record["result"] = "http_200"
                         health_attempts.append(attempt_record)
                         state["api_health_attempts"] = health_attempts
