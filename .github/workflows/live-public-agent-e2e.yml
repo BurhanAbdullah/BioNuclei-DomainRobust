@@ -52,7 +52,7 @@ jobs:
         run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); puts "YAML syntax OK"' .github/workflows/live-public-agent-e2e.yml
 
   public-upload-to-agent:
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
