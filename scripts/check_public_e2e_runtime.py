@@ -33,9 +33,9 @@ def runtime_mismatch_reason(
     health: dict[str, object] | None,
 ) -> str | None:
     """Fail closed unless health and deployed source identify the exact current main."""
-    revision_reason = revision_mismatch_reason(tested_sha, main_sha)
-    if revision_reason:
-        return revision_reason
+    reason = revision_mismatch_reason(tested_sha, main_sha)
+    if reason:
+        return reason
     if not isinstance(health, dict):
         return "Render health did not return a JSON object"
     if health.get("status") != "ok":
@@ -63,42 +63,10 @@ def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
     with urlopen(request, timeout=timeout_seconds) as response:
         if response.status != 200:
             raise RuntimeError(f"HTTP {response.status}")
-        raw = response.read(65536)
-    payload = json.loads(raw.decode("utf-8"))
+        payload = json.loads(response.read(65536).decode("utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("JSON response was not an object")
     return payload
-
-
-def _write_failure(
-    *,
-    reason: str,
-    tested_sha: str | None,
-    main_sha: str | None,
-    health: dict[str, object] | None,
-    attempts: list[dict[str, object]],
-) -> None:
-    payload: dict[str, object] = {
-        "status": "FAIL",
-        "phase": "runtime_preflight",
-        "reason": reason,
-        "expected_tested_commit": tested_sha,
-        "expected_main_commit": main_sha,
-        "render_git_branch": health.get("render_git_branch") if health else None,
-        "render_git_commit": health.get("render_git_commit") if health else None,
-        "checkpoint_available": health.get("checkpoint_available") if health else None,
-        "api_health_attempts": attempts,
-        "public_upload_attempted": False,
-        "guest_token_seen": False,
-        "job_id_seen": False,
-        "cleanup_attempted": False,
-        "cleanup_verified": False,
-        "observed_at_utc": datetime.now(timezone.utc).isoformat(),
-    }
-    Path("live-agent-e2e-failure.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def main() -> int:
@@ -109,6 +77,31 @@ def main() -> int:
     health: dict[str, object] | None = None
     attempts: list[dict[str, object]] = []
 
+    def fail(reason: str) -> int:
+        payload: dict[str, object] = {
+            "status": "FAIL",
+            "phase": "runtime_preflight",
+            "reason": reason,
+            "expected_tested_commit": tested_sha,
+            "expected_main_commit": main_sha,
+            "render_git_branch": health.get("render_git_branch") if health else None,
+            "render_git_commit": health.get("render_git_commit") if health else None,
+            "checkpoint_available": health.get("checkpoint_available") if health else None,
+            "api_health_attempts": attempts,
+            "public_upload_attempted": False,
+            "guest_token_seen": False,
+            "job_id_seen": False,
+            "cleanup_attempted": False,
+            "cleanup_verified": False,
+            "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        Path("live-agent-e2e-failure.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(reason, file=sys.stderr)
+        return 1
+
     try:
         main_payload = _request_json(
             f"https://api.github.com/repos/{repository}/commits/main",
@@ -117,28 +110,11 @@ def main() -> int:
         value = main_payload.get("sha")
         main_sha = value if isinstance(value, str) else None
     except Exception as exc:
-        reason = f"Could not resolve current main from GitHub: {type(exc).__name__}"
-        _write_failure(
-            reason=reason,
-            tested_sha=tested_sha,
-            main_sha=main_sha,
-            health=health,
-            attempts=attempts,
-        )
-        print(reason, file=sys.stderr)
-        return 1
+        return fail(f"Could not resolve current main from GitHub: {type(exc).__name__}")
 
     reason = revision_mismatch_reason(tested_sha, main_sha)
     if reason:
-        _write_failure(
-            reason=reason,
-            tested_sha=tested_sha,
-            main_sha=main_sha,
-            health=health,
-            attempts=attempts,
-        )
-        print(reason, file=sys.stderr)
-        return 1
+        return fail(reason)
 
     last_error: str | None = None
     for attempt in range(8):
@@ -162,23 +138,13 @@ def main() -> int:
                 time.sleep(min(8, 2 ** attempt))
 
     if health is None:
-        reason = (
+        return fail(
             f"Render health could not be verified after {len(attempts)} attempts "
             f"(last_error={last_error or 'unknown'})"
         )
-    else:
-        reason = runtime_mismatch_reason(tested_sha, main_sha, health)
-
+    reason = runtime_mismatch_reason(tested_sha, main_sha, health)
     if reason:
-        _write_failure(
-            reason=reason,
-            tested_sha=tested_sha,
-            main_sha=main_sha,
-            health=health,
-            attempts=attempts,
-        )
-        print(reason, file=sys.stderr)
-        return 1
+        return fail(reason)
 
     print(f"Render runtime preflight passed for current main {main_sha}; browser dependencies may be installed.")
     return 0
