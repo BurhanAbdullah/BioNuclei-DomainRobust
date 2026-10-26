@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 DEFAULT_REPOSITORY = "BurhanAbdullah/BioNuclei-DomainRobust"
 DEFAULT_API_BASE = "https://bionuclei-community-analyzer.onrender.com"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
 
 def revision_mismatch_reason(tested_sha: str | None, main_sha: str | None) -> str | None:
@@ -42,6 +43,11 @@ def runtime_mismatch_reason(
         return f"Render health status is not ok: {health.get('status')!r}"
     if health.get("checkpoint_available") is not True:
         return "Render health does not confirm checkpoint availability"
+    if health.get("checkpoint_verified") is not True:
+        return "Render health does not verify the immutable release checkpoint"
+    checkpoint_sha256 = health.get("checkpoint_sha256")
+    if checkpoint_sha256 != EXPECTED_CHECKPOINT_SHA256:
+        return f"Render checkpoint digest differs from the pinned release: {checkpoint_sha256!r}"
     if health.get("render_git_branch") != "main":
         return f"Render is not serving branch main: {health.get('render_git_branch')!r}"
     deployed_sha = health.get("render_git_commit")
@@ -87,6 +93,8 @@ def main() -> int:
             "render_git_branch": health.get("render_git_branch") if health else None,
             "render_git_commit": health.get("render_git_commit") if health else None,
             "checkpoint_available": health.get("checkpoint_available") if health else None,
+            "checkpoint_verified": health.get("checkpoint_verified") if health else None,
+            "checkpoint_sha256": health.get("checkpoint_sha256") if health else None,
             "api_health_attempts": attempts,
             "public_upload_attempted": False,
             "guest_token_seen": False,
