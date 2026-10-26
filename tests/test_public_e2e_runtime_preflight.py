@@ -10,12 +10,15 @@ from scripts.check_public_e2e_runtime import revision_mismatch_reason, runtime_m
 
 MAIN_SHA = "a" * 40
 STALE_SHA = "b" * 40
+PINNED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
 
 def healthy_runtime(**overrides: object) -> dict[str, object]:
     return {
         "status": "ok",
         "checkpoint_available": True,
+        "checkpoint_verified": True,
+        "checkpoint_sha256": PINNED_CHECKPOINT_SHA256,
         "render_git_branch": "main",
         "render_git_commit": MAIN_SHA,
         **overrides,
@@ -44,6 +47,8 @@ def test_runtime_preflight_rejects_stale_render_deployment() -> None:
     [
         ({"render_git_branch": "preview"}, "not serving branch main"),
         ({"checkpoint_available": False}, "checkpoint availability"),
+        ({"checkpoint_verified": False}, "does not verify the immutable release checkpoint"),
+        ({"checkpoint_sha256": "0" * 64}, "differs from the pinned release"),
         ({"status": "starting"}, "health status is not ok"),
         ({"render_git_commit": "not-a-sha"}, "valid deployed Git commit"),
     ],
@@ -60,6 +65,13 @@ def test_runtime_preflight_rejects_unready_or_unverifiable_render(
 def test_runtime_preflight_fails_closed_on_missing_health_payload() -> None:
     reason = runtime_mismatch_reason(MAIN_SHA, MAIN_SHA, None)
     assert reason == "Render health did not return a JSON object"
+
+
+def test_runtime_preflight_fails_closed_when_checkpoint_identity_is_missing() -> None:
+    health = healthy_runtime()
+    health.pop("checkpoint_verified")
+    reason = runtime_mismatch_reason(MAIN_SHA, MAIN_SHA, health)
+    assert reason == "Render health does not verify the immutable release checkpoint"
 
 
 def test_request_json_reads_complete_response(monkeypatch: pytest.MonkeyPatch) -> None:
