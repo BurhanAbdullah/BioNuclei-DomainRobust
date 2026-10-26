@@ -63,7 +63,7 @@ def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
     with urlopen(request, timeout=timeout_seconds) as response:
         if response.status != 200:
             raise RuntimeError(f"HTTP {response.status}")
-        payload = json.loads(response.read(65536).decode("utf-8"))
+        payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("JSON response was not an object")
     return payload
