@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from scripts import check_public_e2e_runtime as preflight
 from scripts.check_public_e2e_runtime import revision_mismatch_reason, runtime_mismatch_reason
 
 
@@ -57,3 +60,23 @@ def test_runtime_preflight_rejects_unready_or_unverifiable_render(
 def test_runtime_preflight_fails_closed_on_missing_health_payload() -> None:
     reason = runtime_mismatch_reason(MAIN_SHA, MAIN_SHA, None)
     assert reason == "Render health did not return a JSON object"
+
+
+def test_request_json_reads_complete_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Response:
+        status = 200
+
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"sha": MAIN_SHA, "padding": "x" * 70000}).encode("utf-8")
+
+    monkeypatch.setattr(preflight, "urlopen", lambda _request, timeout: Response())
+    payload = preflight._request_json("https://example.test/health", timeout_seconds=1)
+
+    assert payload["sha"] == MAIN_SHA
+    assert len(payload["padding"]) == 70000
