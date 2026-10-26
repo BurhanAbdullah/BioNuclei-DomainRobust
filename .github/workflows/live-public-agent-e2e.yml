@@ -13,14 +13,17 @@ on:
       - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-specialist-verification.js"
       - "scripts/live_public_agent_e2e.py"
+      - "scripts/check_public_e2e_runtime.py"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
       - ".github/workflows/live-public-agent-e2e.yml"
       - "scripts/live_public_agent_e2e.py"
       - "scripts/e2e_health_state.py"
+      - "scripts/check_public_e2e_runtime.py"
       - "tests/test_e2e_health_state.py"
       - "tests/test_live_public_agent_e2e_workflow.py"
+      - "tests/test_public_e2e_runtime_preflight.py"
 
 permissions:
   contents: read
@@ -47,7 +50,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Validate E2E syntax
-        run: python -m py_compile scripts/live_public_agent_e2e.py
+        run: python -m py_compile scripts/live_public_agent_e2e.py scripts/check_public_e2e_runtime.py
       - name: Validate workflow YAML syntax
         run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); puts "YAML syntax OK"' .github/workflows/live-public-agent-e2e.yml
 
@@ -64,6 +67,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Verify deployed runtime before browser dependency installation
+        env:
+          BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python scripts/check_public_e2e_runtime.py
       - name: Install browser E2E dependencies
         run: |
           python -m pip install --upgrade pip
