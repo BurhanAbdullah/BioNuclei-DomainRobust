@@ -35,6 +35,6 @@ services:
       - key: BIONUCLEI_MAX_UPLOAD_BYTES
         value: "67108864"
       - key: BIONUCLEI_RESULT_RETENTION_HOURS
-        value: "24"
+        value: "1"
       - key: BIONUCLEI_RESEARCH_RETENTION_DAYS
         value: "90"
