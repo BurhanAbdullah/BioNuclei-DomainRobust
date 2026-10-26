@@ -27,3 +27,21 @@ def test_runtime_preflight_precedes_browser_dependency_install() -> None:
     preflight = steps[preflight_index]
     assert preflight["run"] == "python scripts/check_public_e2e_runtime.py"
     assert preflight["env"]["GITHUB_SHA"] == "${{ github.sha }}"
+
+def test_runtime_build_inputs_trigger_public_e2e_on_main_push() -> None:
+    workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/live-public-agent-e2e.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    push_paths = set(workflow["on"]["push"]["paths"])
+
+    # These are copied into the Render images or configure their build/runtime.
+    # A change must trigger the public gate immediately rather than wait for cron.
+    assert {
+        "webapp/**",
+        "src/**",
+        "pyproject.toml",
+        "README.md",
+        "configs/**",
+        "render.yaml",
+        "docs/RESEARCH_PROTOCOL.md",
+        "docs/DATASETS.md",
+    }.issubset(push_paths)
