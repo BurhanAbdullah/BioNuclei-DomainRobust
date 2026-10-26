@@ -16,7 +16,11 @@ on:
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
+      - ".github/workflows/live-public-agent-e2e.yml"
       - "scripts/live_public_agent_e2e.py"
+      - "scripts/e2e_health_state.py"
+      - "tests/test_e2e_health_state.py"
+      - "tests/test_live_public_agent_e2e_workflow.py"
 
 permissions:
   contents: read
@@ -28,7 +32,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    name: Validate E2E harness without public upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact tested revision
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate E2E syntax
+        run: python -m py_compile scripts/live_public_agent_e2e.py
+      - name: Validate workflow YAML syntax
+        run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); puts "YAML syntax OK"' .github/workflows/live-public-agent-e2e.yml
+
   public-upload-to-agent:
+    if: github.ref == 'refs/heads/main'
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
