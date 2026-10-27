@@ -31,7 +31,7 @@ def test_failure_artifact_write_errors_are_not_silenced(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(Path, "write_text", fail_write)
     with pytest.raises(PermissionError, match="synthetic write failure"):
-        persist_failure_payload(tmp_path / "failure.json", '{"status":"FAIL"}\\n')
+        persist_failure_payload(tmp_path / "failure.json", '{"status":"FAIL"}\n')
 
 
 def test_failure_artifact_readback_mismatch_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -44,4 +44,4 @@ def test_failure_artifact_readback_mismatch_fails_closed(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(Path, "read_text", altered_read)
     with pytest.raises(OSError, match="differs from the logged payload"):
-        persist_failure_payload(path, '{"error":"ReadTimeout"}\\n')
+        persist_failure_payload(path, '{"error":"ReadTimeout"}\n')
