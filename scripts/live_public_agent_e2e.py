@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 import zipfile
@@ -19,8 +20,10 @@ from pathlib import Path
 
 try:
     from .github_api_auth import github_api_headers
+    from .e2e_failure_artifact import persist_failure_payload, serialize_failure_payload
 except ImportError:  # Running this file directly from the scripts directory.
     from github_api_auth import github_api_headers
+    from e2e_failure_artifact import persist_failure_payload, serialize_failure_payload
 
 import numpy as np
 import requests
@@ -1070,15 +1073,24 @@ def main() -> None:
                 state.setdefault("cleanup_attempted", False)
                 state.setdefault("cleanup_verified", False)
             if state.get("status") == "FAIL":
-                # Persist only after finally has attempted and verified cleanup.
+                # Reuse one serialized payload for the file and log; never hide write/read-back failures.
+                payload_text = serialize_failure_payload(state)
+                failure_path = Path("live-agent-e2e-failure.json")
                 try:
-                    Path("live-agent-e2e-failure.json").write_text(
-                        json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str) + "\n",
-                        encoding="utf-8",
+                    persist_failure_payload(failure_path, payload_text)
+                except Exception as write_exc:
+                    try:
+                        failure_path.unlink(missing_ok=True)
+                    except OSError as unlink_exc:
+                        print(
+                            f"Failure evidence cleanup failed: {type(unlink_exc).__name__}",
+                            file=sys.stderr,
+                        )
+                    print(
+                        f"Failure evidence persistence failed: {type(write_exc).__name__}",
+                        file=sys.stderr,
                     )
-                except Exception:
-                    pass
-                print(json.dumps({"status": "FAIL", **state}, indent=2, sort_keys=True, default=str))
+                print(payload_text, end="")
             if browser is not None:
                 try:
                     browser.close()

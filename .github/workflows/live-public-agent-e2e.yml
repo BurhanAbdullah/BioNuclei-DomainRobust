@@ -21,6 +21,7 @@ on:
       - "scripts/live_public_agent_e2e.py"
       - "scripts/check_public_e2e_runtime.py"
       - "scripts/github_api_auth.py"
+      - "scripts/e2e_failure_artifact.py"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
@@ -29,6 +30,8 @@ on:
       - "scripts/e2e_health_state.py"
       - "scripts/check_public_e2e_runtime.py"
       - "scripts/github_api_auth.py"
+      - "scripts/e2e_failure_artifact.py"
+      - "tests/test_e2e_failure_artifact.py"
       - "tests/test_e2e_health_state.py"
       - "tests/test_live_public_agent_e2e_workflow.py"
       - "tests/test_public_e2e_runtime_preflight.py"
@@ -59,7 +62,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Validate E2E syntax
-        run: python -m py_compile scripts/live_public_agent_e2e.py scripts/check_public_e2e_runtime.py
+        run: python -m py_compile scripts/live_public_agent_e2e.py scripts/check_public_e2e_runtime.py scripts/e2e_failure_artifact.py
       - name: Validate workflow YAML syntax
         run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); puts "YAML syntax OK"' .github/workflows/live-public-agent-e2e.yml
 
