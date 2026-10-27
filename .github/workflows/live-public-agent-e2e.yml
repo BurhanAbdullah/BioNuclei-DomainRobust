@@ -20,6 +20,7 @@ on:
       - "docs/assets/bionuclei-specialist-verification.js"
       - "scripts/live_public_agent_e2e.py"
       - "scripts/check_public_e2e_runtime.py"
+      - "scripts/github_api_auth.py"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
@@ -27,9 +28,11 @@ on:
       - "scripts/live_public_agent_e2e.py"
       - "scripts/e2e_health_state.py"
       - "scripts/check_public_e2e_runtime.py"
+      - "scripts/github_api_auth.py"
       - "tests/test_e2e_health_state.py"
       - "tests/test_live_public_agent_e2e_workflow.py"
       - "tests/test_public_e2e_runtime_preflight.py"
+      - "tests/test_github_api_auth.py"
 
 permissions:
   contents: read
@@ -78,6 +81,7 @@ jobs:
           BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/check_public_e2e_runtime.py
       - name: Install browser E2E dependencies
         run: |
@@ -92,6 +96,7 @@ jobs:
           BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
           BIONUCLEI_ANALYSIS_TIMEOUT_MS: "1200000"
           BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS: "240"
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/live_public_agent_e2e.py
       - name: Upload browser failure evidence
         if: failure()
