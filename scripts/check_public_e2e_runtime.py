@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+try:
+    from .github_api_auth import github_api_headers
+except ImportError:  # Running this file directly from the scripts directory.
+    from github_api_auth import github_api_headers
+
 DEFAULT_REPOSITORY = "BurhanAbdullah/BioNuclei-DomainRobust"
 DEFAULT_API_BASE = "https://bionuclei-community-analyzer.onrender.com"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -59,13 +64,18 @@ def runtime_mismatch_reason(
 
 
 def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
-    request = Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
+    if url.startswith("https://api.github.com/"):
+        headers = github_api_headers(
+            os.environ.get("GITHUB_TOKEN"),
+            user_agent="bionuclei-public-e2e-runtime-preflight",
+        )
+    else:
+        # Never send the GitHub credential to the public Render API.
+        headers = {
+            "Accept": "application/json",
             "User-Agent": "bionuclei-public-e2e-runtime-preflight",
-        },
-    )
+        }
+    request = Request(url, headers=headers)
     with urlopen(request, timeout=timeout_seconds) as response:
         if response.status != 200:
             raise RuntimeError(f"HTTP {response.status}")
