@@ -13,7 +13,7 @@ def serialize_failure_payload(state: Mapping[str, object]) -> str:
         indent=2,
         sort_keys=True,
         default=str,
-    ) + "\\n"
+    ) + "\n"
 
 
 def persist_failure_payload(path: Path, payload_text: str) -> None:
