@@ -1,7 +1,29 @@
 from datetime import datetime, timezone
+import json
 import unittest
+from unittest.mock import patch
 
-from scripts.public_e2e_schedule_watchdog import should_dispatch
+from scripts.public_e2e_schedule_watchdog import (
+    EXPECTED_CHECKPOINT_SHA256,
+    _deployed_runtime_sha,
+    should_dispatch,
+)
+
+
+class _HealthResponse:
+    status = 200
+
+    def __init__(self, payload):
+        self.raw = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def read(self, size=-1):
+        return self.raw if size < 0 else self.raw[:size]
 
 
 class PublicE2EScheduleWatchdogTests(unittest.TestCase):
@@ -25,6 +47,40 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
             "conclusion": conclusion,
             "created_at": created_at,
         }
+
+    def _healthy_runtime(self, **overrides):
+        return {
+            "status": "ok",
+            "render_git_branch": "main",
+            "render_git_commit": self.main_sha,
+            "checkpoint_available": True,
+            "checkpoint_verified": True,
+            "checkpoint_sha256": EXPECTED_CHECKPOINT_SHA256,
+            **overrides,
+        }
+
+    def test_deployed_runtime_sha_requires_pinned_checkpoint_identity(self):
+        with patch(
+            "scripts.public_e2e_schedule_watchdog.urlopen",
+            return_value=_HealthResponse(self._healthy_runtime()),
+        ):
+            self.assertEqual(_deployed_runtime_sha(), self.main_sha)
+
+    def test_deployed_runtime_sha_fails_closed_on_unverified_checkpoint(self):
+        invalid_health = (
+            {"status": "degraded"},
+            {"checkpoint_available": False},
+            {"checkpoint_verified": False},
+            {"checkpoint_sha256": "0" * 64},
+            {"checkpoint_sha256": None},
+        )
+        for overrides in invalid_health:
+            with self.subTest(overrides=overrides):
+                with patch(
+                    "scripts.public_e2e_schedule_watchdog.urlopen",
+                    return_value=_HealthResponse(self._healthy_runtime(**overrides)),
+                ):
+                    self.assertIsNone(_deployed_runtime_sha())
 
     def test_dispatches_when_no_main_run_exists(self):
         dispatch, _ = should_dispatch(
