@@ -19,6 +19,7 @@ PUBLIC_API_URL = os.environ.get(
     "BIONUCLEI_PUBLIC_API_URL",
     "https://bionuclei-community-analyzer.onrender.com",
 ).rstrip("/")
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
 
 def _timestamp(value: str) -> datetime:
@@ -128,7 +129,7 @@ def _api_request(
 
 
 def _deployed_runtime_sha() -> str | None:
-    """Return Render's verified main SHA, or None when health is inconclusive."""
+    """Return Render's main SHA only when the release checkpoint is verified."""
     request = Request(
         f"{PUBLIC_API_URL}/health",
         headers={
@@ -149,6 +150,13 @@ def _deployed_runtime_sha() -> str | None:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     if not isinstance(payload, dict) or payload.get("render_git_branch") != "main":
+        return None
+    if (
+        payload.get("status") != "ok"
+        or payload.get("checkpoint_available") is not True
+        or payload.get("checkpoint_verified") is not True
+        or payload.get("checkpoint_sha256") != EXPECTED_CHECKPOINT_SHA256
+    ):
         return None
     sha = str(payload.get("render_git_commit") or "")
     if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
@@ -188,8 +196,9 @@ def main() -> int:
         and latest_main.get("head_sha") == main_sha
         and latest_main.get("conclusion") == "failure"
     ):
-        # A failed exact-main run cannot be usefully repeated while Render still
-        # serves an older revision. If health is inconclusive, fail closed.
+        # A failed exact-main run cannot be usefully repeated until health proves
+        # both the current revision and the immutable release checkpoint. If
+        # either identity is inconclusive, fail closed.
         deployed_sha = _deployed_runtime_sha()
 
     dispatch, reason = should_dispatch(main_sha, runs, deployed_sha=deployed_sha)
