@@ -768,9 +768,25 @@ def main() -> None:
                 intensity_agent = next((a for a in agents if a.get("agent") == "intensity_agent"), None)
                 require(isinstance(intensity_agent, dict), "Intensity specialist output is missing")
                 require(
+                    "Raw image min: 512" in intensity_agent.get("observations", []),
+                    "Intensity specialist did not reason about the raw-image minimum",
+                )
+                require(
                     "Raw image max: 65535" in intensity_agent.get("observations", []),
                     "Intensity specialist did not reason about the 16-bit raw-image maximum",
                 )
+                require(
+                    "Raw image dynamic range: 65023 raw intensity units." in intensity_agent.get("observations", []),
+                    "Intensity specialist did not reason about the full raw-image dynamic range",
+                )
+                intensity_min_claim = next(
+                    c for c in intensity_agent.get("quantitative_claims", [])
+                    if c.get("reference") == "adaptive_plan.profile.min" and c.get("value") == 512
+                )
+                state["intensity_specialist_512_min_claim"] = {
+                    "reference": intensity_min_claim.get("reference"),
+                    "value": intensity_min_claim.get("value"),
+                }
                 intensity_max_claim = next(
                     c for c in intensity_agent.get("quantitative_claims", [])
                     if c.get("reference") == "adaptive_plan.profile.max" and c.get("value") == 65535
@@ -886,6 +902,8 @@ def main() -> None:
                     require(zip_result.get("n_instances") == nuclei_count and
                             zip_result.get("reports", {}).get("nuclei_count") == nuclei_count,
                             "ZIP result/measurement instance counts disagree")
+                    require(zip_result.get("adaptive_plan", {}).get("profile", {}).get("min") == 512,
+                            "ZIP results.json lost the raw 16-bit minimum")
                     require(zip_result.get("adaptive_plan", {}).get("profile", {}).get("max") == 65535,
                             "ZIP results.json lost the raw 16-bit maximum")
                     require(zip_result.get("reports", {}).get("intensity", {}).get("max_nuclear_intensity") == 65535,
@@ -896,6 +914,7 @@ def main() -> None:
                     require(zip_report.get("job_id") == job_id and
                             zip_report.get("input_sha256") == result.get("input_sha256") and
                             zip_report.get("reports", {}).get("nuclei_count") == nuclei_count and
+                            zip_report.get("adaptive_plan", {}).get("profile", {}).get("min") == 512 and
                             zip_report.get("adaptive_plan", {}).get("profile", {}).get("max") == 65535 and
                             zip_report.get("expert_agents") == artifact,
                             "ZIP analysis_report.json does not carry the live job's measured/evidence-bound results")
