@@ -111,3 +111,15 @@ def test_completed_progress_only_reports_ready_with_completed_status(
     payload = response.json()
     assert payload["cleanup_status"] == "verified"
     assert payload["report_ready"] is True
+
+def test_root_and_health_report_configured_result_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(community_app.community_service, "DEFAULT_RESULT_RETENTION_HOURS", 24)
+
+    root_payload = community_app.root()
+    health_payload = community_app.health()
+
+    assert root_payload["result_retention_hours"] == 24
+    assert "expire after 24 hours" in root_payload["retention"]
+    assert health_payload["result_retention_hours"] == 24
