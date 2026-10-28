@@ -23,6 +23,11 @@ import tifffile
 from pypdf import PdfReader
 from playwright.sync_api import sync_playwright
 
+try:
+    from scripts.render_runtime_parity import is_non_runtime_path
+except ModuleNotFoundError:  # Support direct execution of the E2E script.
+    from render_runtime_parity import is_non_runtime_path
+
 SITE_URL = os.environ.get(
     "BIONUCLEI_PUBLIC_SITE_URL",
     "https://burhanabdullah.github.io/BioNuclei-DomainRobust/bionuclei-app.html",
@@ -130,18 +135,6 @@ def resolve_result_reference(payload: dict[str, object], reference: str) -> tupl
     return True, value
 
 
-NON_RUNTIME_PATHS = {
-    "scripts/live_public_agent_e2e.py",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-}
-NON_RUNTIME_PREFIXES = (".github/workflows/", "tests/", "docs/")
-
-
-def is_non_runtime_path(path: str) -> bool:
-    """Return true only for explicit test/documentation paths that do not ship to Render."""
-    return path in NON_RUNTIME_PATHS or path.startswith(NON_RUNTIME_PREFIXES)
 
 
 def read_zip_json(archive, member: str) -> dict[str, object]:
