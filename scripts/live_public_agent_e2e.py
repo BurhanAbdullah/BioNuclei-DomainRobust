@@ -691,6 +691,7 @@ def main() -> None:
                 state["input_dtype"] = profile["dtype"]
                 state["raw_image_min"] = profile["min"]
                 state["raw_image_max"] = profile["max"]
+                state["raw_image_dynamic_range"] = profile["max"] - profile["min"]
                 state["cnn_qc"] = {
                     "status": cnn.get("status"),
                     "foreground_fraction": foreground_fraction,
