@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
+
+import yaml
 
 from scripts.render_runtime_parity import is_non_runtime_path
 
@@ -43,6 +46,17 @@ class RenderRuntimeParityTests(unittest.TestCase):
     def test_unknown_root_paths_fail_closed(self) -> None:
         self.assertFalse(is_non_runtime_path("runtime-config.toml"))
 
+
+    def test_public_upload_job_is_restricted_to_main_ref(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = yaml.load(
+            (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8"),
+            Loader=yaml.BaseLoader,
+        )
+        self.assertEqual(
+            workflow["jobs"]["public-upload-to-agent"]["if"],
+            "github.ref == 'refs/heads/main'",
+        )
 
 if __name__ == "__main__":
     unittest.main()
