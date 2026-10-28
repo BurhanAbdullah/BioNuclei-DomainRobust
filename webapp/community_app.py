@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from .app import _checkpoint, _png_data_url
+from .app import _checkpoint, _checkpoint_identity, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
@@ -45,9 +45,26 @@ def root():
 
 @app.get("/health")
 def health():
-    try: available=_checkpoint().is_file()
-    except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
+    try:
+        checkpoint, digest, verified = _checkpoint_identity()
+        available = checkpoint.is_file()
+    except Exception:
+        available, digest, verified = False, None, False
+    return {
+        "status": "ok" if available and verified else "degraded",
+        "service": "bionuclei-community-analyzer",
+        "checkpoint_available": available,
+        "checkpoint_sha256": digest,
+        "checkpoint_verified": verified,
+        "render_git_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
+        "render_git_branch": os.getenv("RENDER_GIT_BRANCH", "unknown"),
+        "max_upload_bytes": MAX_UPLOAD_BYTES,
+        "supported_input_formats": [".tif", ".tiff", ".nd2"],
+        "account_required": False,
+        "guest_access": True,
+        "input_retention": "transient",
+        "result_retention_hours": 1,
+    }
 
 @app.get("/algorithms")
 def algorithms():
