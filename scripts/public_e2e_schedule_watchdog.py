@@ -15,6 +15,11 @@ from urllib.request import Request, urlopen
 WORKFLOW_FILE = "live-public-agent-e2e.yml"
 MAX_AGE_SECONDS = 75 * 60
 API_VERSION = "2022-11-28"
+PUBLIC_API_URL = os.environ.get(
+    "BIONUCLEI_PUBLIC_API_URL",
+    "https://bionuclei-community-analyzer.onrender.com",
+).rstrip("/")
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
 
 def _timestamp(value: str) -> datetime:
@@ -31,12 +36,14 @@ def should_dispatch(
     *,
     now: datetime | None = None,
     max_age_seconds: int = MAX_AGE_SECONDS,
+    deployed_sha: str | None = None,
 ) -> tuple[bool, str]:
     """Decide whether an E2E for current main is missing or stale.
 
-    A queued/running exact-main run suppresses a duplicate. A recent completed
-    run for an older SHA does not satisfy current-main acceptance. Runs on
-    non-main branches are ignored.
+    A queued/running exact-main run suppresses a duplicate. A recent exact-main
+    run also suppresses a duplicate. Every new dispatch, including a first run
+    after main advances, requires Render to report the current main SHA and the
+    immutable checkpoint digest as verified. Runs on non-main branches are ignored.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     main_runs = [run for run in workflow_runs if run.get("head_branch") == "main"]
@@ -51,17 +58,39 @@ def should_dispatch(
         return False, "an exact-current-main E2E is already queued or running"
 
     if not main_runs:
-        return True, "no main-branch public E2E run exists"
+        if deployed_sha is None:
+            return False, "deployed Render SHA/checkpoint is unverified; refusing dispatch"
+        if deployed_sha != main_sha:
+            return False, (
+                "Render is still behind current main "
+                f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing dispatch"
+            )
+        return True, "no main-branch public E2E run exists and Render runtime/checkpoint are verified"
 
     latest = max(main_runs, key=lambda run: str(run.get("created_at", "")))
     latest_sha = str(latest.get("head_sha", ""))
     try:
         age_seconds = (now - _timestamp(str(latest["created_at"]))).total_seconds()
     except (KeyError, TypeError, ValueError):
-        return True, "latest main E2E timestamp is missing or invalid"
+        if deployed_sha is None:
+            return False, "deployed Render SHA/checkpoint is unverified; refusing dispatch"
+        if deployed_sha != main_sha:
+            return False, (
+                "Render is still behind current main "
+                f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing dispatch"
+            )
+        return True, "latest main E2E timestamp is missing or invalid; Render runtime/checkpoint are verified"
 
     if latest_sha == main_sha and age_seconds < max_age_seconds:
         return False, f"current-main E2E is recent ({int(age_seconds)} seconds old)"
+
+    if deployed_sha is None:
+        return False, "deployed Render SHA/checkpoint is unverified; refusing dispatch"
+    if deployed_sha != main_sha:
+        return False, (
+            "Render is still behind current main "
+            f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing dispatch"
+        )
 
     return True, (
         f"latest E2E is stale for current main "
@@ -108,6 +137,42 @@ def _api_request(
     return parsed
 
 
+def _deployed_runtime_sha() -> str | None:
+    """Return Render's main SHA only when the release checkpoint is verified."""
+    request = Request(
+        f"{PUBLIC_API_URL}/health",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "bionuclei-public-e2e-schedule-watchdog",
+        },
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            if response.status != 200:
+                return None
+            raw = response.read(16_384)
+    except (URLError, OSError):
+        return None
+
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("render_git_branch") != "main":
+        return None
+    if (
+        payload.get("status") != "ok"
+        or payload.get("checkpoint_available") is not True
+        or payload.get("checkpoint_verified") is not True
+        or payload.get("checkpoint_sha256") != EXPECTED_CHECKPOINT_SHA256
+    ):
+        return None
+    sha = str(payload.get("render_git_commit") or "")
+    if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
+        return None
+    return sha
+
+
 def main() -> int:
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GH_TOKEN", "")
@@ -132,7 +197,10 @@ def main() -> int:
     if not main_sha or not isinstance(runs, list):
         raise RuntimeError("GitHub API returned malformed main SHA or workflow runs")
 
-    dispatch, reason = should_dispatch(main_sha, runs)
+    # Never dispatch any public E2E until Render proves the current revision
+    # and immutable checkpoint identity, including after a main SHA advances.
+    deployed_sha = _deployed_runtime_sha()
+    dispatch, reason = should_dispatch(main_sha, runs, deployed_sha=deployed_sha)
     print(f"Public E2E watchdog: {reason}")
     if not dispatch:
         return 0
