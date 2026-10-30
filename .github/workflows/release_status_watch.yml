@@ -47,19 +47,30 @@ jobs:
           run_meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" || true)"
           conclusion="$(printf '%s' "$run_meta" | jq -r '.conclusion // empty' 2>/dev/null || true)"
           branch_name="$(printf '%s' "$run_meta" | jq -r '.head_branch // empty' 2>/dev/null || true)"
-          if [ "$conclusion" != "success" ] || [ "$branch_name" != "main" ]; then
-            export EVIDENCE_BLOCKER="Latest candidate clean reproduction run is not a successful main-branch run."
+          run_sha="$(printf '%s' "$run_meta" | jq -r '.head_sha // empty' 2>/dev/null || true)"
+          current_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha' 2>/dev/null || true)"
+          if [ "$conclusion" != "success" ] || [ "$branch_name" != "main" ] || [ -z "$current_main_sha" ] || [ "$run_sha" != "$current_main_sha" ]; then
+            if [ "$conclusion" != "success" ] || [ "$branch_name" != "main" ]; then
+              export EVIDENCE_BLOCKER="Latest candidate clean reproduction run is not a successful main-branch run."
+            elif [ -z "$current_main_sha" ]; then
+              export EVIDENCE_BLOCKER="Could not resolve the current main SHA; refusing to certify clean-reproduction freshness."
+            else
+              export EVIDENCE_BLOCKER="Latest clean reproduction is stale for current main (run_sha=${run_sha:-unknown}, current_main_sha=${current_main_sha})."
+            fi
             export SOURCE_RUN_ID="$run_id"
+            export CURRENT_MAIN_SHA="${current_main_sha:-unknown}"
+            export CLEAN_REPRODUCTION_SHA="${run_sha:-unknown}"
             python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-          payload={"monitor":"healthy","status":"BLOCKED","scope":"scientific evidence-chain observability only","release_ready":False,"observed_at_utc":datetime.now(timezone.utc).isoformat(),"source_run_id":os.environ["SOURCE_RUN_ID"],"blockers":[os.environ["EVIDENCE_BLOCKER"]]}
+          payload={"monitor":"healthy","status":"BLOCKED","scope":"scientific evidence-chain observability only","release_ready":False,"observed_at_utc":datetime.now(timezone.utc).isoformat(),"source_run_id":os.environ["SOURCE_RUN_ID"],"current_main_sha":os.environ["CURRENT_MAIN_SHA"],"clean_reproduction_sha":os.environ["CLEAN_REPRODUCTION_SHA"],"blockers":[os.environ["EVIDENCE_BLOCKER"]]}
           Path("status-report/release_status.json").write_text(json.dumps(payload,indent=2)+"\n")
           print(json.dumps(payload,indent=2))
           PY
             exit 0
           fi
+          echo "$run_sha" > status-report/clean-reproduction-sha.txt
 
           artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" || true)"
           artifact_id="$(printf '%s' "$artifacts" | jq -r --arg n "clean-environment-reproduction-${run_id}" '[.artifacts[]? | select(.name == $n and .expired == false)] | sort_by(.created_at) | if length == 0 then empty else last.id end' 2>/dev/null || true)"
@@ -120,6 +131,45 @@ jobs:
               with urllib.request.urlopen(req,timeout=20) as response:
                   return json.load(response)
 
+          clean_reproduction_sha=Path('status-report/clean-reproduction-sha.txt').read_text().strip()
+          current_main_sha=''
+          source_run_shas={}
+          source_run_ids={
+              'e6':meta.get('e6_source_run_id'),
+              'e6_finalize':meta.get('e6_finalize_run_id'),
+              'e7':meta.get('e7_source_run_id'),
+              'uncertainty':meta.get('uncertainty_run_id'),
+          }
+          try:
+              current_main_sha=str(get('commits/main').get('sha') or '')
+          except Exception as exc:
+              blockers.append(f'Current main SHA lookup failed ({type(exc).__name__}); refusing to certify research freshness.')
+          if not current_main_sha:
+              blockers.append('Current main SHA is unavailable; refusing to certify research freshness.')
+          elif clean_reproduction_sha != current_main_sha:
+              blockers.append(
+                  f'Clean reproduction became stale for current main '
+                  f'(run_sha={clean_reproduction_sha or "unknown"}, current_main_sha={current_main_sha}).'
+              )
+          for label, source_run_id in source_run_ids.items():
+              if not source_run_id:
+                  blockers.append(f'{label} scientific source run ID is missing.')
+                  continue
+              try:
+                  source_run=get(f'actions/runs/{int(source_run_id)}')
+              except Exception as exc:
+                  blockers.append(f'{label} scientific source run lookup failed ({type(exc).__name__}).')
+                  continue
+              source_sha=str(source_run.get('head_sha') or '')
+              source_run_shas[label]=source_sha
+              if source_run.get('head_branch') != 'main' or source_run.get('conclusion') != 'success':
+                  blockers.append(f'{label} scientific source run is not a successful main-branch run.')
+              if current_main_sha and source_sha != current_main_sha:
+                  blockers.append(
+                      f'{label} scientific source run is stale for current main '
+                      f'(run_sha={source_sha or "unknown"}, current_main_sha={current_main_sha}).'
+                  )
+
           def check(label, artifact_id, digest, expected_run=None, expected_name=None):
               try:
                   obj=get(f'actions/artifacts/{artifact_id}')
@@ -169,12 +219,10 @@ jobs:
               'observed_at_utc':datetime.now(timezone.utc).isoformat(),
               'clean_reproduction_run_id':int(Path('status-report/clean-reproduction-run-id.txt').read_text()),
               'clean_reproduction_artifact_id':int(Path('status-report/clean-reproduction-artifact-id.txt').read_text()),
-              'scientific_source_run_ids':{
-                  'e6':meta.get('e6_source_run_id'),
-                  'e6_finalize':meta.get('e6_finalize_run_id'),
-                  'e7':meta.get('e7_source_run_id'),
-                  'uncertainty':meta.get('uncertainty_run_id'),
-              },
+              'current_main_sha':current_main_sha or None,
+              'clean_reproduction_sha':clean_reproduction_sha,
+              'scientific_source_run_ids':source_run_ids,
+              'scientific_source_run_shas':source_run_shas,
               'checked_artifacts':checked,
               'blockers':blockers,
               'note':'A green status-watch run means the monitor completed successfully. Only status EVIDENCE_CHAIN_VERIFIED confirms that the referenced scientific evidence artifacts remain live and identity-matched.',
