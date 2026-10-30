@@ -82,13 +82,34 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
                 ):
                     self.assertIsNone(_deployed_runtime_sha())
 
-    def test_dispatches_when_no_main_run_exists(self):
+    def test_dispatches_when_no_main_run_exists_and_render_is_current(self):
         dispatch, _ = should_dispatch(
             self.main_sha,
             [self.run_record(branch="feature/example")],
             now=self.now,
+            deployed_sha=self.main_sha,
         )
         self.assertTrue(dispatch)
+
+    def test_suppresses_when_no_main_run_exists_and_render_is_behind(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(branch="feature/example")],
+            now=self.now,
+            deployed_sha="b" * 40,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("Render is still behind", reason)
+
+    def test_suppresses_when_no_main_run_exists_and_render_is_unverified(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(branch="feature/example")],
+            now=self.now,
+            deployed_sha=None,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("unverified", reason)
 
     def test_does_not_duplicate_active_exact_main_run(self):
         dispatch, reason = should_dispatch(
@@ -117,20 +138,42 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         self.assertFalse(dispatch)
         self.assertIn("recent", reason)
 
-    def test_dispatches_when_latest_run_targets_an_older_sha(self):
+    def test_dispatches_when_latest_run_targets_an_older_sha_and_render_is_current(self):
         dispatch, reason = should_dispatch(
             self.main_sha,
             [self.run_record(sha="b" * 40, created_at="2026-10-24T06:59:00Z")],
             now=self.now,
+            deployed_sha=self.main_sha,
         )
         self.assertTrue(dispatch)
         self.assertIn("stale for current main", reason)
+
+    def test_suppresses_when_latest_run_targets_an_older_sha_and_render_is_behind(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(sha="b" * 40, created_at="2026-10-24T06:59:00Z")],
+            now=self.now,
+            deployed_sha="b" * 40,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("Render is still behind", reason)
+
+    def test_suppresses_when_latest_run_targets_an_older_sha_and_render_is_unverified(self):
+        dispatch, reason = should_dispatch(
+            self.main_sha,
+            [self.run_record(sha="b" * 40, created_at="2026-10-24T06:59:00Z")],
+            now=self.now,
+            deployed_sha=None,
+        )
+        self.assertFalse(dispatch)
+        self.assertIn("unverified", reason)
 
     def test_dispatches_when_exact_main_run_is_older_than_threshold(self):
         dispatch, reason = should_dispatch(
             self.main_sha,
             [self.run_record(created_at="2026-10-24T05:40:00Z")],
             now=self.now,
+            deployed_sha=self.main_sha,
         )
         self.assertTrue(dispatch)
         self.assertIn("stale for current main", reason)
@@ -175,21 +218,22 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         self.assertTrue(dispatch)
         self.assertIn("stale for current main", reason)
 
-    def test_dispatches_when_failed_run_targets_old_sha(self):
+    def test_dispatches_when_failed_run_targets_old_sha_and_render_is_current(self):
         dispatch, reason = should_dispatch(
             self.main_sha,
             [self.run_record(sha="b" * 40, conclusion="failure", created_at="2026-10-24T06:59:00Z")],
             now=self.now,
-            deployed_sha="c" * 40,
+            deployed_sha=self.main_sha,
         )
         self.assertTrue(dispatch)
         self.assertIn("stale for current main", reason)
 
-    def test_dispatches_if_latest_timestamp_is_unverifiable(self):
+    def test_dispatches_if_latest_timestamp_is_unverifiable_and_render_is_current(self):
         dispatch, reason = should_dispatch(
             self.main_sha,
             [self.run_record(created_at="not-a-timestamp")],
             now=self.now,
+            deployed_sha=self.main_sha,
         )
         self.assertTrue(dispatch)
         self.assertIn("invalid", reason)

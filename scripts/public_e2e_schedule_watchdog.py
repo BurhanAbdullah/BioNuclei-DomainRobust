@@ -40,11 +40,10 @@ def should_dispatch(
 ) -> tuple[bool, str]:
     """Decide whether an E2E for current main is missing or stale.
 
-    A queued/running exact-main run suppresses a duplicate. A recent completed
-    run for an older SHA does not satisfy current-main acceptance. After an
-    exact-main failure, do not repeat against an unverified or still-stale Render
-    deployment; retry once the deployed runtime reaches current main. Runs on
-    non-main branches are ignored.
+    A queued/running exact-main run suppresses a duplicate. A recent exact-main
+    run also suppresses a duplicate. Every new dispatch, including a first run
+    after main advances, requires Render to report the current main SHA and the
+    immutable checkpoint digest as verified. Runs on non-main branches are ignored.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     main_runs = [run for run in workflow_runs if run.get("head_branch") == "main"]
@@ -59,29 +58,39 @@ def should_dispatch(
         return False, "an exact-current-main E2E is already queued or running"
 
     if not main_runs:
-        return True, "no main-branch public E2E run exists"
+        if deployed_sha is None:
+            return False, "deployed Render SHA/checkpoint is unverified; refusing dispatch"
+        if deployed_sha != main_sha:
+            return False, (
+                "Render is still behind current main "
+                f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing dispatch"
+            )
+        return True, "no main-branch public E2E run exists and Render runtime/checkpoint are verified"
 
     latest = max(main_runs, key=lambda run: str(run.get("created_at", "")))
     latest_sha = str(latest.get("head_sha", ""))
-    if latest_sha == main_sha and latest.get("conclusion") == "failure":
-        if deployed_sha is None:
-            return False, (
-                "latest exact-main E2E failed and deployed Render SHA is unverified; "
-                "refusing duplicate dispatch"
-            )
-        if deployed_sha != main_sha:
-            return False, (
-                "latest exact-main E2E failed while Render is still behind current main "
-                f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing duplicate dispatch"
-            )
-
     try:
         age_seconds = (now - _timestamp(str(latest["created_at"]))).total_seconds()
     except (KeyError, TypeError, ValueError):
-        return True, "latest main E2E timestamp is missing or invalid"
+        if deployed_sha is None:
+            return False, "deployed Render SHA/checkpoint is unverified; refusing dispatch"
+        if deployed_sha != main_sha:
+            return False, (
+                "Render is still behind current main "
+                f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing dispatch"
+            )
+        return True, "latest main E2E timestamp is missing or invalid; Render runtime/checkpoint are verified"
 
     if latest_sha == main_sha and age_seconds < max_age_seconds:
         return False, f"current-main E2E is recent ({int(age_seconds)} seconds old)"
+
+    if deployed_sha is None:
+        return False, "deployed Render SHA/checkpoint is unverified; refusing dispatch"
+    if deployed_sha != main_sha:
+        return False, (
+            "Render is still behind current main "
+            f"(deployed_sha={deployed_sha}, main_sha={main_sha}); refusing dispatch"
+        )
 
     return True, (
         f"latest E2E is stale for current main "
@@ -188,19 +197,9 @@ def main() -> int:
     if not main_sha or not isinstance(runs, list):
         raise RuntimeError("GitHub API returned malformed main SHA or workflow runs")
 
-    main_runs = [run for run in runs if run.get("head_branch") == "main"]
-    latest_main = max(main_runs, key=lambda run: str(run.get("created_at", "")), default=None)
-    deployed_sha = None
-    if (
-        latest_main is not None
-        and latest_main.get("head_sha") == main_sha
-        and latest_main.get("conclusion") == "failure"
-    ):
-        # A failed exact-main run cannot be usefully repeated until health proves
-        # both the current revision and the immutable release checkpoint. If
-        # either identity is inconclusive, fail closed.
-        deployed_sha = _deployed_runtime_sha()
-
+    # Never dispatch any public E2E until Render proves the current revision
+    # and immutable checkpoint identity, including after a main SHA advances.
+    deployed_sha = _deployed_runtime_sha()
     dispatch, reason = should_dispatch(main_sha, runs, deployed_sha=deployed_sha)
     print(f"Public E2E watchdog: {reason}")
     if not dispatch:
