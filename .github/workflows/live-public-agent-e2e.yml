@@ -53,6 +53,7 @@ jobs:
           BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
           BIONUCLEI_ANALYSIS_TIMEOUT_MS: "1200000"
           BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS: "240"
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/live_public_agent_e2e.py
       - name: Upload browser failure evidence
         if: failure()
