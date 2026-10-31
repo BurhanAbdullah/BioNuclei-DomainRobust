@@ -297,7 +297,10 @@ def main() -> None:
             comparison = requests.get(
                 "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/compare/"
                 f"{deployed_commit}...{expected_main_commit}",
-                headers={"Accept": "application/vnd.github+json"},
+                headers=github_api_headers(
+                    os.environ.get("GITHUB_TOKEN"),
+                    user_agent="bionuclei-live-public-agent-e2e",
+                ),
                 timeout=20,
             )
             state["render_main_comparison_http_status"] = comparison.status_code
