@@ -74,6 +74,14 @@ class RenderRuntimeParityTests(unittest.TestCase):
                 tokens = line.split()
                 if tokens[0].upper() not in {"COPY", "ADD"}:
                     continue
+                # A continued instruction can hide additional source operands on
+                # later lines. Fail closed rather than silently under-classifying
+                # files that are excluded from runtime parity.
+                if line.endswith("\\"):
+                    self.fail(
+                        f"{relative}:{line_number}: continued COPY/ADD instructions "
+                        "must be reviewed before excluding non-runtime paths"
+                    )
                 operands = [token for token in tokens[1:] if not token.startswith("--")]
                 if len(operands) < 2:
                     self.fail(f"{relative}:{line_number}: malformed COPY/ADD instruction")
