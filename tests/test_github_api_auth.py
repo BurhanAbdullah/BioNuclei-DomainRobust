@@ -34,6 +34,8 @@ def test_public_e2e_workflow_passes_read_only_token_only_to_the_harness() -> Non
     )
 
     assert workflow["permissions"]["contents"] == "read"
+    assert workflow["jobs"]["public-upload-to-agent"]["if"] == "github.ref == 'refs/heads/main'"
+    assert workflow["jobs"]["validate-harness"]["if"] == "github.event_name == 'pull_request'"
     assert e2e_step["env"]["GITHUB_TOKEN"] == "${{ github.token }}"
 
     e2e_source = (root / "scripts/live_public_agent_e2e.py").read_text(encoding="utf-8")
