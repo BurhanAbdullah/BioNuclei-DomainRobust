@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -98,6 +99,19 @@ def should_dispatch(
     )
 
 
+def _github_server_time(value: str | None) -> datetime | None:
+    """Parse GitHub's HTTP Date header as the authoritative API clock."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
 def _api_request(
     repo: str,
     path: str,
@@ -105,7 +119,8 @@ def _api_request(
     *,
     method: str = "GET",
     payload: dict[str, str] | None = None,
-) -> dict[str, object] | None:
+    include_server_time: bool = False,
+) -> dict[str, object] | tuple[dict[str, object] | None, datetime | None] | None:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(
         f"https://api.github.com/repos/{repo}/{path}",
@@ -119,9 +134,11 @@ def _api_request(
             **({"Content-Type": "application/json"} if body is not None else {}),
         },
     )
+    date_header: str | None = None
     try:
         with urlopen(request, timeout=20) as response:
             raw = response.read()
+            date_header = response.headers.get("Date") if getattr(response, "headers", None) else None
     except HTTPError as exc:
         # Do not print request headers or the token.
         detail = exc.read(2048).decode("utf-8", errors="replace")
@@ -129,11 +146,14 @@ def _api_request(
     except URLError as exc:
         raise RuntimeError(f"GitHub API request failed: {exc.reason}") from exc
 
-    if not raw:
-        return None
-    parsed = json.loads(raw.decode("utf-8"))
-    if not isinstance(parsed, dict):
-        raise RuntimeError("GitHub API returned an unexpected JSON payload")
+    parsed: dict[str, object] | None = None
+    if raw:
+        decoded = json.loads(raw.decode("utf-8"))
+        if not isinstance(decoded, dict):
+            raise RuntimeError("GitHub API returned an unexpected JSON payload")
+        parsed = decoded
+    if include_server_time:
+        return parsed, _github_server_time(date_header)
     return parsed
 
 
@@ -184,13 +204,20 @@ def main() -> int:
         return 2
 
     commit = _api_request(repo, "commits/main", token)
-    runs_payload = _api_request(
+    runs_result = _api_request(
         repo,
         f"actions/workflows/{WORKFLOW_FILE}/runs?branch=main&per_page=50",
         token,
+        include_server_time=True,
     )
-    if not commit or not runs_payload:
+    if not commit or not isinstance(runs_result, tuple):
         raise RuntimeError("GitHub API omitted the main commit or workflow-run payload")
+    runs_payload, github_now = runs_result
+    if not runs_payload:
+        raise RuntimeError("GitHub API omitted the workflow-run payload")
+    if github_now is None:
+        print("Public E2E watchdog: GitHub API server time is unavailable; refusing dispatch")
+        return 0
 
     main_sha = str(commit.get("sha", ""))
     runs = runs_payload.get("workflow_runs", [])
@@ -200,7 +227,7 @@ def main() -> int:
     # Never dispatch any public E2E until Render proves the current revision
     # and immutable checkpoint identity, including after a main SHA advances.
     deployed_sha = _deployed_runtime_sha()
-    dispatch, reason = should_dispatch(main_sha, runs, deployed_sha=deployed_sha)
+    dispatch, reason = should_dispatch(main_sha, runs, now=github_now, deployed_sha=deployed_sha)
     print(f"Public E2E watchdog: {reason}")
     if not dispatch:
         return 0
