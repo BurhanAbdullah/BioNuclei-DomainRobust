@@ -1,11 +1,15 @@
 from datetime import datetime, timezone
 import json
+import os
 import unittest
 from unittest.mock import patch
 
 from scripts.public_e2e_schedule_watchdog import (
     EXPECTED_CHECKPOINT_SHA256,
+    _api_request,
     _deployed_runtime_sha,
+    _github_server_time,
+    main,
     should_dispatch,
 )
 
@@ -15,6 +19,21 @@ class _HealthResponse:
 
     def __init__(self, payload):
         self.raw = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def read(self, size=-1):
+        return self.raw if size < 0 else self.raw[:size]
+
+
+class _APIResponse:
+    def __init__(self, payload, date_header=None):
+        self.raw = json.dumps(payload).encode("utf-8")
+        self.headers = {"Date": date_header} if date_header else {}
 
     def __enter__(self):
         return self
@@ -237,6 +256,76 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         )
         self.assertTrue(dispatch)
         self.assertIn("invalid", reason)
+
+
+    def test_github_server_time_parses_http_date_and_fails_closed(self):
+        self.assertEqual(
+            _github_server_time("Sun, 01 Nov 2026 09:14:25 GMT"),
+            datetime(2026, 11, 1, 9, 14, 25, tzinfo=timezone.utc),
+        )
+        self.assertIsNone(_github_server_time(None))
+        self.assertIsNone(_github_server_time("not-a-date"))
+
+    def test_api_request_returns_authoritative_server_time(self):
+        response = _APIResponse(
+            {"sha": self.main_sha},
+            "Sun, 01 Nov 2026 09:14:25 GMT",
+        )
+        with patch(
+            "scripts.public_e2e_schedule_watchdog.urlopen",
+            return_value=response,
+        ):
+            payload, server_now = _api_request(
+                "owner/repo",
+                "commits/main",
+                "test-token",
+                include_server_time=True,
+            )
+        self.assertEqual(payload, {"sha": self.main_sha})
+        self.assertEqual(
+            server_now,
+            datetime(2026, 11, 1, 9, 14, 25, tzinfo=timezone.utc),
+        )
+
+    def test_main_uses_github_server_time_for_freshness_decisions(self):
+        server_now = datetime(2026, 11, 1, 9, 14, 25, tzinfo=timezone.utc)
+        runs = [self.run_record(created_at="2026-11-01T07:39:00Z")]
+        with (
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "test-token"}),
+            patch(
+                "scripts.public_e2e_schedule_watchdog._api_request",
+                side_effect=[{"sha": self.main_sha}, ({"workflow_runs": runs}, server_now)],
+            ),
+            patch(
+                "scripts.public_e2e_schedule_watchdog._deployed_runtime_sha",
+                return_value=self.main_sha,
+            ),
+            patch(
+                "scripts.public_e2e_schedule_watchdog.should_dispatch",
+                return_value=(False, "test suppression"),
+            ) as decision,
+        ):
+            self.assertEqual(main(), 0)
+        decision.assert_called_once_with(
+            self.main_sha,
+            runs,
+            now=server_now,
+            deployed_sha=self.main_sha,
+        )
+
+    def test_main_fails_closed_when_github_server_time_is_missing(self):
+        with (
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "test-token"}),
+            patch(
+                "scripts.public_e2e_schedule_watchdog._api_request",
+                side_effect=[{"sha": self.main_sha}, ({"workflow_runs": []}, None)],
+            ),
+            patch("scripts.public_e2e_schedule_watchdog._deployed_runtime_sha") as deployed,
+            patch("scripts.public_e2e_schedule_watchdog.should_dispatch") as decision,
+        ):
+            self.assertEqual(main(), 0)
+        deployed.assert_not_called()
+        decision.assert_not_called()
 
 
 if __name__ == "__main__":
