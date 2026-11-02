@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from webapp import community_app
@@ -111,3 +112,13 @@ def test_completed_progress_only_reports_ready_with_completed_status(
     payload = response.json()
     assert payload["cleanup_status"] == "verified"
     assert payload["report_ready"] is True
+
+
+def test_render_result_retention_matches_public_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "render.yaml").read_text(encoding="utf-8"))
+    service = next(item for item in config["services"] if item["name"] == "bionuclei-community")
+    env = {item["key"]: item.get("value") for item in service["envVars"]}
+
+    assert int(env["BIONUCLEI_RESULT_RETENTION_HOURS"]) == 1
+    assert community_app.health()["result_retention_hours"] == 1
