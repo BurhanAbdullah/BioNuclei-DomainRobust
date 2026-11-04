@@ -74,6 +74,35 @@ def test_runtime_preflight_fails_closed_when_checkpoint_identity_is_missing() ->
     assert reason == "Render health does not verify the immutable release checkpoint"
 
 
+def test_main_records_fail_closed_runtime_mismatch_without_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/repo")
+    monkeypatch.setenv("GITHUB_SHA", MAIN_SHA)
+    monkeypatch.chdir(tmp_path)
+    requests: list[str] = []
+
+    def fake_request_json(url: str, timeout_seconds: int) -> dict[str, object]:
+        requests.append(url)
+        if url.startswith("https://api.github.com/"):
+            return {"sha": MAIN_SHA}
+        return healthy_runtime(render_git_commit=STALE_SHA)
+
+    monkeypatch.setattr(preflight, "_request_json", fake_request_json)
+
+    assert preflight.main() == 1
+    assert len(requests) == 2
+    payload = json.loads((tmp_path / "live-agent-e2e-failure.json").read_text(encoding="utf-8"))
+    assert payload["phase"] == "runtime_preflight"
+    assert "Render runtime SHA mismatch" in payload["reason"]
+    assert payload["public_upload_attempted"] is False
+    assert payload["guest_token_seen"] is False
+    assert payload["job_id_seen"] is False
+    assert payload["cleanup_attempted"] is False
+    assert payload["cleanup_verified"] is False
+
+
 def test_request_json_reads_complete_response(monkeypatch: pytest.MonkeyPatch) -> None:
     class Response:
         status = 200
