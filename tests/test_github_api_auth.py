@@ -73,9 +73,9 @@ def test_public_e2e_workflow_preflights_runtime_before_browser_dependencies() ->
 
     preflight_step = steps[preflight_index]
     assert preflight_step["run"] == "python scripts/check_public_e2e_runtime.py"
-    assert preflight_step["env"]["GITHUB_REPOSITORY"] == "\${{ github.repository }}"
-    assert preflight_step["env"]["GITHUB_SHA"] == "\${{ github.sha }}"
-    assert preflight_step["env"]["GITHUB_TOKEN"] == "\${{ github.token }}"
+    assert preflight_step["env"]["GITHUB_REPOSITORY"] == "$" + "{{ github.repository }}"
+    assert preflight_step["env"]["GITHUB_SHA"] == "$" + "{{ github.sha }}"
+    assert preflight_step["env"]["GITHUB_TOKEN"] == "$" + "{{ github.token }}"
 
     assert workflow["permissions"]["contents"] == "read"
     assert workflow["jobs"]["public-upload-to-agent"]["if"] == "github.ref == 'refs/heads/main'"
@@ -84,7 +84,7 @@ def test_public_e2e_workflow_preflights_runtime_before_browser_dependencies() ->
         step for step in steps
         if step.get("name") == "Exercise public upload and real scientific pipeline"
     )
-    assert e2e_step["env"]["GITHUB_TOKEN"] == "\${{ github.token }}"
+    assert e2e_step["env"]["GITHUB_TOKEN"] == "$" + "{{ github.token }}"
 
     e2e_source = (root / "scripts/live_public_agent_e2e.py").read_text(encoding="utf-8")
     assert e2e_source.count('os.environ.get("GITHUB_TOKEN")') == 2
