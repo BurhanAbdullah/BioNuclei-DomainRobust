@@ -19,8 +19,10 @@ from pathlib import Path
 
 try:
     from .github_api_auth import github_api_headers
+    from .e2e_health_state import clear_recovered_health_errors
 except ImportError:  # Running this file directly from the scripts directory.
     from github_api_auth import github_api_headers
+    from e2e_health_state import clear_recovered_health_errors
 
 import numpy as np
 import requests
@@ -240,6 +242,7 @@ def main() -> None:
                     attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
                     state["api_health_http_status"] = health_response.status_code
                     if health_response.status_code == 200:
+                        clear_recovered_health_errors(state)
                         attempt_record["result"] = "http_200"
                         health_attempts.append(attempt_record)
                         state["api_health_attempts"] = health_attempts
