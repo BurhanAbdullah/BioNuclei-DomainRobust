@@ -8,7 +8,13 @@ on:
     branches: ["main"]
     paths:
       - "webapp/**"
-      - "src/bionuclei/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "README.md"
+      - "configs/**"
+      - "render.yaml"
+      - "docs/RESEARCH_PROTOCOL.md"
+      - "docs/DATASETS.md"
       - "docs/bionuclei-app.html"
       - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-specialist-verification.js"
