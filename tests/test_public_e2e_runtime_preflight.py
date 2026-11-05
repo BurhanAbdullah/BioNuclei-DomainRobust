@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import check_public_e2e_runtime as preflight
 from scripts.check_public_e2e_runtime import revision_mismatch_reason, runtime_mismatch_reason
@@ -121,3 +123,25 @@ def test_request_json_reads_complete_response(monkeypatch: pytest.MonkeyPatch) -
 
     assert payload["sha"] == MAIN_SHA
     assert len(payload["padding"]) == 70000
+
+
+def test_render_build_inputs_trigger_main_public_e2e() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github/workflows/live-public-agent-e2e.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    push_paths = set(workflow["on"]["push"]["paths"])
+
+    # These files/directories are copied into the Render images and must
+    # trigger the public E2E when main changes them.
+    assert {
+        "webapp/**",
+        "src/**",
+        "pyproject.toml",
+        "README.md",
+        "configs/**",
+        "render.yaml",
+        "docs/RESEARCH_PROTOCOL.md",
+        "docs/DATASETS.md",
+    } <= push_paths
