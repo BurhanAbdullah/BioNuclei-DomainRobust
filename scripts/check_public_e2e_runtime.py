@@ -136,7 +136,7 @@ def _export_expected_main_sha(main_sha: str) -> None:
     github_env = os.environ.get("GITHUB_ENV")
     if github_env:
         with Path(github_env).open("a", encoding="utf-8") as handle:
-            handle.write(f"BIONUCLEI_EXPECTED_MAIN_SHA={main_sha}\\n")
+            handle.write(f"BIONUCLEI_EXPECTED_MAIN_SHA={main_sha}\n")
 
 
 def main() -> int:
