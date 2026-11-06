@@ -183,7 +183,7 @@ def test_export_expected_main_sha_to_github_env(monkeypatch: pytest.MonkeyPatch,
 
     preflight._export_expected_main_sha(MAIN_SHA)
 
-    assert github_env.read_text(encoding="utf-8") == f"BIONUCLEI_EXPECTED_MAIN_SHA={MAIN_SHA}\\n"
+    assert github_env.read_text(encoding="utf-8") == f"BIONUCLEI_EXPECTED_MAIN_SHA={MAIN_SHA}\n"
 
 
 def test_live_e2e_reuses_the_authenticated_preflight_sha() -> None:
