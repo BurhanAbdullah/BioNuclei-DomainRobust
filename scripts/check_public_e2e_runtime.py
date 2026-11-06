@@ -9,6 +9,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 try:
@@ -20,6 +21,8 @@ DEFAULT_REPOSITORY = "BurhanAbdullah/BioNuclei-DomainRobust"
 DEFAULT_API_BASE = "https://bionuclei-community-analyzer.onrender.com"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+RETRYABLE_GITHUB_HTTP_STATUS = {429, 500, 502, 503, 504}
+GITHUB_API_MAX_ATTEMPTS = 4
 
 
 def revision_mismatch_reason(tested_sha: str | None, main_sha: str | None) -> str | None:
@@ -85,6 +88,57 @@ def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
     return payload
 
 
+def _request_json_with_retry(
+    url: str,
+    timeout_seconds: int,
+    attempts: list[dict[str, object]],
+) -> dict[str, object]:
+    """Retry only transient GitHub API failures; never relax the runtime gate."""
+    is_github_api = url.startswith("https://api.github.com/")
+    max_attempts = GITHUB_API_MAX_ATTEMPTS if is_github_api else 1
+    for index in range(max_attempts):
+        started = time.monotonic()
+        try:
+            payload = _request_json(url, timeout_seconds)
+        except HTTPError as exc:
+            attempts.append({
+                "attempt": index + 1,
+                "error": type(exc).__name__,
+                "http_status": exc.code,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            })
+            if not is_github_api or exc.code not in RETRYABLE_GITHUB_HTTP_STATUS or index + 1 >= max_attempts:
+                raise
+        except (URLError, TimeoutError) as exc:
+            attempts.append({
+                "attempt": index + 1,
+                "error": type(exc).__name__,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            })
+            if not is_github_api or index + 1 >= max_attempts:
+                raise
+        else:
+            attempts.append({
+                "attempt": index + 1,
+                "http_status": 200,
+                "result": "http_200",
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            })
+            return payload
+        time.sleep(min(8, 2 ** index))
+    raise RuntimeError("GitHub API request exhausted its bounded retry budget")
+
+
+def _export_expected_main_sha(main_sha: str) -> None:
+    """Pass the authenticated, validated SHA to the next step in this workflow."""
+    if not SHA_RE.fullmatch(main_sha):
+        raise ValueError("Cannot export an invalid current-main SHA")
+    github_env = os.environ.get("GITHUB_ENV")
+    if github_env:
+        with Path(github_env).open("a", encoding="utf-8") as handle:
+            handle.write(f"BIONUCLEI_EXPECTED_MAIN_SHA={main_sha}\\n")
+
+
 def main() -> int:
     repository = os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPOSITORY)
     tested_sha = os.environ.get("GITHUB_SHA")
@@ -92,6 +146,7 @@ def main() -> int:
     main_sha: str | None = None
     health: dict[str, object] | None = None
     attempts: list[dict[str, object]] = []
+    github_api_attempts: list[dict[str, object]] = []
 
     def fail(reason: str) -> int:
         payload: dict[str, object] = {
@@ -105,6 +160,7 @@ def main() -> int:
             "checkpoint_available": health.get("checkpoint_available") if health else None,
             "checkpoint_verified": health.get("checkpoint_verified") if health else None,
             "checkpoint_sha256": health.get("checkpoint_sha256") if health else None,
+            "github_api_attempts": github_api_attempts,
             "api_health_attempts": attempts,
             "public_upload_attempted": False,
             "guest_token_seen": False,
@@ -121,9 +177,10 @@ def main() -> int:
         return 1
 
     try:
-        main_payload = _request_json(
+        main_payload = _request_json_with_retry(
             f"https://api.github.com/repos/{repository}/commits/main",
             timeout_seconds=10,
+            attempts=github_api_attempts,
         )
         value = main_payload.get("sha")
         main_sha = value if isinstance(value, str) else None
@@ -163,6 +220,11 @@ def main() -> int:
     reason = runtime_mismatch_reason(tested_sha, main_sha, health)
     if reason:
         return fail(reason)
+
+    try:
+        _export_expected_main_sha(main_sha)
+    except Exception as exc:
+        return fail(f"Could not pass the authenticated current-main SHA to the E2E step: {type(exc).__name__}")
 
     print(f"Render runtime preflight passed for current main {main_sha}; browser dependencies may be installed.")
     return 0
