@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 import yaml
@@ -123,6 +124,75 @@ def test_request_json_reads_complete_response(monkeypatch: pytest.MonkeyPatch) -
 
     assert payload["sha"] == MAIN_SHA
     assert len(payload["padding"]) == 70000
+
+
+def test_request_json_with_retry_recovers_from_github_504(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fake_request_json(url: str, timeout_seconds: int) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise HTTPError(url, 504, "Gateway Timeout", None, None)
+        return {"sha": MAIN_SHA}
+
+    monkeypatch.setattr(preflight, "_request_json", fake_request_json)
+    monkeypatch.setattr(preflight.time, "sleep", lambda _delay: None)
+    attempts: list[dict[str, object]] = []
+
+    payload = preflight._request_json_with_retry(
+        "https://api.github.com/repos/example/repo/commits/main",
+        timeout_seconds=10,
+        attempts=attempts,
+    )
+
+    assert payload["sha"] == MAIN_SHA
+    assert calls == 2
+    assert attempts[0]["http_status"] == 504
+    assert attempts[1]["http_status"] == 200
+
+
+def test_request_json_with_retry_does_not_retry_non_transient_github_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fail_forbidden(url: str, timeout_seconds: int) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise HTTPError(url, 403, "Forbidden", None, None)
+
+    monkeypatch.setattr(preflight, "_request_json", fail_forbidden)
+    monkeypatch.setattr(preflight.time, "sleep", lambda _delay: None)
+    attempts: list[dict[str, object]] = []
+
+    with pytest.raises(HTTPError):
+        preflight._request_json_with_retry(
+            "https://api.github.com/repos/example/repo/commits/main",
+            timeout_seconds=10,
+            attempts=attempts,
+        )
+
+    assert calls == 1
+    assert attempts[0]["http_status"] == 403
+
+
+def test_export_expected_main_sha_to_github_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    github_env = tmp_path / "github_env"
+    monkeypatch.setenv("GITHUB_ENV", str(github_env))
+
+    preflight._export_expected_main_sha(MAIN_SHA)
+
+    assert github_env.read_text(encoding="utf-8") == f"BIONUCLEI_EXPECTED_MAIN_SHA={MAIN_SHA}\\n"
+
+
+def test_live_e2e_reuses_the_authenticated_preflight_sha() -> None:
+    root = Path(__file__).resolve().parents[1]
+    e2e_source = (root / "scripts/live_public_agent_e2e.py").read_text(encoding="utf-8")
+
+    assert 'os.environ.get("BIONUCLEI_EXPECTED_MAIN_SHA", "")' in e2e_source
+    assert 'state["expected_main_commit_source"] = "authenticated_runtime_preflight"' in e2e_source
+    assert 'os.environ.get("GITHUB_ACTIONS") != "true"' in e2e_source
 
 
 def test_render_build_inputs_trigger_main_public_e2e() -> None:
