@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from .app import _checkpoint, _checkpoint_identity, _png_data_url
+from .app import _checkpoint_identity, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
@@ -83,7 +83,7 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
         )
     # Reject uploads before authentication, job creation, or persistent storage
     # when the configured model is not the immutable release checkpoint.
-    _checkpoint()
+    community_service._checkpoint()
     user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
