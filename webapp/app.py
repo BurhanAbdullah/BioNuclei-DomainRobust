@@ -62,9 +62,10 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
     expected = os.getenv("BIONUCLEI_CHECKPOINT_SHA256", RELEASE_CHECKPOINT_SHA256).strip().lower()
     if expected.startswith("sha256:"):
         expected = expected.removeprefix("sha256:")
-    if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
-        raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT_SHA256 must be a valid SHA-256 digest")
-    configured_release_matches = hmac.compare_digest(expected, RELEASE_CHECKPOINT_SHA256)
+    expected_is_sha256 = len(expected) == 64 and all(char in "0123456789abcdef" for char in expected)
+    configured_release_matches = expected_is_sha256 and hmac.compare_digest(
+        expected, RELEASE_CHECKPOINT_SHA256
+    )
 
     digest = hashlib.sha256()
     try:
