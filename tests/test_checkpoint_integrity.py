@@ -94,14 +94,23 @@ def test_missing_checkpoint_is_not_reported_healthy(tmp_path, monkeypatch):
         assert payload["checkpoint_sha256"] is None
 
 
-def test_invalid_expected_digest_fails_closed(tmp_path, monkeypatch):
-    _configure_checkpoint(tmp_path, monkeypatch, expected="not-a-sha256")
+def test_invalid_expected_digest_reports_available_unverified_checkpoint_and_fails_closed(tmp_path, monkeypatch):
+    path, actual = _configure_checkpoint(tmp_path, monkeypatch, expected="not-a-sha256")
+
+    identity_path, digest, verified = _checkpoint_identity()
+    assert identity_path == path.resolve()
+    assert digest == actual
+    assert verified is False
+
     with pytest.raises(HTTPException) as exc_info:
-        _checkpoint_identity()
+        _checkpoint()
     assert exc_info.value.status_code == 503
 
-    assert scientific_app.health()["status"] == "degraded"
-    assert community_app.health()["status"] == "degraded"
+    for payload in (scientific_app.health(), community_app.health()):
+        assert payload["status"] == "degraded"
+        assert payload["checkpoint_available"] is True
+        assert payload["checkpoint_verified"] is False
+        assert payload["checkpoint_sha256"] == actual
 
 
 def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverified(tmp_path, monkeypatch):
