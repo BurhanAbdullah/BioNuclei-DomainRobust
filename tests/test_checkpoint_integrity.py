@@ -4,6 +4,7 @@ import hashlib
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from webapp import app as scientific_app
 from webapp import community_app
@@ -101,3 +102,27 @@ def test_invalid_expected_digest_fails_closed(tmp_path, monkeypatch):
 
     assert scientific_app.health()["status"] == "degraded"
     assert community_app.health()["status"] == "degraded"
+
+
+def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverified(tmp_path, monkeypatch):
+    path = tmp_path / "untrusted-checkpoint.pt"
+    path.write_bytes(b"not the pinned release")
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", "0" * 64)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.delenv("BIONUCLEI_CHECKPOINT_SHA256", raising=False)
+
+    def unexpected_call(*_args, **_kwargs):
+        pytest.fail("unverified checkpoint must reject the upload before auth or job creation")
+
+    monkeypatch.setattr(community_app, "authenticate_optional", unexpected_call)
+    monkeypatch.setattr(community_app, "create_job", unexpected_call)
+
+    with TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            data={"research_consent": "false"},
+            files={"image": ("sample.tif", b"synthetic uint16 image", "image/tiff")},
+        )
+
+    assert response.status_code == 503
+    assert "does not match the expected release SHA-256" in response.json()["detail"]
