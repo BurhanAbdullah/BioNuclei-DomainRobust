@@ -177,6 +177,57 @@ def test_request_json_with_retry_does_not_retry_non_transient_github_errors(
     assert attempts[0]["http_status"] == 403
 
 
+def test_request_json_with_retry_recovers_from_render_health_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fail_five_times(url: str, timeout_seconds: int) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        if calls <= 5:
+            raise TimeoutError("Render cold start")
+        return healthy_runtime()
+
+    monkeypatch.setattr(preflight, "_request_json", fail_five_times)
+    monkeypatch.setattr(preflight.time, "sleep", lambda _delay: None)
+    attempts: list[dict[str, object]] = []
+
+    payload = preflight._request_json_with_retry(
+        "https://bionuclei-community-analyzer.onrender.com/health",
+        timeout_seconds=10,
+        attempts=attempts,
+    )
+
+    assert payload["status"] == "ok"
+    assert calls == 6
+    assert attempts[0]["error"] == "TimeoutError"
+    assert attempts[-1]["result"] == "http_200"
+
+
+def test_request_json_with_retry_does_not_retry_non_transient_render_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fail_not_found(url: str, timeout_seconds: int) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise HTTPError(url, 404, "Not Found", None, None)
+
+    monkeypatch.setattr(preflight, "_request_json", fail_not_found)
+    monkeypatch.setattr(preflight.time, "sleep", lambda _delay: None)
+    attempts: list[dict[str, object]] = []
+
+    with pytest.raises(HTTPError):
+        preflight._request_json_with_retry(
+            "https://bionuclei-community-analyzer.onrender.com/health",
+            timeout_seconds=10,
+            attempts=attempts,
+        )
+
+    assert calls == 1
+    assert attempts[0]["http_status"] == 404
+
+
 def test_export_expected_main_sha_to_github_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     github_env = tmp_path / "github_env"
     monkeypatch.setenv("GITHUB_ENV", str(github_env))
