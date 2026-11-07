@@ -20,9 +20,11 @@ from pathlib import Path
 try:
     from .github_api_auth import github_api_headers
     from .e2e_health_state import clear_recovered_health_errors
+    from .render_runtime_parity import is_non_runtime_path
 except ImportError:  # Running this file directly from the scripts directory.
     from github_api_auth import github_api_headers
     from e2e_health_state import clear_recovered_health_errors
+    from render_runtime_parity import is_non_runtime_path
 
 import numpy as np
 import requests
@@ -171,18 +173,7 @@ def resolve_result_reference(payload: dict[str, object], reference: str) -> tupl
     return True, value
 
 
-NON_RUNTIME_PATHS = {
-    "scripts/live_public_agent_e2e.py",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-}
-NON_RUNTIME_PREFIXES = (".github/workflows/", "tests/", "docs/")
 
-
-def is_non_runtime_path(path: str) -> bool:
-    """Return true only for explicit test/documentation paths that do not ship to Render."""
-    return path in NON_RUNTIME_PATHS or path.startswith(NON_RUNTIME_PREFIXES)
 
 
 def read_zip_json(archive, member: str) -> dict[str, object]:
