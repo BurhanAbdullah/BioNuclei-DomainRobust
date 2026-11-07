@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
+
+import yaml
 
 import pytest
 from fastapi import HTTPException
@@ -146,3 +149,19 @@ def test_root_and_health_report_configured_result_retention(monkeypatch):
     assert root_payload["result_retention_hours"] == 24
     assert "expire after 24 hours" in root_payload["retention"]
     assert health_payload["result_retention_hours"] == 24
+
+
+def test_render_config_does_not_advertise_unimplemented_research_retention():
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "render.yaml").read_text(encoding="utf-8"))
+    community = next(
+        service for service in config["services"]
+        if service.get("name") == "bionuclei-community"
+    )
+    env_vars = {
+        item["key"]: item.get("value")
+        for item in community.get("envVars", [])
+    }
+
+    assert "BIONUCLEI_RESEARCH_RETENTION_DAYS" not in env_vars
+    assert env_vars["BIONUCLEI_RESULT_RETENTION_HOURS"] == "24"
