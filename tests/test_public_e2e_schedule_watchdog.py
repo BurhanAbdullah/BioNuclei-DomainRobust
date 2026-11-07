@@ -328,5 +328,44 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
         decision.assert_not_called()
 
 
+    def test_main_never_dispatches_when_render_is_stale_or_unverified(self):
+        server_now = datetime(2026, 11, 1, 9, 14, 25, tzinfo=timezone.utc)
+        runs = [
+            self.run_record(
+                sha="b" * 40,
+                created_at="2026-11-01T07:39:00Z",
+            )
+        ]
+        for deployed_sha in (None, "b" * 40):
+            with self.subTest(deployed_sha=deployed_sha):
+                with (
+                    patch.dict(
+                        os.environ,
+                        {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "test-token"},
+                    ),
+                    patch(
+                        "scripts.public_e2e_schedule_watchdog._api_request",
+                        side_effect=[
+                            {"sha": self.main_sha},
+                            ({"workflow_runs": runs}, server_now),
+                        ],
+                    ) as api_request,
+                    patch(
+                        "scripts.public_e2e_schedule_watchdog._deployed_runtime_sha",
+                        return_value=deployed_sha,
+                    ),
+                ):
+                    self.assertEqual(main(), 0)
+
+                self.assertEqual(api_request.call_count, 2)
+                self.assertFalse(
+                    any(
+                        len(call.args) > 1 and str(call.args[1]).endswith("/dispatches")
+                        for call in api_request.call_args_list
+                    )
+                )
+
+
+
 if __name__ == "__main__":
     unittest.main()
