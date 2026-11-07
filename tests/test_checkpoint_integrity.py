@@ -135,3 +135,14 @@ def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverifie
 
     assert response.status_code == 503
     assert "does not match the expected release SHA-256" in response.json()["detail"]
+
+
+def test_root_and_health_report_configured_result_retention(monkeypatch):
+    monkeypatch.setattr(community_app.community_service, "DEFAULT_RESULT_RETENTION_HOURS", 24)
+
+    root_payload = community_app.root()
+    health_payload = community_app.health()
+
+    assert root_payload["result_retention_hours"] == 24
+    assert "expire after 24 hours" in root_payload["retention"]
+    assert health_payload["result_retention_hours"] == 24
