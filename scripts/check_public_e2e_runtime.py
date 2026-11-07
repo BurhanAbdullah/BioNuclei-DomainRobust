@@ -22,7 +22,9 @@ DEFAULT_API_BASE = "https://bionuclei-community-analyzer.onrender.com"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 RETRYABLE_GITHUB_HTTP_STATUS = {429, 500, 502, 503, 504}
+RETRYABLE_RENDER_HTTP_STATUS = {429, 500, 502, 503, 504}
 GITHUB_API_MAX_ATTEMPTS = 4
+RENDER_HEALTH_MAX_ATTEMPTS = 8
 
 
 def revision_mismatch_reason(tested_sha: str | None, main_sha: str | None) -> str | None:
@@ -93,9 +95,10 @@ def _request_json_with_retry(
     timeout_seconds: int,
     attempts: list[dict[str, object]],
 ) -> dict[str, object]:
-    """Retry only transient GitHub API failures; never relax the runtime gate."""
+    """Retry bounded transient GitHub API and Render health failures; keep the gate strict."""
     is_github_api = url.startswith("https://api.github.com/")
-    max_attempts = GITHUB_API_MAX_ATTEMPTS if is_github_api else 1
+    max_attempts = GITHUB_API_MAX_ATTEMPTS if is_github_api else RENDER_HEALTH_MAX_ATTEMPTS
+    retryable_statuses = RETRYABLE_GITHUB_HTTP_STATUS if is_github_api else RETRYABLE_RENDER_HTTP_STATUS
     for index in range(max_attempts):
         started = time.monotonic()
         try:
@@ -107,7 +110,7 @@ def _request_json_with_retry(
                 "http_status": exc.code,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
             })
-            if not is_github_api or exc.code not in RETRYABLE_GITHUB_HTTP_STATUS or index + 1 >= max_attempts:
+            if exc.code not in retryable_statuses or index + 1 >= max_attempts:
                 raise
         except (URLError, TimeoutError) as exc:
             attempts.append({
@@ -115,7 +118,7 @@ def _request_json_with_retry(
                 "error": type(exc).__name__,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
             })
-            if not is_github_api or index + 1 >= max_attempts:
+            if index + 1 >= max_attempts:
                 raise
         else:
             attempts.append({
