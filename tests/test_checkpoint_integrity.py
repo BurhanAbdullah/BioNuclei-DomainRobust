@@ -145,6 +145,29 @@ def test_checkpoint_digest_cache_reuses_verified_file_and_rejects_replacement(tm
     assert exc_info.value.status_code == 503
 
 
+def test_community_startup_primes_checkpoint_digest_cache_before_health_requests(tmp_path, monkeypatch):
+    _path, actual = _configure_checkpoint(tmp_path, monkeypatch)
+    hash_calls = 0
+    original_hash = scientific_app._hash_checkpoint
+
+    def counted_hash(stream):
+        nonlocal hash_calls
+        hash_calls += 1
+        return original_hash(stream)
+
+    monkeypatch.setattr(scientific_app, "_hash_checkpoint", counted_hash)
+
+    with TestClient(community_app.app) as client:
+        first = client.get("/health")
+        second = client.get("/health")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["checkpoint_verified"] is True
+    assert second.json()["checkpoint_sha256"] == actual
+    assert hash_calls == 1
+
+
 def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverified(tmp_path, monkeypatch):
     path = tmp_path / "untrusted-checkpoint.pt"
     path.write_bytes(b"not the pinned release")

@@ -8,6 +8,7 @@ Run locally with:
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import base64
 import hashlib
 import hmac
@@ -31,10 +32,22 @@ from bionuclei.data import decode_instance_mask
 from bionuclei.inference import evaluate, predict
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 
+@asynccontextmanager
+async def _checkpoint_lifespan(_app: FastAPI):
+    # Hash the large release artifact before health probes begin. Missing or
+    # mismatched files remain visible as degraded health and fail-closed inference.
+    try:
+        _checkpoint_identity()
+    except HTTPException:
+        pass
+    yield
+
+
 app = FastAPI(
     title="BioNuclei Web API",
     version="0.1.0",
     description="HTTP adapter for deterministic BioNuclei bioimage-analysis operations.",
+    lifespan=_checkpoint_lifespan,
 )
 
 allowed_origins = [origin.strip() for origin in os.getenv("BIONUCLEI_ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
