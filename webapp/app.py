@@ -14,7 +14,9 @@ import hmac
 import io
 import json
 import os
+import stat
 import tempfile
+import threading
 from pathlib import Path
 from typing import Annotated
 
@@ -49,9 +51,35 @@ MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1
 
 RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
+# The release checkpoint is approximately 3 GB. Cache its digest only for the
+# exact filesystem identity that was hashed; every health/inference check still
+# opens the path and compares descriptor + path metadata to detect replacement
+# or in-place modification without rereading unchanged checkpoint bytes.
+_CHECKPOINT_CACHE_LOCK = threading.Lock()
+_CHECKPOINT_CACHE: tuple[str, tuple[int, int, int, int, int], str] | None = None
+
+
+def _checkpoint_stat_key(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _hash_checkpoint(stream) -> str:
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
 
 def _checkpoint_identity() -> tuple[Path, str, bool]:
     """Return the actual checkpoint digest and whether it matches the pinned release."""
+    global _CHECKPOINT_CACHE
+
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
     if not raw:
         raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT is not configured on this server")
@@ -67,14 +95,36 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
         expected, RELEASE_CHECKPOINT_SHA256
     )
 
-    digest = hashlib.sha256()
     try:
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
+        with _CHECKPOINT_CACHE_LOCK:
+            with path.open("rb") as stream:
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode):
+                    raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
+                identity = _checkpoint_stat_key(before)
+                cached = _CHECKPOINT_CACHE
+                cache_hit = cached is not None and cached[0] == str(path) and cached[1] == identity
+                actual = cached[2] if cache_hit else _hash_checkpoint(stream)
+
+                # Verify that neither the opened inode nor the path changed while
+                # checking it. A replacement or in-place write invalidates the
+                # cache and fails closed rather than accepting a stale digest.
+                after = os.fstat(stream.fileno())
+                current_path = path.stat()
+                if identity != _checkpoint_stat_key(after) or identity != _checkpoint_stat_key(current_path):
+                    _CHECKPOINT_CACHE = None
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Configured BioNuclei checkpoint changed while being verified",
+                    )
+                if not cache_hit:
+                    _CHECKPOINT_CACHE = (str(path), identity, actual)
+    except HTTPException:
+        raise
     except OSError as exc:
+        _CHECKPOINT_CACHE = None
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
-    actual = digest.hexdigest()
+
     verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
     return path, actual, verified
 

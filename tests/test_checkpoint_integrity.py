@@ -113,6 +113,38 @@ def test_invalid_expected_digest_reports_available_unverified_checkpoint_and_fai
         assert payload["checkpoint_sha256"] == actual
 
 
+def test_checkpoint_digest_cache_reuses_verified_file_and_rejects_replacement(tmp_path, monkeypatch):
+    path, actual = _configure_checkpoint(tmp_path, monkeypatch)
+    hash_calls = 0
+    original_hash = scientific_app._hash_checkpoint
+
+    def counted_hash(stream):
+        nonlocal hash_calls
+        hash_calls += 1
+        return original_hash(stream)
+
+    monkeypatch.setattr(scientific_app, "_hash_checkpoint", counted_hash)
+
+    assert scientific_app.health()["checkpoint_verified"] is True
+    for _ in range(3):
+        assert community_app.health()["checkpoint_verified"] is True
+    assert hash_calls == 1
+
+    replacement = tmp_path / "replacement.pt"
+    replacement.write_bytes(b"X" * path.stat().st_size)
+    replacement.replace(path)
+
+    payload = community_app.health()
+    assert payload["checkpoint_available"] is True
+    assert payload["checkpoint_verified"] is False
+    assert payload["checkpoint_sha256"] != actual
+    assert hash_calls == 2
+
+    with pytest.raises(HTTPException) as exc_info:
+        _checkpoint()
+    assert exc_info.value.status_code == 503
+
+
 def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverified(tmp_path, monkeypatch):
     path = tmp_path / "untrusted-checkpoint.pt"
     path.write_bytes(b"not the pinned release")
