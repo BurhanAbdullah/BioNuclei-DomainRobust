@@ -277,6 +277,7 @@ def main() -> None:
                         state["api_health_attempts"] = health_attempts
                         # A successful response supersedes any earlier timeout.
                         state.pop("api_health_request_error", None)
+                        state.pop("api_health_body", None)
                         break
                     attempt_record["body_excerpt"] = health_response.text[:240]
                     state["api_health_body"] = health_response.text[:240]
