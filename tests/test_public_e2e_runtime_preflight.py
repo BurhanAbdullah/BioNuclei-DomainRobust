@@ -28,6 +28,65 @@ def healthy_runtime(**overrides: object) -> dict[str, object]:
     }
 
 
+def test_warm_render_service_uses_a_long_root_timeout_before_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def fake_request_json(url: str, timeout_seconds: int) -> dict[str, object]:
+        calls.append((url, timeout_seconds))
+        return {"service": "bionuclei-community-analyzer", "status": "online"}
+
+    monkeypatch.setattr(preflight, "_request_json", fake_request_json)
+    attempts: list[dict[str, object]] = []
+
+    preflight._warm_render_service("https://example.test", attempts)
+
+    assert calls == [("https://example.test/", 90)]
+    assert attempts[0]["result"] == "root_warmup_complete"
+    assert attempts[0]["service"] == "bionuclei-community-analyzer"
+
+
+def test_warm_render_service_fails_closed_on_unexpected_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        preflight,
+        "_request_json",
+        lambda _url, timeout_seconds: {"service": "unexpected", "status": "online"},
+    )
+    attempts: list[dict[str, object]] = []
+
+    with pytest.raises(RuntimeError, match="expected online community analyzer"):
+        preflight._warm_render_service("https://example.test", attempts)
+
+    assert attempts[0]["error"] == "UnexpectedRootPayload"
+
+
+def test_main_fails_closed_when_render_root_warmup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/repo")
+    monkeypatch.setenv("GITHUB_SHA", MAIN_SHA)
+    monkeypatch.chdir(tmp_path)
+    requests: list[str] = []
+
+    def fail_root_warmup(url: str, timeout_seconds: int) -> dict[str, object]:
+        requests.append(url)
+        if url.startswith("https://api.github.com/"):
+            return {"sha": MAIN_SHA}
+        raise TimeoutError("Render cold start")
+
+    monkeypatch.setattr(preflight, "_request_json", fail_root_warmup)
+
+    assert preflight.main() == 1
+    assert len(requests) == 3
+    assert requests[1].endswith("/")
+    assert requests[2].endswith("/health")
+    assert requests[1].endswith("/")
+    payload = json.loads((tmp_path / "live-agent-e2e-failure.json").read_text(encoding="utf-8"))
+    assert payload["api_root_warmup_attempts"][0]["error"] == "TimeoutError"
+    assert payload["api_health_attempts"] == []
+    assert payload["public_upload_attempted"] is False
+
+
 def test_runtime_preflight_accepts_only_exact_current_main() -> None:
     assert revision_mismatch_reason(MAIN_SHA, MAIN_SHA) is None
     assert runtime_mismatch_reason(MAIN_SHA, MAIN_SHA, healthy_runtime()) is None
@@ -90,6 +149,8 @@ def test_main_records_fail_closed_runtime_mismatch_without_upload(
         requests.append(url)
         if url.startswith("https://api.github.com/"):
             return {"sha": MAIN_SHA}
+        if url.endswith("/"):
+            return {"service": "bionuclei-community-analyzer", "status": "online"}
         return healthy_runtime(render_git_commit=STALE_SHA)
 
     monkeypatch.setattr(preflight, "_request_json", fake_request_json)
