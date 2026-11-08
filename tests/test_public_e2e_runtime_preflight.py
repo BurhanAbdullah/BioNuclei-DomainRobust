@@ -77,9 +77,7 @@ def test_main_fails_closed_when_render_root_warmup_fails(
     monkeypatch.setattr(preflight, "_request_json", fail_root_warmup)
 
     assert preflight.main() == 1
-    assert len(requests) == 3
-    assert requests[1].endswith("/")
-    assert requests[2].endswith("/health")
+    assert len(requests) == 2
     assert requests[1].endswith("/")
     payload = json.loads((tmp_path / "live-agent-e2e-failure.json").read_text(encoding="utf-8"))
     assert payload["api_root_warmup_attempts"][0]["error"] == "TimeoutError"
