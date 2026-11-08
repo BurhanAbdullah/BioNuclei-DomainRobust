@@ -34,6 +34,21 @@ API_BASE = os.environ.get(
 
 EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "1200000"))
+HEALTH_READINESS_BUDGET_SECONDS = 119.0
+HEALTH_CONNECT_TIMEOUT_SECONDS = 10.0
+HEALTH_READ_TIMEOUT_CAP_SECONDS = 90.0
+
+
+def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
+    """Allow a real Render cold start without exceeding the remaining readiness budget."""
+    remaining = float(remaining_seconds)
+    if remaining <= 0:
+        raise ValueError("health readiness budget is exhausted")
+    connect_timeout = min(HEALTH_CONNECT_TIMEOUT_SECONDS, remaining / 2.0)
+    read_timeout = min(HEALTH_READ_TIMEOUT_CAP_SECONDS, remaining - connect_timeout)
+    if connect_timeout <= 0 or read_timeout <= 0:
+        raise ValueError("health request timeout budget must remain positive")
+    return connect_timeout, read_timeout
 
 
 def build_uint16_fixture(path: Path) -> str:
@@ -224,15 +239,22 @@ def main() -> None:
             # failure to the newly merged implementation.
             health_response = None
             health_attempts: list[dict[str, object]] = []
-            # Render cold starts can outlast a short three-request probe. Give the
-            # actual API a bounded 119-second readiness window, recording sanitized
-            # diagnostics for every attempt. This never substitutes a fake response
-            # and still fails closed if the service is not genuinely healthy.
-            for attempt in range(8):
+            # Render cold starts can exceed 59 seconds. Keep one monotonic overall
+            # budget, but let an individual read wait long enough for the process to
+            # start; repeated 10-second reads can abandon every cold-start attempt.
+            deadline = time.monotonic() + HEALTH_READINESS_BUDGET_SECONDS
+            attempt = 0
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
                 attempt_started = time.monotonic()
                 attempt_record: dict[str, object] = {"attempt": attempt + 1}
                 try:
-                    health_response = requests.get(f"{API_BASE}/health", timeout=10)
+                    health_response = requests.get(
+                        f"{API_BASE}/health",
+                        timeout=_health_request_timeout(remaining),
+                    )
                     attempt_record["http_status"] = health_response.status_code
                     attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
                     state["api_health_http_status"] = health_response.status_code
@@ -240,6 +262,8 @@ def main() -> None:
                         attempt_record["result"] = "http_200"
                         health_attempts.append(attempt_record)
                         state["api_health_attempts"] = health_attempts
+                        # A successful response supersedes any earlier timeout.
+                        state.pop("api_health_request_error", None)
                         break
                     attempt_record["body_excerpt"] = health_response.text[:240]
                     state["api_health_body"] = health_response.text[:240]
@@ -249,10 +273,14 @@ def main() -> None:
                     state["api_health_request_error"] = type(exc).__name__
                 health_attempts.append(attempt_record)
                 state["api_health_attempts"] = health_attempts
-                if attempt < 7:
-                    delay = min(8, 2 ** attempt)
-                    attempt_record["retry_delay_seconds"] = delay
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                delay = min(8, 2 ** min(attempt, 3), remaining)
+                if delay > 0:
+                    attempt_record["retry_delay_seconds"] = round(delay, 3)
                     time.sleep(delay)
+                attempt += 1
             require(
                 health_response is not None and health_response.status_code == 200,
                 f"Public API health check failed after {len(health_attempts)} attempts: "
