@@ -55,6 +55,7 @@ def test_e2e_health_probe_waits_for_cold_start_within_one_total_budget() -> None
     assert "timeout=_health_request_timeout(remaining)" in script
     assert "_health_response_within_budget(response_completed_at, deadline)" in script
     assert 'state.pop("api_health_request_error", None)' in script
+    assert 'state.pop("api_health_body", None)' in script
 
     tree = ast.parse(script)
     helper = next(
