@@ -25,6 +25,7 @@ RETRYABLE_GITHUB_HTTP_STATUS = {429, 500, 502, 503, 504}
 RETRYABLE_RENDER_HTTP_STATUS = {429, 500, 502, 503, 504}
 GITHUB_API_MAX_ATTEMPTS = 4
 RENDER_HEALTH_MAX_ATTEMPTS = 8
+RENDER_ROOT_WARMUP_TIMEOUT_SECONDS = 90
 
 
 def revision_mismatch_reason(tested_sha: str | None, main_sha: str | None) -> str | None:
@@ -90,6 +91,40 @@ def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
     return payload
 
 
+def _warm_render_service(api_base: str, attempts: list[dict[str, object]]) -> None:
+    """Wake a slow Render instance before the strict, short health verification."""
+    started = time.monotonic()
+    try:
+        payload = _request_json(
+            f"{api_base}/",
+            timeout_seconds=RENDER_ROOT_WARMUP_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        attempts.append({
+            "error": type(exc).__name__,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        })
+        raise
+
+    service = payload.get("service")
+    status = payload.get("status")
+    if service != "bionuclei-community-analyzer" or status != "online":
+        attempts.append({
+            "error": "UnexpectedRootPayload",
+            "service": service,
+            "status": status,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        })
+        raise RuntimeError("Render root did not identify the expected online community analyzer")
+
+    attempts.append({
+        "http_status": 200,
+        "result": "root_warmup_complete",
+        "service": service,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+    })
+
+
 def _request_json_with_retry(
     url: str,
     timeout_seconds: int,
@@ -149,6 +184,7 @@ def main() -> int:
     main_sha: str | None = None
     health: dict[str, object] | None = None
     attempts: list[dict[str, object]] = []
+    root_warmup_attempts: list[dict[str, object]] = []
     github_api_attempts: list[dict[str, object]] = []
 
     def fail(reason: str) -> int:
@@ -164,6 +200,7 @@ def main() -> int:
             "checkpoint_verified": health.get("checkpoint_verified") if health else None,
             "checkpoint_sha256": health.get("checkpoint_sha256") if health else None,
             "github_api_attempts": github_api_attempts,
+            "api_root_warmup_attempts": root_warmup_attempts,
             "api_health_attempts": attempts,
             "public_upload_attempted": False,
             "guest_token_seen": False,
@@ -193,6 +230,11 @@ def main() -> int:
     reason = revision_mismatch_reason(tested_sha, main_sha)
     if reason:
         return fail(reason)
+
+    try:
+        _warm_render_service(api_base, root_warmup_attempts)
+    except Exception as exc:
+        return fail(f"Render root warm-up failed: {type(exc).__name__}")
 
     last_error: str | None = None
     for attempt in range(8):
