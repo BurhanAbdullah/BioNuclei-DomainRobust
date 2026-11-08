@@ -51,6 +51,11 @@ def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
     return connect_timeout, read_timeout
 
 
+def _health_response_within_budget(completed_at: float, deadline: float) -> bool:
+    """Accept a health response only if it completed before the monotonic deadline."""
+    return completed_at <= deadline
+
+
 def build_uint16_fixture(path: Path) -> str:
     """Create a deterministic, microscopy-like 512x512 uint16 TIFF with a 65535 sentinel."""
     image = np.full((512, 512), 512, dtype=np.uint16)
@@ -255,9 +260,17 @@ def main() -> None:
                         f"{API_BASE}/health",
                         timeout=_health_request_timeout(remaining),
                     )
+                    response_completed_at = time.monotonic()
                     attempt_record["http_status"] = health_response.status_code
-                    attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
+                    attempt_record["elapsed_seconds"] = round(response_completed_at - attempt_started, 3)
                     state["api_health_http_status"] = health_response.status_code
+                    if not _health_response_within_budget(response_completed_at, deadline):
+                        attempt_record["error"] = "ReadinessBudgetExceeded"
+                        health_attempts.append(attempt_record)
+                        state["api_health_attempts"] = health_attempts
+                        state["api_health_request_error"] = "ReadinessBudgetExceeded"
+                        health_response = None
+                        break
                     if health_response.status_code == 200:
                         attempt_record["result"] = "http_200"
                         health_attempts.append(attempt_record)
@@ -283,8 +296,9 @@ def main() -> None:
                 attempt += 1
             require(
                 health_response is not None and health_response.status_code == 200,
-                f"Public API health check failed after {len(health_attempts)} attempts: "
-                f"HTTP {state.get('api_health_http_status')!r}",
+                f"Public API health check failed within {HEALTH_READINESS_BUDGET_SECONDS:.0f}s after "
+                f"{len(health_attempts)} attempts: HTTP {state.get('api_health_http_status')!r}, "
+                f"request_error={state.get('api_health_request_error')!r}",
             )
             health = health_response.json()
             state["render_git_commit"] = health.get("render_git_commit")
