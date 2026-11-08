@@ -20,3 +20,13 @@ def test_render_root_probe_allows_bounded_cold_start_without_weakening_health_ti
     assert "--max-time 90" in root_probe["run"]
     assert "--retry 1" in root_probe["run"]
     assert "--max-time 20" in health_probe["run"]
+
+
+def test_live_public_e2e_upload_job_is_main_only() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load(
+        (root / ".github/workflows/live-public-agent-e2e.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert workflow["jobs"]["public-upload-to-agent"]["if"] == "github.ref == 'refs/heads/main'"
