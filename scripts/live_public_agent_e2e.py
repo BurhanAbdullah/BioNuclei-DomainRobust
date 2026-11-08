@@ -31,6 +31,8 @@ API_BASE = os.environ.get(
     "BIONUCLEI_PUBLIC_API_URL",
     "https://bionuclei-community-analyzer.onrender.com",
 ).rstrip("/")
+
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "1200000"))
 
 
@@ -262,6 +264,12 @@ def main() -> None:
             state["checkpoint_available"] = health.get("checkpoint_available")
             require(health.get("status") == "ok" and health.get("checkpoint_available") is True,
                     f"Public API is not analysis-ready: status={health.get('status')!r}, checkpoint_available={health.get('checkpoint_available')!r}")
+            state["checkpoint_verified"] = health.get("checkpoint_verified")
+            state["checkpoint_sha256"] = health.get("checkpoint_sha256")
+            require(health.get("checkpoint_verified") is True,
+                    "Public API did not verify the immutable release checkpoint")
+            require(health.get("checkpoint_sha256") == EXPECTED_CHECKPOINT_SHA256,
+                    "Public API checkpoint digest does not match the pinned release")
             deployed_commit = str(health.get("render_git_commit") or "")
             require(bool(re.fullmatch(r"[0-9a-f]{40}", deployed_commit)),
                     f"Render health did not expose a valid deployed Git commit: {deployed_commit!r}")
