@@ -30,3 +30,12 @@ def test_live_public_e2e_upload_job_is_main_only() -> None:
         )
     )
     assert workflow["jobs"]["public-upload-to-agent"]["if"] == "github.ref == 'refs/heads/main'"
+
+def test_live_public_e2e_requires_verified_pinned_checkpoint_health() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts/live_public_agent_e2e.py").read_text(encoding="utf-8")
+    assert "checkpoint_verified" in script
+    assert "checkpoint_sha256" in script
+    assert "health.get(\"checkpoint_verified\") is True" in script
+    assert "health.get(\"checkpoint_sha256\") == EXPECTED_CHECKPOINT_SHA256" in script
+    assert "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92" in script
