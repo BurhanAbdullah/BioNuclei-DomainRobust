@@ -162,7 +162,9 @@ jobs:
       - name: Check service root
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --retry 5 --retry-delay 3 \
+          # Render cold starts have taken about 59 seconds; allow a bounded
+          # warm-up window on this idempotent root probe before one retry.
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 90 --retry 1 --retry-delay 3 \
             https://bionuclei-community-analyzer.onrender.com/ > /tmp/root.json
           grep -q '"status":"online"' /tmp/root.json
           grep -q 'guest sessions' /tmp/root.json || grep -q 'guest sessions use an ephemeral job token' /tmp/root.json
