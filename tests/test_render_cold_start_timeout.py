@@ -50,7 +50,7 @@ def test_e2e_health_probe_waits_for_cold_start_within_one_total_budget() -> None
     script_path = root / "scripts/live_public_agent_e2e.py"
     script = script_path.read_text(encoding="utf-8")
 
-    assert "HEALTH_READINESS_BUDGET_SECONDS = 119.0" in script
+    assert "HEALTH_READINESS_BUDGET_SECONDS = 179.0" in script
     assert "deadline = time.monotonic() + HEALTH_READINESS_BUDGET_SECONDS" in script
     assert "timeout=_health_request_timeout(remaining)" in script
     assert "_health_response_within_budget(response_completed_at, deadline)" in script
@@ -68,18 +68,20 @@ def test_e2e_health_probe_waits_for_cold_start_within_one_total_budget() -> None
     )
     namespace = {
         "HEALTH_CONNECT_TIMEOUT_SECONDS": 10.0,
-        "HEALTH_READ_TIMEOUT_CAP_SECONDS": 90.0,
+        "HEALTH_READ_TIMEOUT_CAP_SECONDS": 150.0,
     }
     isolated = ast.Module(body=[helper, deadline_helper], type_ignores=[])
     exec(compile(isolated, str(script_path), "exec"), namespace)
     timeout_for = namespace["_health_request_timeout"]
     within_budget = namespace["_health_response_within_budget"]
 
-    assert timeout_for(119.0) == (10.0, 90.0)
+    assert timeout_for(179.0) == (10.0, 150.0)
+    # The observed Render cold-start probe took 134 seconds.
+    assert timeout_for(134.0) == (10.0, 124.0)
     assert timeout_for(30.0) == (10.0, 20.0)
     assert sum(timeout_for(5.0)) <= 5.0
-    assert within_budget(118.999, 119.0) is True
-    assert within_budget(119.0, 119.0) is True
-    assert within_budget(119.001, 119.0) is False
+    assert within_budget(178.999, 179.0) is True
+    assert within_budget(179.0, 179.0) is True
+    assert within_budget(179.001, 179.0) is False
     with pytest.raises(ValueError, match="budget is exhausted"):
         timeout_for(0.0)
