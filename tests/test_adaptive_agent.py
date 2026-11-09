@@ -47,6 +47,8 @@ def test_adaptive_plan_fails_closed_when_checkpoint_is_unavailable(tmp_path: Pat
 
 
 def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path: Path, monkeypatch) -> None:
+    import gc
+    import weakref
     import torch
     import bionuclei.inference
 
@@ -54,6 +56,15 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     image[120:392, 120:392] = 8192
     path = tmp_path / "large.tif"
     tifffile.imwrite(path, image)
+    image_refs = []
+    original_imread = tifffile.imread
+
+    def tracked_imread(image_path):
+        loaded = original_imread(image_path)
+        image_refs.append(weakref.ref(loaded))
+        return loaded
+
+    monkeypatch.setattr(tifffile, "imread", tracked_imread)
     checkpoint = tmp_path / "checkpoint.pt"
     checkpoint.write_bytes(b"test checkpoint placeholder")
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(checkpoint))
@@ -94,6 +105,8 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
 
     def fake_load_model(checkpoint_path, device):
         assert lock.held is True
+        gc.collect()
+        assert image_refs and image_refs[0]() is None
         assert checkpoint_path == checkpoint
         assert device == "cpu"
         loader_calls.append((checkpoint_path, device))
