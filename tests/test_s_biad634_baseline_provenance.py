@@ -47,6 +47,15 @@ def test_rejects_untrusted_or_stale_baseline_run(overrides, message):
         validate_baseline_run(baseline_run(**overrides), EXPECTED_SHA)
 
 
+def test_rejects_the_observed_pr_branch_baseline_run():
+    pr_baseline = baseline_run(
+        head_branch="fix/report-configured-retention-on-pinned-checkpoint-20261109",
+        head_sha="73fe9ff4a38295c7372b3d06e052034ff0b0c231",
+    )
+    with pytest.raises(ValueError, match="must originate from main"):
+        validate_baseline_run(pr_baseline, EXPECTED_SHA)
+
+
 def test_rejects_malformed_expected_commit_sha():
     with pytest.raises(ValueError, match="full lowercase 40-character commit"):
         validate_baseline_run(baseline_run(), "not-a-commit")
