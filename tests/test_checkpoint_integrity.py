@@ -226,7 +226,9 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
     workflow = yaml.safe_load(
         (root / ".github/workflows/community_analyzer_validation.yml").read_text(encoding="utf-8")
     )
-    live_steps = workflow["jobs"]["live"]["steps"]
+    live_job = workflow["jobs"]["live"]
+    assert live_job["timeout-minutes"] >= 25
+    live_steps = live_job["steps"]
     deploy_step = next(
         step for step in live_steps
         if step.get("name") == "Check deployed source revision on main pushes"
