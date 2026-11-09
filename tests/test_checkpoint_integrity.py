@@ -241,3 +241,7 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
     assert "health_retention_hours" in script
     assert "root_retention_hours" in script
     assert 'expected_retention_hours="24"' in script
+    assert "deadline=$((SECONDS + 540))" in script
+    assert 'while [ "$SECONDS" -lt "$deadline" ]' in script
+    assert "--max-time 15" in script
+    assert "--retry" not in script

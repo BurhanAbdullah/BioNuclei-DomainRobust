@@ -214,12 +214,13 @@ jobs:
           expected="${GITHUB_SHA}"
           expected_checkpoint_sha256="7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
           expected_retention_hours="24"
-          # Verify the deployed source revision and the actual public health
-          # contract. A healthy old runtime is not evidence that the pinned
-          # checkpoint or configured retention has reached production.
-          for attempt in $(seq 1 24); do
-            health_json="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
-              --retry 2 --retry-delay 2 \
+          # Keep deployment verification inside the live job's 12-minute
+          # timeout, even when the public service is cold or still stale.
+          deadline=$((SECONDS + 540))
+          attempt=0
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            attempt=$((attempt + 1))
+            health_json="$(curl --silent --show-error --connect-timeout 10 --max-time 15 \
               https://bionuclei-community-analyzer.onrender.com/health 2>/dev/null || true)"
             deployed_branch="$(printf '%s' "$health_json" | jq -r '.render_git_branch // empty' 2>/dev/null || true)"
             deployed_commit="$(printf '%s' "$health_json" | jq -r '.render_git_commit // empty' 2>/dev/null || true)"
@@ -234,18 +235,17 @@ jobs:
               && [ "$checkpoint_verified" = "true" ] \
               && [ "$checkpoint_sha256" = "$expected_checkpoint_sha256" ] \
               && [ "$health_retention_hours" = "$expected_retention_hours" ]; then
-              root_json="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
-                --retry 2 --retry-delay 2 \
+              root_json="$(curl --silent --show-error --connect-timeout 10 --max-time 15 \
                 https://bionuclei-community-analyzer.onrender.com/ 2>/dev/null || true)"
               root_retention_hours="$(printf '%s' "$root_json" | jq -r '.result_retention_hours // empty' 2>/dev/null || true)"
               if [ "$root_retention_hours" = "$expected_retention_hours" ]; then
-                echo "Render deployment verified: commit=${deployed_commit}, checkpoint_sha256=${checkpoint_sha256}, result_retention_hours=${health_retention_hours} (attempt ${attempt}/24)."
+                echo "Render deployment verified: commit=${deployed_commit}, checkpoint_sha256=${checkpoint_sha256}, result_retention_hours=${health_retention_hours} (attempt ${attempt})."
                 exit 0
               fi
             fi
-            echo "Render not yet on the required release contract (attempt ${attempt}/24): branch=${deployed_branch:-unknown}, commit=${deployed_commit:-unknown}, checkpoint_available=${checkpoint_available:-unknown}, checkpoint_verified=${checkpoint_verified:-unknown}, checkpoint_sha256=${checkpoint_sha256:-unknown}, health_retention_hours=${health_retention_hours:-unknown}."
-            sleep 15
+            echo "Render not yet on the required release contract (attempt ${attempt}): branch=${deployed_branch:-unknown}, commit=${deployed_commit:-unknown}, checkpoint_available=${checkpoint_available:-unknown}, checkpoint_verified=${checkpoint_verified:-unknown}, checkpoint_sha256=${checkpoint_sha256:-unknown}, health_retention_hours=${health_retention_hours:-unknown}."
+            sleep 10
           done
-          echo "::error::Render does not serve current main with the pinned checkpoint and configured 24-hour result retention."
+          echo "::error::Render does not serve current main with the pinned checkpoint and configured 24-hour result retention within 9 minutes."
           echo "Check the Render service's linked repository/branch, auto-deploy setting, and latest failed deploy."
           exit 1
