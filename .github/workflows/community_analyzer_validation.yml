@@ -212,23 +212,40 @@ jobs:
         run: |
           set -euo pipefail
           expected="${GITHUB_SHA}"
-          # Git checkout/history is used for ancestry; do not rely on a static
-          # list of older artifact/deploy IDs or accept a healthy stale runtime.
+          expected_checkpoint_sha256="7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+          expected_retention_hours="24"
+          # Verify the deployed source revision and the actual public health
+          # contract. A healthy old runtime is not evidence that the pinned
+          # checkpoint or configured retention has reached production.
           for attempt in $(seq 1 24); do
             health_json="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
               --retry 2 --retry-delay 2 \
               https://bionuclei-community-analyzer.onrender.com/health 2>/dev/null || true)"
             deployed_branch="$(printf '%s' "$health_json" | jq -r '.render_git_branch // empty' 2>/dev/null || true)"
             deployed_commit="$(printf '%s' "$health_json" | jq -r '.render_git_commit // empty' 2>/dev/null || true)"
+            checkpoint_available="$(printf '%s' "$health_json" | jq -r '.checkpoint_available // false' 2>/dev/null || true)"
+            checkpoint_verified="$(printf '%s' "$health_json" | jq -r '.checkpoint_verified // false' 2>/dev/null || true)"
+            checkpoint_sha256="$(printf '%s' "$health_json" | jq -r '.checkpoint_sha256 // empty' 2>/dev/null || true)"
+            health_retention_hours="$(printf '%s' "$health_json" | jq -r '.result_retention_hours // empty' 2>/dev/null || true)"
             if [ "$deployed_branch" = "main" ] && [[ "$deployed_commit" =~ ^[0-9a-f]{40}$ ]] \
               && git cat-file -e "${deployed_commit}^{commit}" 2>/dev/null \
-              && git merge-base --is-ancestor "$expected" "$deployed_commit"; then
-              echo "Render deployment contains ${expected}; deployed commit=${deployed_commit} (attempt ${attempt}/24)."
-              exit 0
+              && git merge-base --is-ancestor "$expected" "$deployed_commit" \
+              && [ "$checkpoint_available" = "true" ] \
+              && [ "$checkpoint_verified" = "true" ] \
+              && [ "$checkpoint_sha256" = "$expected_checkpoint_sha256" ] \
+              && [ "$health_retention_hours" = "$expected_retention_hours" ]; then
+              root_json="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+                --retry 2 --retry-delay 2 \
+                https://bionuclei-community-analyzer.onrender.com/ 2>/dev/null || true)"
+              root_retention_hours="$(printf '%s' "$root_json" | jq -r '.result_retention_hours // empty' 2>/dev/null || true)"
+              if [ "$root_retention_hours" = "$expected_retention_hours" ]; then
+                echo "Render deployment verified: commit=${deployed_commit}, checkpoint_sha256=${checkpoint_sha256}, result_retention_hours=${health_retention_hours} (attempt ${attempt}/24)."
+                exit 0
+              fi
             fi
-            echo "Render not yet on a commit containing ${expected}; branch=${deployed_branch:-unknown}, commit=${deployed_commit:-unknown} (attempt ${attempt}/24)."
+            echo "Render not yet on the required release contract (attempt ${attempt}/24): branch=${deployed_branch:-unknown}, commit=${deployed_commit:-unknown}, checkpoint_available=${checkpoint_available:-unknown}, checkpoint_verified=${checkpoint_verified:-unknown}, checkpoint_sha256=${checkpoint_sha256:-unknown}, health_retention_hours=${health_retention_hours:-unknown}."
             sleep 15
           done
-          echo "::error::Render is healthy but not running a commit containing current main SHA ${expected}."
+          echo "::error::Render does not serve current main with the pinned checkpoint and configured 24-hour result retention."
           echo "Check the Render service's linked repository/branch, auto-deploy setting, and latest failed deploy."
           exit 1

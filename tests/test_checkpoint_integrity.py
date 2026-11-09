@@ -219,3 +219,25 @@ def test_render_config_does_not_advertise_unimplemented_research_retention():
 
     assert "BIONUCLEI_RESEARCH_RETENTION_DAYS" not in env_vars
     assert env_vars["BIONUCLEI_RESULT_RETENTION_HOURS"] == "24"
+
+
+def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retention():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load(
+        (root / ".github/workflows/community_analyzer_validation.yml").read_text(encoding="utf-8")
+    )
+    live_steps = workflow["jobs"]["live"]["steps"]
+    deploy_step = next(
+        step for step in live_steps
+        if step.get("name") == "Check deployed source revision on main pushes"
+    )
+    script = deploy_step["run"]
+
+    assert deploy_step["if"] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+    assert "checkpoint_available" in script
+    assert "checkpoint_verified" in script
+    assert "checkpoint_sha256" in script
+    assert "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92" in script
+    assert "health_retention_hours" in script
+    assert "root_retention_hours" in script
+    assert 'expected_retention_hours="24"' in script
