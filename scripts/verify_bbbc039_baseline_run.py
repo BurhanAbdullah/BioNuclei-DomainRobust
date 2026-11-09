@@ -21,6 +21,8 @@ def validate_baseline_run(
         raise ValueError("expected SHA must be a full lowercase 40-character commit")
     if metadata.get("name") != "BBBC039 baseline experiment":
         raise ValueError("selected run is not the BBBC039 baseline workflow")
+    if metadata.get("path") != ".github/workflows/bbbc039_baseline.yml":
+        raise ValueError("selected run does not use the BBBC039 baseline workflow file")
     if metadata.get("head_branch") != "main":
         raise ValueError("baseline run must originate from main")
     if metadata.get("head_sha") != expected_sha:
