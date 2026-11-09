@@ -101,10 +101,17 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
         return FakeModel()
 
     monkeypatch.setattr(bionuclei.inference, "_load_model", fake_load_model)
+
+    def fake_trim_allocator():
+        assert lock.held is True
+        events.append("trim_allocator")
+        return True
+
+    monkeypatch.setattr(bionuclei.inference, "_trim_cpu_allocator", fake_trim_allocator)
     result = __import__("bionuclei.adaptive_agent", fromlist=["cnn_pattern_check"]).cnn_pattern_check(path)
     assert result.executed is True
     assert result.status == "PASS"
     assert seen_shapes == [(1, 1, 192, 192)]
     assert loader_calls == [(checkpoint, "cpu")]
-    assert events == ["acquire", "load", "model_cleanup", "release"]
+    assert events == ["acquire", "load", "model_cleanup", "trim_allocator", "release"]
     assert lock.held is False
