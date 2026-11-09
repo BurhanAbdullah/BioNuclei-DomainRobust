@@ -44,8 +44,6 @@ def test_warm_render_service_uses_a_long_root_timeout_before_health(monkeypatch:
     assert attempts[0]["result"] == "root_warmup_complete"
     assert attempts[0]["service"] == "bionuclei-community-analyzer"
 
-
-
 def test_warm_render_service_recovers_from_observed_134_second_cold_start(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = [0.0]
     calls: list[float] = []
@@ -82,10 +80,12 @@ def test_warm_render_service_recovers_from_observed_134_second_cold_start(monkey
     assert attempts[1]["result"] == "root_warmup_complete"
 
 
-def test_warm_render_service_does_not_retry_non_transient_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_warm_render_service_does_not_retry_non_transient_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
 
-    def fail_not_found(_url: str, _timeout_seconds: float) -> dict[str, object]:
+    def fail_not_found(_url: str, timeout_seconds: float) -> dict[str, object]:
         nonlocal calls
         calls += 1
         raise HTTPError("https://example.test/", 404, "Not Found", None, None)

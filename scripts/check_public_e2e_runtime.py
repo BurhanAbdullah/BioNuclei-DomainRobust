@@ -114,7 +114,10 @@ def _warm_render_service(api_base: str, attempts: list[dict[str, object]]) -> No
                 "http_status": exc.code,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
             })
-            if exc.code not in RETRYABLE_RENDER_HTTP_STATUS or index + 1 >= RENDER_ROOT_WARMUP_MAX_ATTEMPTS:
+            if (
+                exc.code not in RETRYABLE_RENDER_HTTP_STATUS
+                or index + 1 >= RENDER_ROOT_WARMUP_MAX_ATTEMPTS
+            ):
                 raise
         except (URLError, TimeoutError) as exc:
             attempts.append({
