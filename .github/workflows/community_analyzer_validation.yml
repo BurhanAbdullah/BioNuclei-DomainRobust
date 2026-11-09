@@ -214,7 +214,7 @@ jobs:
           expected="${GITHUB_SHA}"
           expected_checkpoint_sha256="7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
           expected_retention_hours="24"
-          # Keep deployment verification inside the live job's 12-minute
+          # Keep deployment verification inside the live job's 25-minute
           # timeout, even when the public service is cold or still stale.
           deadline=$((SECONDS + 540))
           attempt=0
