@@ -45,6 +45,60 @@ def test_warm_render_service_uses_a_long_root_timeout_before_health(monkeypatch:
     assert attempts[0]["service"] == "bionuclei-community-analyzer"
 
 
+
+def test_warm_render_service_recovers_from_observed_134_second_cold_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = [0.0]
+    calls: list[float] = []
+    delays: list[float] = []
+
+    def monotonic() -> float:
+        return clock[0]
+
+    def sleep(delay: float) -> None:
+        delays.append(delay)
+        clock[0] += delay
+
+    def fake_request_json(url: str, timeout_seconds: float) -> dict[str, object]:
+        assert url == "https://example.test/"
+        calls.append(timeout_seconds)
+        if len(calls) == 1:
+            clock[0] += 90.0
+            raise TimeoutError("Render cold start")
+        clock[0] += 41.0
+        return {"service": "bionuclei-community-analyzer", "status": "online"}
+
+    monkeypatch.setattr(preflight.time, "monotonic", monotonic)
+    monkeypatch.setattr(preflight.time, "sleep", sleep)
+    monkeypatch.setattr(preflight, "_request_json", fake_request_json)
+    attempts: list[dict[str, object]] = []
+
+    preflight._warm_render_service("https://example.test", attempts)
+
+    assert calls == [90.0, 86.0]
+    assert delays == [3.0]
+    assert clock[0] == 134.0
+    assert attempts[0]["error"] == "TimeoutError"
+    assert attempts[0]["retry_delay_seconds"] == 3.0
+    assert attempts[1]["result"] == "root_warmup_complete"
+
+
+def test_warm_render_service_does_not_retry_non_transient_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fail_not_found(_url: str, _timeout_seconds: float) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise HTTPError("https://example.test/", 404, "Not Found", None, None)
+
+    monkeypatch.setattr(preflight, "_request_json", fail_not_found)
+    attempts: list[dict[str, object]] = []
+
+    with pytest.raises(HTTPError):
+        preflight._warm_render_service("https://example.test", attempts)
+
+    assert calls == 1
+    assert attempts[0]["http_status"] == 404
+
 def test_warm_render_service_fails_closed_on_unexpected_root(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         preflight,
@@ -77,10 +131,12 @@ def test_main_fails_closed_when_render_root_warmup_fails(
     monkeypatch.setattr(preflight, "_request_json", fail_root_warmup)
 
     assert preflight.main() == 1
-    assert len(requests) == 2
+    assert len(requests) == 3
     assert requests[1].endswith("/")
+    assert requests[2].endswith("/")
     payload = json.loads((tmp_path / "live-agent-e2e-failure.json").read_text(encoding="utf-8"))
-    assert payload["api_root_warmup_attempts"][0]["error"] == "TimeoutError"
+    assert len(payload["api_root_warmup_attempts"]) == 2
+    assert all(item["error"] == "TimeoutError" for item in payload["api_root_warmup_attempts"])
     assert payload["api_health_attempts"] == []
     assert payload["public_upload_attempted"] is False
 

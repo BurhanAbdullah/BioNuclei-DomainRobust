@@ -25,7 +25,10 @@ RETRYABLE_GITHUB_HTTP_STATUS = {429, 500, 502, 503, 504}
 RETRYABLE_RENDER_HTTP_STATUS = {429, 500, 502, 503, 504}
 GITHUB_API_MAX_ATTEMPTS = 4
 RENDER_HEALTH_MAX_ATTEMPTS = 8
-RENDER_ROOT_WARMUP_TIMEOUT_SECONDS = 90
+RENDER_ROOT_WARMUP_TIMEOUT_SECONDS = 90.0
+RENDER_ROOT_WARMUP_BUDGET_SECONDS = 179.0
+RENDER_ROOT_WARMUP_MAX_ATTEMPTS = 2
+RENDER_ROOT_WARMUP_RETRY_DELAY_SECONDS = 3.0
 
 
 def revision_mismatch_reason(tested_sha: str | None, main_sha: str | None) -> str | None:
@@ -69,7 +72,7 @@ def runtime_mismatch_reason(
     return None
 
 
-def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
+def _request_json(url: str, timeout_seconds: float) -> dict[str, object]:
     if url.startswith("https://api.github.com/"):
         headers = github_api_headers(
             os.environ.get("GITHUB_TOKEN"),
@@ -92,37 +95,66 @@ def _request_json(url: str, timeout_seconds: int) -> dict[str, object]:
 
 
 def _warm_render_service(api_base: str, attempts: list[dict[str, object]]) -> None:
-    """Wake a slow Render instance before the strict, short health verification."""
-    started = time.monotonic()
-    try:
-        payload = _request_json(
-            f"{api_base}/",
-            timeout_seconds=RENDER_ROOT_WARMUP_TIMEOUT_SECONDS,
-        )
-    except Exception as exc:
-        attempts.append({
-            "error": type(exc).__name__,
-            "elapsed_seconds": round(time.monotonic() - started, 3),
-        })
-        raise
+    """Wake a slow Render instance within one bounded, retryable root-probe budget."""
+    deadline = time.monotonic() + RENDER_ROOT_WARMUP_BUDGET_SECONDS
+    for index in range(RENDER_ROOT_WARMUP_MAX_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        started = time.monotonic()
+        try:
+            payload = _request_json(
+                f"{api_base}/",
+                timeout_seconds=min(RENDER_ROOT_WARMUP_TIMEOUT_SECONDS, remaining),
+            )
+        except HTTPError as exc:
+            attempts.append({
+                "attempt": index + 1,
+                "error": type(exc).__name__,
+                "http_status": exc.code,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            })
+            if exc.code not in RETRYABLE_RENDER_HTTP_STATUS or index + 1 >= RENDER_ROOT_WARMUP_MAX_ATTEMPTS:
+                raise
+        except (URLError, TimeoutError) as exc:
+            attempts.append({
+                "attempt": index + 1,
+                "error": type(exc).__name__,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            })
+            if index + 1 >= RENDER_ROOT_WARMUP_MAX_ATTEMPTS:
+                raise
+        else:
+            service = payload.get("service")
+            status = payload.get("status")
+            if service != "bionuclei-community-analyzer" or status != "online":
+                attempts.append({
+                    "attempt": index + 1,
+                    "error": "UnexpectedRootPayload",
+                    "service": service,
+                    "status": status,
+                    "elapsed_seconds": round(time.monotonic() - started, 3),
+                })
+                raise RuntimeError("Render root did not identify the expected online community analyzer")
 
-    service = payload.get("service")
-    status = payload.get("status")
-    if service != "bionuclei-community-analyzer" or status != "online":
-        attempts.append({
-            "error": "UnexpectedRootPayload",
-            "service": service,
-            "status": status,
-            "elapsed_seconds": round(time.monotonic() - started, 3),
-        })
-        raise RuntimeError("Render root did not identify the expected online community analyzer")
+            attempts.append({
+                "attempt": index + 1,
+                "http_status": 200,
+                "result": "root_warmup_complete",
+                "service": service,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+            })
+            return
 
-    attempts.append({
-        "http_status": 200,
-        "result": "root_warmup_complete",
-        "service": service,
-        "elapsed_seconds": round(time.monotonic() - started, 3),
-    })
+        remaining = deadline - time.monotonic()
+        if index + 1 < RENDER_ROOT_WARMUP_MAX_ATTEMPTS and remaining > 0:
+            delay = min(RENDER_ROOT_WARMUP_RETRY_DELAY_SECONDS, remaining)
+            if attempts:
+                attempts[-1]["retry_delay_seconds"] = round(delay, 3)
+            if delay > 0:
+                time.sleep(delay)
+
+    raise TimeoutError("Render root warm-up exhausted its bounded retry budget")
 
 
 def _request_json_with_retry(
