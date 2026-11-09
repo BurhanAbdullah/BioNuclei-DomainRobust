@@ -34,9 +34,9 @@ API_BASE = os.environ.get(
 
 EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "1200000"))
-HEALTH_READINESS_BUDGET_SECONDS = 119.0
+HEALTH_READINESS_BUDGET_SECONDS = 179.0
 HEALTH_CONNECT_TIMEOUT_SECONDS = 10.0
-HEALTH_READ_TIMEOUT_CAP_SECONDS = 90.0
+HEALTH_READ_TIMEOUT_CAP_SECONDS = 150.0
 
 
 def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
@@ -244,7 +244,7 @@ def main() -> None:
             # failure to the newly merged implementation.
             health_response = None
             health_attempts: list[dict[str, object]] = []
-            # Render cold starts can exceed 59 seconds. Keep one monotonic overall
+            # Observed Render cold starts can exceed two minutes. Keep one monotonic overall
             # budget, but let an individual read wait long enough for the process to
             # start; repeated 10-second reads can abandon every cold-start attempt.
             deadline = time.monotonic() + HEALTH_READINESS_BUDGET_SECONDS
