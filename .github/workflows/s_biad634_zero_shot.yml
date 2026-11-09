@@ -5,14 +5,6 @@ name: S-BIAD634 zero-shot transfer
 # Manual release-gate trigger requested 2026-08-18 after P/R/F1 integration.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/evaluate_s_biad634.py'
-      - 'scripts/metrics_instance.py'
-      - 'scripts/download_s_biad634.py'
-      - '.github/workflows/s_biad634_zero_shot.yml'
-      - 'scripts/verify_bbbc039_baseline_run.py'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
@@ -26,7 +18,6 @@ on:
 jobs:
   zero-shot:
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
