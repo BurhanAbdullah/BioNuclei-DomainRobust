@@ -64,7 +64,7 @@ def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity(
         Loader=yaml.BaseLoader,
     )
 
-    assert workflow["on"]["push"]["branches"] == ["main"]
+    assert "push" not in workflow["on"]
     assert workflow["on"]["workflow_run"]["branches"] == ["main"]
     job = workflow["jobs"]["zero-shot"]
     condition = job["if"]
