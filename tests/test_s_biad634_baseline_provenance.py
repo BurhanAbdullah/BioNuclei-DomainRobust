@@ -15,6 +15,7 @@ def baseline_run(**overrides):
     metadata = {
         "id": 42582135791,
         "name": "BBBC039 baseline experiment",
+        "path": ".github/workflows/bbbc039_baseline.yml",
         "head_branch": "main",
         "head_sha": EXPECTED_SHA,
         "status": "completed",
@@ -39,6 +40,7 @@ def test_accepts_successful_baseline_from_exact_main_commit():
         ({"conclusion": "failure"}, "completed successfully"),
         ({"status": "in_progress"}, "completed successfully"),
         ({"name": "unrelated workflow"}, "not the BBBC039 baseline"),
+        ({"path": ".github/workflows/unrelated.yml"}, "does not use the BBBC039 baseline workflow file"),
         ({"id": 0}, "valid run ID"),
     ],
 )
