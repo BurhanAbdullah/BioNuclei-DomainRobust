@@ -28,7 +28,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # PRs validate the harness offline; never upload a public image from a PR.
+  validate-harness:
+    if: github.event_name == 'pull_request'
+    name: Validate E2E harness without public upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact tested revision
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile E2E harness and health-state helper
+        run: python -m py_compile scripts/live_public_agent_e2e.py scripts/e2e_health_state.py tests/test_e2e_health_state.py
+
   public-upload-to-agent:
+    if: github.ref == 'refs/heads/main'
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
