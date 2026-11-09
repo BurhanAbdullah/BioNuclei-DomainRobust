@@ -134,8 +134,9 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
             x = torch.nn.functional.interpolate(x, size=(target_height, target_width), mode="area")
         else:
             x = torch.from_numpy(normalised[None, None]).float()
-        # Do not retain an extra full-resolution float32 copy while the model is loaded.
+        # Do not retain either full-resolution image buffer while the model is loaded.
         del normalised
+        del image
 
         model = None
         probabilities = None
