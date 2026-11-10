@@ -229,6 +229,11 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
     live_job = workflow["jobs"]["live"]
     assert live_job["timeout-minutes"] >= 25
     live_steps = live_job["steps"]
+    root_step = next(step for step in live_steps if step.get("name") == "Check service root")
+    root_probe = root_step["run"]
+    assert "--connect-timeout 10 --max-time 180" in root_probe
+    assert "--retry" not in root_probe
+
     deploy_step = next(
         step for step in live_steps
         if step.get("name") == "Check deployed source revision on main pushes"
