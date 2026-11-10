@@ -55,13 +55,15 @@ jobs:
       - name: Train boundary-aware U-Net baseline
         env:
           EPOCHS: ${{ inputs.epochs || '20' }}
+          SEED: ${{ inputs.seed || '42' }}
         run: |
           python scripts/train_bbbc039.py \
             --config configs/bbbc039_baseline.yaml \
             --manifest data/manifests/bbbc039_official_split.json \
             --data-root data/raw/BBBC039 \
             --output outputs/bbbc039_baseline \
-            --epochs "$EPOCHS"
+            --epochs "$EPOCHS" \
+            --seed "$SEED"
       - name: Evaluate held-out test set
         run: |
           python scripts/evaluate_bbbc039.py \

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -91,3 +92,34 @@ def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity(
     provenance = next(step for step in steps if step.get("name") == "Record evaluation provenance")
     assert "baseline_commit_sha" in provenance["run"]
     assert "baseline_checkpoint_sha256" in provenance["run"]
+
+
+def test_baseline_workflow_applies_the_requested_training_seed() -> None:
+    root = Path(__file__).resolve().parents[1]
+    trainer_path = root / "scripts" / "train_bbbc039.py"
+    trainer_source = trainer_path.read_text(encoding="utf-8")
+    tree = ast.parse(trainer_source)
+    resolver = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "resolve_seed"
+    )
+    namespace: dict[str, object] = {}
+    isolated = ast.Module(body=[resolver], type_ignores=[])
+    exec(compile(isolated, str(trainer_path), "exec"), namespace)
+    resolve_seed = namespace["resolve_seed"]
+    assert resolve_seed(42, None) == 42
+    assert resolve_seed(42, 7) == 7
+    with pytest.raises(ValueError, match="non-negative"):
+        resolve_seed(42, -1)
+
+    assert 'parser.add_argument("--seed", type=int, default=None' in trainer_source
+    assert 'seed = resolve_seed(int(cfg["seed"]), args.seed)' in trainer_source
+
+    baseline_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
+    baseline = yaml.load(baseline_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    train_step = next(
+        step for step in baseline["jobs"]["train-evaluate"]["steps"]
+        if step.get("name") == "Train boundary-aware U-Net baseline"
+    )
+    assert train_step["env"]["SEED"] == "${{ inputs.seed || '42' }}"
+    assert '--seed "$SEED"' in train_step["run"]
