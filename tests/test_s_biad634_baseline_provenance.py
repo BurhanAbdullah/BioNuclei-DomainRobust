@@ -14,7 +14,7 @@ EXPECTED_SHA = "d4a653e94501e8b9f1ec9de09ff71720f90ab340"
 
 def baseline_run(**overrides):
     metadata = {
-        "id": 42582135791,
+        "id": 12345,
         "name": "BBBC039 baseline experiment",
         "path": ".github/workflows/bbbc039_baseline.yml",
         "head_branch": "main",
@@ -28,7 +28,7 @@ def baseline_run(**overrides):
 
 def test_accepts_successful_baseline_from_exact_main_commit():
     assert validate_baseline_run(baseline_run(), EXPECTED_SHA) == {
-        "run_id": "42582135791",
+        "run_id": "12345",
         "baseline_sha": EXPECTED_SHA,
     }
 
@@ -50,9 +50,21 @@ def test_rejects_untrusted_or_stale_baseline_run(overrides, message):
         validate_baseline_run(baseline_run(**overrides), EXPECTED_SHA)
 
 
-def test_rejects_the_observed_pr_branch_baseline_run():
-    # Exact provenance of baseline run #42771485283, which the current-main
-    # zero-shot run #42780911279 consumed before this guard was added.
+def test_rejects_the_observed_pr108_baseline_run():
+    # Exact provenance of baseline run #42582135791, consumed by current-main
+    # zero-shot run #42598700943 before the provenance guard was added.
+    pr_baseline = baseline_run(
+        id=42582135791,
+        head_branch="fix/report-configured-retention-on-pinned-checkpoint-20261109",
+        head_sha="73fe9ff4a38295c7372b3d06e052034ff0b0c231",
+    )
+    with pytest.raises(ValueError, match="must originate from main"):
+        validate_baseline_run(pr_baseline, EXPECTED_SHA)
+
+
+def test_rejects_the_observed_pr109_baseline_run():
+    # Exact provenance of baseline run #42771485283, consumed by current-main
+    # zero-shot run #42780911279 before the provenance guard was added.
     pr_baseline = baseline_run(
         id=42771485283,
         head_branch="fix/guard-s-biad634-baseline-provenance-20261109",
