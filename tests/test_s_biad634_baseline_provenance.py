@@ -51,9 +51,12 @@ def test_rejects_untrusted_or_stale_baseline_run(overrides, message):
 
 
 def test_rejects_the_observed_pr_branch_baseline_run():
+    # Exact provenance of baseline run #42771485283, which the current-main
+    # zero-shot run #42780911279 consumed before this guard was added.
     pr_baseline = baseline_run(
-        head_branch="fix/report-configured-retention-on-pinned-checkpoint-20261109",
-        head_sha="73fe9ff4a38295c7372b3d06e052034ff0b0c231",
+        id=42771485283,
+        head_branch="fix/guard-s-biad634-baseline-provenance-20261109",
+        head_sha="18980f4ae69ca3e502afc2619c4c345aa0f8694c",
     )
     with pytest.raises(ValueError, match="must originate from main"):
         validate_baseline_run(pr_baseline, EXPECTED_SHA)
