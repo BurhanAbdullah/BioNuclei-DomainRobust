@@ -123,3 +123,10 @@ def test_baseline_workflow_applies_the_requested_training_seed() -> None:
     )
     assert train_step["env"]["SEED"] == "${{ inputs.seed || '42' }}"
     assert '--seed "$SEED"' in train_step["run"]
+
+
+def test_baseline_training_is_restricted_to_main() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    assert workflow["jobs"]["train-evaluate"]["if"] == "${{ github.ref == 'refs/heads/main' }}"

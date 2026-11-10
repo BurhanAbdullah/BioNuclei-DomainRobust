@@ -26,6 +26,8 @@ on:
 
 jobs:
   train-evaluate:
+    # The 350-minute training job must never run from a pull-request branch.
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
