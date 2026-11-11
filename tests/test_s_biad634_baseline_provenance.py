@@ -599,7 +599,6 @@ def test_baseline_training_is_restricted_to_main() -> None:
     assert workflow["jobs"]["train-evaluate"]["if"] == "${{ github.ref == 'refs/heads/main' }}"
 
 
-
 def test_baseline_workflow_retrains_for_zero_shot_revision_changes() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
