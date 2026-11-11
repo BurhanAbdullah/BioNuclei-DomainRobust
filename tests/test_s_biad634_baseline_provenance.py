@@ -171,8 +171,12 @@ def _write_baseline_artifact(
                 "dataset": dataset,
                 "release": release,
                 "authoritative_reference": "https://bbbc.broadinstitute.org/BBBC039",
+                "base_url": "https://data.broadinstitute.org/bbbc/BBBC039",
                 "archives": {
-                    name: {"sha256": archive_hash}
+                    name: {
+                        "url": f"https://data.broadinstitute.org/bbbc/BBBC039/{name}.zip",
+                        "sha256": archive_hash,
+                    }
                     for name in ("images", "masks", "metadata")
                 },
             }
@@ -244,6 +248,10 @@ def test_records_dataset_release_split_and_config_hashes(tmp_path):
     verification = tmp_path / "data" / "raw" / "BBBC039" / "verification_report.json"
     assert provenance["verification_report_sha256"] == hashlib.sha256(verification.read_bytes()).hexdigest()
     assert provenance["baseline_config_sha256"] == hashlib.sha256(config.read_bytes()).hexdigest()
+    assert provenance["source_archive_urls"] == {
+        name: f"https://data.broadinstitute.org/bbbc/BBBC039/{name}.zip"
+        for name in ("images", "masks", "metadata")
+    }
     assert provenance["source_archive_sha256"] == {
         name: "a" * 64 for name in ("images", "masks", "metadata")
     }
@@ -315,6 +323,37 @@ def test_rejects_baseline_artifact_with_missing_source_archive_digest(tmp_path):
     payload["archives"]["images"]["sha256"] = "invalid"
     download.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="archive SHA-256"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("authoritative_reference", "https://example.org/BBBC039", "authoritative reference"),
+        ("base_url", "https://example.org/BBBC039", "archive base URL"),
+    ],
+)
+def test_rejects_baseline_artifact_with_non_official_source_urls(tmp_path, field, value, message):
+    download, _, _ = _write_baseline_artifact(tmp_path)
+    payload = json.loads(download.read_text(encoding="utf-8"))
+    payload[field] = value
+    download.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_rejects_baseline_artifact_with_non_official_archive_url(tmp_path):
+    download, _, _ = _write_baseline_artifact(tmp_path)
+    payload = json.loads(download.read_text(encoding="utf-8"))
+    payload["archives"]["images"]["url"] = "https://example.org/images.zip"
+    download.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="images archive URL"):
         build_baseline_artifact_provenance(
             tmp_path,
             tmp_path / "configs" / "bbbc039_baseline.yaml",

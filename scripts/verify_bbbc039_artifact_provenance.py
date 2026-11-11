@@ -15,6 +15,8 @@ _REQUIRED_ARCHIVES = ("images", "masks", "metadata")
 _REQUIRED_PARTITIONS = ("train", "validation", "test")
 _EXPECTED_SPLIT_COUNTS = {"train": 100, "validation": 50, "test": 50}
 _EXPECTED_IMAGE_SHAPE = [520, 696]
+_OFFICIAL_REFERENCE = "https://bbbc.broadinstitute.org/BBBC039"
+_OFFICIAL_BASE_URL = "https://data.broadinstitute.org/bbbc/BBBC039"
 
 
 def _read_json_mapping(path: Path) -> Mapping[str, Any]:
@@ -56,19 +58,28 @@ def build_baseline_artifact_provenance(
         raise ValueError("BBBC039 split manifest dataset does not match its download manifest")
 
     reference = download.get("authoritative_reference")
-    if not isinstance(reference, str) or not reference.startswith("https://"):
-        raise ValueError("BBBC039 download manifest has no authoritative HTTPS reference")
+    if reference != _OFFICIAL_REFERENCE:
+        raise ValueError("BBBC039 download manifest does not identify the official authoritative reference")
+    base_url = download.get("base_url")
+    if base_url != _OFFICIAL_BASE_URL:
+        raise ValueError("BBBC039 download manifest does not identify the official archive base URL")
 
     archives = download.get("archives")
     if not isinstance(archives, Mapping):
         raise ValueError("BBBC039 download manifest has no archive inventory")
     archive_hashes: dict[str, str] = {}
+    archive_urls: dict[str, str] = {}
     for name in _REQUIRED_ARCHIVES:
         record = archives.get(name)
+        expected_url = f"{_OFFICIAL_BASE_URL}/{name}.zip"
+        url = record.get("url") if isinstance(record, Mapping) else None
+        if url != expected_url:
+            raise ValueError(f"BBBC039 {name} archive URL is not the official release URL")
         digest = record.get("sha256") if isinstance(record, Mapping) else None
         if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
             raise ValueError(f"BBBC039 {name} archive SHA-256 is missing or invalid")
         archive_hashes[name] = digest
+        archive_urls[name] = url
 
     partitions = split.get("partitions")
     if not isinstance(partitions, Mapping):
@@ -145,6 +156,7 @@ def build_baseline_artifact_provenance(
         "split_manifest_sha256": _sha256(split_path),
         "verification_report_sha256": _sha256(verification_path),
         "baseline_config_sha256": _sha256(config_path),
+        "source_archive_urls": archive_urls,
         "source_archive_sha256": archive_hashes,
         "split_counts": split_counts,
     }
