@@ -72,7 +72,7 @@ jobs:
               "note": "Browser dependency installation failed before the public E2E harness started.",
           }
           Path("live-agent-e2e-failure.json").write_text(
-              json.dumps(payload, indent=2, sort_keys=True) + "\\n",
+              json.dumps(payload, indent=2, sort_keys=True),
               encoding="utf-8",
           )
           PY
