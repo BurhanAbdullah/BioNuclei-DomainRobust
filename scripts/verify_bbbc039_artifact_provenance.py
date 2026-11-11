@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED_ARCHIVES = ("images", "masks", "metadata")
 _REQUIRED_PARTITIONS = ("train", "validation", "test")
@@ -87,6 +89,18 @@ def build_baseline_artifact_provenance(
 
     if not config_path.is_file():
         raise FileNotFoundError(f"committed BBBC039 baseline config is missing: {config_path}")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if not isinstance(config, Mapping):
+        raise ValueError("committed BBBC039 baseline config must contain a mapping")
+    dataset_config = config.get("dataset")
+    if not isinstance(dataset_config, Mapping) or dataset_config.get("name") != dataset:
+        raise ValueError("committed BBBC039 config dataset name does not match the baseline artifact")
+    if Path(str(dataset_config.get("root", ""))) != Path("data/raw/BBBC039"):
+        raise ValueError("committed BBBC039 config dataset root does not match the baseline artifact")
+    if Path(str(dataset_config.get("split_manifest", ""))) != Path(
+        "data/manifests/bbbc039_official_split.json"
+    ):
+        raise ValueError("committed BBBC039 config split manifest path does not match the hashed artifact")
 
     return {
         "dataset": dataset,

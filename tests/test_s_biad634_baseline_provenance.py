@@ -195,7 +195,19 @@ def _write_baseline_artifact(
     )
     config = root / "configs" / "bbbc039_baseline.yaml"
     config.parent.mkdir(parents=True)
-    config.write_text("seed: 42\n", encoding="utf-8")
+    config.write_text(
+        "\n".join(
+            [
+                "dataset:",
+                f"  name: {dataset}",
+                "  root: data/raw/BBBC039",
+                "  split_manifest: data/manifests/bbbc039_official_split.json",
+                "seed: 42",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
     return download, split, config
 
 
@@ -260,6 +272,31 @@ def test_rejects_baseline_artifact_with_missing_split_partition(tmp_path):
             tmp_path,
             tmp_path / "configs" / "bbbc039_baseline.yaml",
         )
+
+
+def test_rejects_config_that_points_to_a_different_dataset(tmp_path):
+    _, _, config = _write_baseline_artifact(tmp_path)
+    payload = yaml.safe_load(config.read_text(encoding="utf-8"))
+    payload["dataset"]["name"] = "BBBC038"
+    config.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="dataset name"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            config,
+        )
+
+
+def test_rejects_config_that_points_to_a_different_split_manifest(tmp_path):
+    _, _, config = _write_baseline_artifact(tmp_path)
+    payload = yaml.safe_load(config.read_text(encoding="utf-8"))
+    payload["dataset"]["split_manifest"] = "data/manifests/other.json"
+    config.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="split manifest path"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            config,
+        )
+
 
 
 def test_zero_shot_provenance_records_baseline_dataset_and_split_identity():
