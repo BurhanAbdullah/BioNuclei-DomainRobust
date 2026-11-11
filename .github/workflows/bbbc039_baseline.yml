@@ -47,17 +47,12 @@ jobs:
             --metadata-root data/raw/BBBC039/metadata \
             --output data/manifests/bbbc039_official_split.json
       - name: Train boundary-aware U-Net baseline
-        env:
-          EPOCHS: "20"
-          SEED: "42"
         run: |
           python scripts/train_bbbc039.py \
             --config configs/bbbc039_baseline.yaml \
             --manifest data/manifests/bbbc039_official_split.json \
             --data-root data/raw/BBBC039 \
-            --output outputs/bbbc039_baseline \
-            --epochs "$EPOCHS" \
-            --seed "$SEED"
+            --output outputs/bbbc039_baseline
       - name: Evaluate held-out test set
         run: |
           python scripts/evaluate_bbbc039.py \
