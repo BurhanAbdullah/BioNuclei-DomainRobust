@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   public-upload-to-agent:
+    # Public uploads are release evidence only from the default branch.
+    # Pull requests exercise the harness through tests and must not touch the live API.
+    if: github.ref == 'refs/heads/main'
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
