@@ -11,6 +11,7 @@ on:
       - "webapp/app.py"
       - "webapp/community_app.py"
       - "scripts/validate_tiled_checkpoint.py"
+      - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
   push:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - "webapp/app.py"
       - "webapp/community_app.py"
       - "scripts/validate_tiled_checkpoint.py"
+      - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
   workflow_dispatch:
 
