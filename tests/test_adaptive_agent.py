@@ -163,4 +163,4 @@ def test_extreme_foreground_caution_is_preserved_in_analysis_plan(tmp_path: Path
     plan = build_plan(path, {"nuclei"})
     assert plan.status == "CAUTION"
     assert "CNN classified nearly the entire image as foreground." in plan.warnings
-\n
+
