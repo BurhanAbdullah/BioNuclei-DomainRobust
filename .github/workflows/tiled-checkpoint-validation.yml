@@ -169,7 +169,7 @@ jobs:
         if: always() && steps.checkpoint_validation.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: checkpoint-validation-evidence-${{ github.run_id }}
+          name: checkpoint-validation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence/
           if-no-files-found: error
           retention-days: 7

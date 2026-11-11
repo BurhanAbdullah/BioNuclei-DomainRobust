@@ -129,6 +129,7 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     assert events == ["acquire", "load", "model_cleanup", "trim_allocator", "release"]
     assert lock.held is False
 
+
 def test_uncalibrated_cnn_foreground_extremes_remain_caution_not_blocked() -> None:
     cases = (
         (0.001, "CNN found negligible nuclear foreground support."),
@@ -162,4 +163,4 @@ def test_extreme_foreground_caution_is_preserved_in_analysis_plan(tmp_path: Path
     plan = build_plan(path, {"nuclei"})
     assert plan.status == "CAUTION"
     assert "CNN classified nearly the entire image as foreground." in plan.warnings
-
+\n
