@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from bionuclei.adaptive_agent import CNNPatternCheck, build_plan, to_dict
+from bionuclei.adaptive_agent import _cnn_pattern_status, CNNPatternCheck, build_plan, to_dict
 
 
 def test_adaptive_plan_flags_flat_image(tmp_path: Path) -> None:
@@ -128,3 +128,38 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     assert loader_calls == [(checkpoint, "cpu")]
     assert events == ["acquire", "load", "model_cleanup", "trim_allocator", "release"]
     assert lock.held is False
+
+def test_uncalibrated_cnn_foreground_extremes_remain_caution_not_blocked() -> None:
+    cases = (
+        (0.001, "CNN found negligible nuclear foreground support."),
+        (0.98, "CNN classified nearly the entire image as foreground."),
+        (1.0, "CNN classified nearly the entire image as foreground."),
+    )
+    for fraction, expected_reason in cases:
+        status, reasons = _cnn_pattern_status(fraction, 0.9, 1)
+        assert status == "CAUTION"
+        assert expected_reason in reasons
+
+
+def test_extreme_foreground_caution_is_preserved_in_analysis_plan(tmp_path: Path, monkeypatch) -> None:
+    image = np.zeros((32, 32), dtype=np.uint16)
+    image[2:30, 2:30] = 1000
+    path = tmp_path / "dense-image.tif"
+    tifffile.imwrite(path, image)
+    monkeypatch.setattr(
+        "bionuclei.adaptive_agent.cnn_pattern_check",
+        lambda _path: CNNPatternCheck(
+            True,
+            "Boundary U Net",
+            0.99,
+            0.9,
+            0.2,
+            1,
+            "CAUTION",
+            ("CNN classified nearly the entire image as foreground.",),
+        ),
+    )
+    plan = build_plan(path, {"nuclei"})
+    assert plan.status == "CAUTION"
+    assert "CNN classified nearly the entire image as foreground." in plan.warnings
+

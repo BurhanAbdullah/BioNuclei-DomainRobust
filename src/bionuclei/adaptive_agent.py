@@ -101,6 +101,26 @@ def _normalise(image: np.ndarray) -> np.ndarray:
     return np.clip(x / scale, 0.0, 1.0)
 
 
+def _cnn_pattern_status(
+    foreground_fraction: float,
+    mean_confidence: float,
+    components: int,
+) -> tuple[str, tuple[str, ...]]:
+    """Keep uncalibrated CNN density cutoffs warning-only until held-out validation."""
+    reasons: list[str] = []
+    if foreground_fraction <= 0.001:
+        reasons.append("CNN found negligible nuclear foreground support.")
+    if foreground_fraction >= 0.98:
+        reasons.append("CNN classified nearly the entire image as foreground.")
+    if mean_confidence < 0.55:
+        reasons.append("CNN class confidence is low.")
+    if components == 0:
+        reasons.append("CNN produced no connected foreground component.")
+    # These heuristic cutoffs are not calibrated on held-out BBBC039 fields.
+    # They therefore remain CAUTION signals, never hard BLOCKED decisions.
+    return ("PASS" if not reasons else "CAUTION", tuple(reasons))
+
+
 def cnn_pattern_check(path: Path) -> CNNPatternCheck:
     """Run the released CNN as an analyseability gate before full analysis.
 
@@ -159,17 +179,12 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
                     mean_confidence = float(confidence.mean().item())
                     mean_entropy = float(entropy.mean().item())
                     components = int(ndimage.label(foreground.cpu().numpy(), structure=np.ones((3, 3), dtype=np.uint8))[1])
-                reasons: list[str] = []
-                if foreground_fraction <= 0.001:
-                    reasons.append("CNN found negligible nuclear foreground support.")
-                if foreground_fraction >= 0.98:
-                    reasons.append("CNN classified nearly the entire image as foreground.")
-                if mean_confidence < 0.55:
-                    reasons.append("CNN class confidence is low.")
-                if components == 0:
-                    reasons.append("CNN produced no connected foreground component.")
-                status = "PASS" if not reasons else "CAUTION"
-                return CNNPatternCheck(True, "Boundary U Net", foreground_fraction, mean_confidence, mean_entropy, components, status, tuple(reasons))
+                status, reasons = _cnn_pattern_status(
+                    foreground_fraction,
+                    mean_confidence,
+                    components,
+                )
+                return CNNPatternCheck(True, "Boundary U Net", foreground_fraction, mean_confidence, mean_entropy, components, status, reasons)
             finally:
                 # Release the model and all activation-sized tensors before
                 # allowing another inference/preflight to acquire the lock.
