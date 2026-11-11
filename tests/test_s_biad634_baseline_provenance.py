@@ -179,16 +179,38 @@ def _write_baseline_artifact(
         ),
         encoding="utf-8",
     )
+    actual_partitions = partitions or {
+        "train": [f"train-{index}.png" for index in range(100)],
+        "validation": [f"validation-{index}.png" for index in range(50)],
+        "test": [f"test-{index}.png" for index in range(50)],
+    }
+    split_counts = {name: len(members) for name, members in actual_partitions.items()}
     split.write_text(
         json.dumps(
             {
                 "dataset": dataset,
-                "partitions": partitions
-                or {
-                    "train": ["train-a.png"],
-                    "validation": ["validation-a.png"],
-                    "test": ["test-a.png"],
-                },
+                "partitions": actual_partitions,
+                "counts": split_counts,
+                "validation": {"pairwise_overlap": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    verification = root / "data" / "raw" / "BBBC039" / "verification_report.json"
+    verification.write_text(
+        json.dumps(
+            {
+                "dataset": dataset,
+                "images": 200,
+                "masks": 200,
+                "image_shape": [520, 696],
+                "image_dtype": "uint16",
+                "image_channels": 1,
+                "image_mask_correspondence_verified": True,
+                "target_conversion_verified": True,
+                "split_counts_detected": split_counts,
+                "expected_split_counts": {"train": 100, "validation": 50, "test": 50},
+                "split_counts_verified": split_counts == {"train": 100, "validation": 50, "test": 50},
             }
         ),
         encoding="utf-8",
@@ -216,13 +238,50 @@ def test_records_dataset_release_split_and_config_hashes(tmp_path):
     provenance = build_baseline_artifact_provenance(tmp_path, config)
     assert provenance["dataset"] == "BBBC039v1"
     assert provenance["dataset_release"] == "v1"
-    assert provenance["split_counts"] == {"train": 1, "validation": 1, "test": 1}
+    assert provenance["split_counts"] == {"train": 100, "validation": 50, "test": 50}
     assert provenance["download_manifest_sha256"] == hashlib.sha256(download.read_bytes()).hexdigest()
     assert provenance["split_manifest_sha256"] == hashlib.sha256(split.read_bytes()).hexdigest()
+    verification = tmp_path / "data" / "raw" / "BBBC039" / "verification_report.json"
+    assert provenance["verification_report_sha256"] == hashlib.sha256(verification.read_bytes()).hexdigest()
     assert provenance["baseline_config_sha256"] == hashlib.sha256(config.read_bytes()).hexdigest()
     assert provenance["source_archive_sha256"] == {
         name: "a" * 64 for name in ("images", "masks", "metadata")
     }
+
+
+def test_rejects_baseline_artifact_with_non_official_split_counts(tmp_path):
+    _write_baseline_artifact(
+        tmp_path,
+        partitions={"train": ["train.png"], "validation": ["validation.png"], "test": ["test.png"]},
+    )
+    with pytest.raises(ValueError, match="official split counts"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_rejects_missing_dataset_verification_report(tmp_path):
+    _write_baseline_artifact(tmp_path)
+    (tmp_path / "data" / "raw" / "BBBC039" / "verification_report.json").unlink()
+    with pytest.raises(FileNotFoundError, match="verification_report.json"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_rejects_dataset_verification_report_with_failed_integrity(tmp_path):
+    _write_baseline_artifact(tmp_path)
+    report_path = tmp_path / "data" / "raw" / "BBBC039" / "verification_report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["image_mask_correspondence_verified"] = False
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="image_mask_correspondence_verified"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
 
 
 def test_rejects_baseline_artifact_with_overlapping_split_members(tmp_path):
@@ -381,6 +440,11 @@ def test_baseline_workflow_uses_documented_release_training_recipe() -> None:
 
     baseline_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
     baseline = yaml.load(baseline_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    verify_step = next(
+        step for step in baseline["jobs"]["train-evaluate"]["steps"]
+        if step.get("name") == "Verify dataset and build official manifest"
+    )
+    assert "--output data/raw/BBBC039/verification_report.json" in verify_step["run"]
     train_step = next(
         step for step in baseline["jobs"]["train-evaluate"]["steps"]
         if step.get("name") == "Train boundary-aware U-Net baseline"

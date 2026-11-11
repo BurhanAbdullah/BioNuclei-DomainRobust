@@ -13,6 +13,8 @@ import yaml
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUIRED_ARCHIVES = ("images", "masks", "metadata")
 _REQUIRED_PARTITIONS = ("train", "validation", "test")
+_EXPECTED_SPLIT_COUNTS = {"train": 100, "validation": 50, "test": 50}
+_EXPECTED_IMAGE_SHAPE = [520, 696]
 
 
 def _read_json_mapping(path: Path) -> Mapping[str, Any]:
@@ -36,11 +38,13 @@ def build_baseline_artifact_provenance(
     artifact_root: Path,
     config_path: Path,
 ) -> dict[str, Any]:
-    """Validate and fingerprint the dataset, split and config carried by a baseline."""
+    """Validate and fingerprint the dataset, split, acquisition report and config."""
     download_path = artifact_root / "data/raw/BBBC039/download_manifest.json"
     split_path = artifact_root / "data/manifests/bbbc039_official_split.json"
+    verification_path = artifact_root / "data/raw/BBBC039/verification_report.json"
     download = _read_json_mapping(download_path)
     split = _read_json_mapping(split_path)
+    verification = _read_json_mapping(verification_path)
 
     dataset = download.get("dataset")
     release = download.get("release")
@@ -87,6 +91,37 @@ def build_baseline_artifact_provenance(
         seen.update(members)
         split_counts[name] = len(members)
 
+    if split_counts != _EXPECTED_SPLIT_COUNTS:
+        raise ValueError(
+            "BBBC039 official split counts do not match the verified release: "
+            f"expected={_EXPECTED_SPLIT_COUNTS}, actual={split_counts}"
+        )
+    declared_counts = split.get("counts")
+    if not isinstance(declared_counts, Mapping) or dict(declared_counts) != split_counts:
+        raise ValueError("BBBC039 split manifest declared counts do not match its partitions")
+    split_validation = split.get("validation")
+    if not isinstance(split_validation, Mapping) or split_validation.get("pairwise_overlap") is not False:
+        raise ValueError("BBBC039 split manifest does not certify pairwise-disjoint partitions")
+
+    expected_verification = {
+        "dataset": dataset,
+        "images": 200,
+        "masks": 200,
+        "image_shape": _EXPECTED_IMAGE_SHAPE,
+        "image_dtype": "uint16",
+        "image_channels": 1,
+        "image_mask_correspondence_verified": True,
+        "target_conversion_verified": True,
+        "split_counts_detected": _EXPECTED_SPLIT_COUNTS,
+        "expected_split_counts": _EXPECTED_SPLIT_COUNTS,
+        "split_counts_verified": True,
+    }
+    for field, expected in expected_verification.items():
+        if verification.get(field) != expected:
+            raise ValueError(
+                f"BBBC039 verification report {field} does not match the verified release"
+            )
+
     if not config_path.is_file():
         raise FileNotFoundError(f"committed BBBC039 baseline config is missing: {config_path}")
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -108,6 +143,7 @@ def build_baseline_artifact_provenance(
         "authoritative_reference": reference,
         "download_manifest_sha256": _sha256(download_path),
         "split_manifest_sha256": _sha256(split_path),
+        "verification_report_sha256": _sha256(verification_path),
         "baseline_config_sha256": _sha256(config_path),
         "source_archive_sha256": archive_hashes,
         "split_counts": split_counts,

@@ -42,7 +42,9 @@ jobs:
         run: python scripts/download_bbbc039.py --data-root data/raw/BBBC039
       - name: Verify dataset and build official manifest
         run: |
-          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py \
+            --data-root data/raw/BBBC039 \
+            --output data/raw/BBBC039/verification_report.json
           python scripts/build_bbbc039_split.py \
             --metadata-root data/raw/BBBC039/metadata \
             --output data/manifests/bbbc039_official_split.json
