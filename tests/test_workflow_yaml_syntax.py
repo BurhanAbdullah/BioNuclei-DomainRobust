@@ -46,6 +46,9 @@ def test_browser_dependency_failure_is_recorded_before_public_harness() -> None:
     upload = next(step for step in steps if step.get("name") == "Upload browser failure evidence")
 
     assert install.get("id") == "install_browser_e2e_deps"
+    assert "set -euo pipefail" in install.get("run", "")
+    assert "tee browser-setup.log" in install.get("run", "")
+    assert "tee -a browser-setup.log" in install.get("run", "")
     assert record.get("if") == (
         "failure() && steps.install_browser_e2e_deps.outcome == 'failure'"
     )
@@ -53,4 +56,6 @@ def test_browser_dependency_failure_is_recorded_before_public_harness() -> None:
     assert "public_upload_attempted" in record.get("run", "")
     assert "public_inference_attempted" in record.get("run", "")
     assert upload.get("if") == "failure()"
-    assert "live-agent-e2e-failure.json" in upload.get("with", {}).get("path", "")
+    upload_paths = upload.get("with", {}).get("path", "")
+    assert "live-agent-e2e-failure.json" in upload_paths
+    assert "browser-setup.log" in upload_paths
