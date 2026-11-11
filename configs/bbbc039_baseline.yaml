@@ -24,11 +24,11 @@ model:
   out_channels: 3
   base_channels: 32
 
-# Keep only options consumed by scripts/train_bbbc039.py. Augmentation,
-# mixed precision and early stopping are not implemented by this trainer.
+# Keep only options consumed by scripts/train_bbbc039.py. Geometric
+# augmentation, mixed precision and early stopping are not implemented.
 training:
   device: auto
-  epochs: 20
+  epochs: 100
   batch_size: 8
   num_workers: 4
   learning_rate: 0.0003
