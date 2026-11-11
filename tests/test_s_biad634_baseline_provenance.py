@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,7 @@ import yaml
 
 from scripts.verify_bbbc039_baseline_run import validate_baseline_run
 from scripts.verify_bbbc039_checkpoint import validate_checkpoint_metadata
+from scripts.verify_bbbc039_artifact_provenance import build_baseline_artifact_provenance
 
 
 EXPECTED_SHA = "d4a653e94501e8b9f1ec9de09ff71720f90ab340"
@@ -148,6 +151,137 @@ def test_rejects_historical_checkpoint_that_claimed_unimplemented_training_optio
             checkpoint_metadata(historical_config, epochs_run=20),
             baseline_config(),
         )
+
+
+def _write_baseline_artifact(
+    root: Path,
+    *,
+    dataset: str = "BBBC039v1",
+    release: str = "v1",
+    partitions: dict[str, list[str]] | None = None,
+    archive_hash: str = "a" * 64,
+):
+    download = root / "data" / "raw" / "BBBC039" / "download_manifest.json"
+    split = root / "data" / "manifests" / "bbbc039_official_split.json"
+    download.parent.mkdir(parents=True)
+    split.parent.mkdir(parents=True)
+    download.write_text(
+        json.dumps(
+            {
+                "dataset": dataset,
+                "release": release,
+                "authoritative_reference": "https://bbbc.broadinstitute.org/BBBC039",
+                "archives": {
+                    name: {"sha256": archive_hash}
+                    for name in ("images", "masks", "metadata")
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    split.write_text(
+        json.dumps(
+            {
+                "dataset": dataset,
+                "partitions": partitions
+                or {
+                    "train": ["train-a.png"],
+                    "validation": ["validation-a.png"],
+                    "test": ["test-a.png"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = root / "configs" / "bbbc039_baseline.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text("seed: 42\n", encoding="utf-8")
+    return download, split, config
+
+
+def test_records_dataset_release_split_and_config_hashes(tmp_path):
+    download, split, config = _write_baseline_artifact(tmp_path)
+    provenance = build_baseline_artifact_provenance(tmp_path, config)
+    assert provenance["dataset"] == "BBBC039v1"
+    assert provenance["dataset_release"] == "v1"
+    assert provenance["split_counts"] == {"train": 1, "validation": 1, "test": 1}
+    assert provenance["download_manifest_sha256"] == hashlib.sha256(download.read_bytes()).hexdigest()
+    assert provenance["split_manifest_sha256"] == hashlib.sha256(split.read_bytes()).hexdigest()
+    assert provenance["baseline_config_sha256"] == hashlib.sha256(config.read_bytes()).hexdigest()
+    assert provenance["source_archive_sha256"] == {
+        name: "a" * 64 for name in ("images", "masks", "metadata")
+    }
+
+
+def test_rejects_baseline_artifact_with_overlapping_split_members(tmp_path):
+    _write_baseline_artifact(
+        tmp_path,
+        partitions={
+            "train": ["shared.png"],
+            "validation": ["shared.png"],
+            "test": ["test.png"],
+        },
+    )
+    with pytest.raises(ValueError, match="overlap"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_rejects_baseline_artifact_with_wrong_dataset_release(tmp_path):
+    _write_baseline_artifact(tmp_path, dataset="BBBC039v2")
+    with pytest.raises(ValueError, match="BBBC039v1"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_rejects_baseline_artifact_with_missing_source_archive_digest(tmp_path):
+    download, _, _ = _write_baseline_artifact(tmp_path)
+    payload = json.loads(download.read_text(encoding="utf-8"))
+    payload["archives"]["images"]["sha256"] = "invalid"
+    download.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="archive SHA-256"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_rejects_baseline_artifact_with_missing_split_partition(tmp_path):
+    _write_baseline_artifact(
+        tmp_path,
+        partitions={"train": ["train.png"], "validation": ["validation.png"]},
+    )
+    with pytest.raises(ValueError, match="test"):
+        build_baseline_artifact_provenance(
+            tmp_path,
+            tmp_path / "configs" / "bbbc039_baseline.yaml",
+        )
+
+
+def test_zero_shot_provenance_records_baseline_dataset_and_split_identity():
+    workflow_path = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "s_biad634_zero_shot.yml"
+    )
+    workflow = yaml.load(
+        workflow_path.read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    provenance = next(
+        step for step in workflow["jobs"]["zero-shot"]["steps"]
+        if step.get("name") == "Record evaluation provenance"
+    )
+    assert "build_baseline_artifact_provenance" in provenance["run"]
+    assert "baseline_artifact_provenance" in provenance["run"]
+    assert "baseline_artifact" in provenance["run"]
+    assert "bbbc039_baseline.yaml" in provenance["run"]
+
 
 
 def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity():
