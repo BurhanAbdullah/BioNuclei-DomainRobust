@@ -81,6 +81,11 @@ jobs:
           checkpoint_sha256="$(sha256sum baseline_artifact/last.pt | cut -d' ' -f1)"
           test -n "$checkpoint_sha256"
           echo "sha256=$checkpoint_sha256" >> "$GITHUB_OUTPUT"
+      - name: Verify baseline checkpoint training recipe
+        run: |
+          python scripts/verify_bbbc039_checkpoint.py \
+            --checkpoint baseline_artifact/last.pt \
+            --config configs/bbbc039_baseline.yaml
       - name: Record evaluation provenance
         run: |
           mkdir -p outputs/s_biad634_zero_shot
