@@ -597,3 +597,23 @@ def test_baseline_training_is_restricted_to_main() -> None:
     workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     assert workflow["jobs"]["train-evaluate"]["if"] == "${{ github.ref == 'refs/heads/main' }}"
+
+
+def test_baseline_workflow_retrains_for_zero_shot_revision_changes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    paths = set(workflow["on"]["push"]["paths"])
+    # The zero-shot workflow rejects a baseline from any other commit. Keep
+    # every transfer evaluator, acquisition, and provenance input in the
+    # baseline trigger so an evaluator-only change cannot leave it unschedulable.
+    required_paths = {
+        "scripts/download_s_biad634.py",
+        "scripts/evaluate_s_biad634.py",
+        "scripts/metrics_instance.py",
+        "scripts/verify_bbbc039_baseline_run.py",
+        "scripts/verify_bbbc039_checkpoint.py",
+        "scripts/verify_bbbc039_artifact_provenance.py",
+        ".github/workflows/s_biad634_zero_shot.yml",
+    }
+    assert required_paths <= paths
