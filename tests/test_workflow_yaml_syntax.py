@@ -34,7 +34,9 @@ def test_browser_dependency_failure_is_recorded_before_public_harness() -> None:
         workflow_path.read_text(encoding="utf-8"),
         Loader=yaml.BaseLoader,
     )
-    steps = workflow["jobs"]["public-upload-to-agent"]["steps"]
+    job = workflow["jobs"]["public-upload-to-agent"]
+    assert job.get("if") == "github.ref == 'refs/heads/main'"
+    steps = job["steps"]
     install_index = next(
         index for index, step in enumerate(steps)
         if step.get("name") == "Install browser E2E dependencies"
