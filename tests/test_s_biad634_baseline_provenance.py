@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from scripts.verify_bbbc039_baseline_run import validate_baseline_run
+from scripts.verify_bbbc039_checkpoint import validate_checkpoint_metadata
 
 
 EXPECTED_SHA = "d4a653e94501e8b9f1ec9de09ff71720f90ab340"
@@ -24,6 +25,29 @@ def baseline_run(**overrides):
     }
     metadata.update(overrides)
     return metadata
+
+
+def baseline_config():
+    return {
+        "experiment": "bbbc039_baseline",
+        "seed": 42,
+        "training": {
+            "device": "auto",
+            "epochs": 100,
+            "batch_size": 8,
+            "num_workers": 4,
+            "learning_rate": 0.0003,
+            "weight_decay": 0.00001,
+        },
+    }
+
+
+def checkpoint_metadata(config=None, *, seed=42, epochs_run=100):
+    return {
+        "config": baseline_config() if config is None else config,
+        "seed": seed,
+        "epochs_run": epochs_run,
+    }
 
 
 def test_accepts_successful_baseline_from_exact_main_commit():
@@ -79,6 +103,53 @@ def test_rejects_malformed_expected_commit_sha():
         validate_baseline_run(baseline_run(), "not-a-commit")
 
 
+def test_accepts_checkpoint_trained_with_exact_committed_recipe():
+    assert validate_checkpoint_metadata(checkpoint_metadata(), baseline_config()) == {
+        "seed": 42,
+        "epochs_run": 100,
+    }
+
+
+def test_rejects_checkpoint_that_only_trained_twenty_of_one_hundred_epochs():
+    with pytest.raises(ValueError, match="epochs_run does not match"):
+        validate_checkpoint_metadata(
+            checkpoint_metadata(epochs_run=20),
+            baseline_config(),
+        )
+
+
+def test_rejects_checkpoint_with_wrong_seed():
+    with pytest.raises(ValueError, match="seed does not match"):
+        validate_checkpoint_metadata(
+            checkpoint_metadata(seed=7),
+            baseline_config(),
+        )
+
+
+def test_rejects_historical_checkpoint_that_claimed_unimplemented_training_options():
+    # Metadata read from baseline run #42771485283: config said 100 epochs,
+    # AMP, early stopping and geometric augmentation, but epochs_run was 20.
+    historical_config = {
+        **baseline_config(),
+        "training": {
+            **baseline_config()["training"],
+            "amp": True,
+            "early_stopping_patience": 20,
+        },
+        "augmentation": {
+            "horizontal_flip": True,
+            "vertical_flip": True,
+            "rotation_90": True,
+            "intensity_jitter": False,
+        },
+    }
+    with pytest.raises(ValueError, match="checkpoint config does not match"):
+        validate_checkpoint_metadata(
+            checkpoint_metadata(historical_config, epochs_run=20),
+            baseline_config(),
+        )
+
+
 def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity():
     workflow_path = (
         Path(__file__).resolve().parents[1]
@@ -104,7 +175,14 @@ def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity(
     assert "verify_bbbc039_baseline_run.py" in selection["run"]
     assert "head_sha=$GITHUB_SHA" in selection["run"]
 
+    recipe_verification = next(
+        step for step in steps
+        if step.get("name") == "Verify baseline checkpoint training recipe"
+    )
     provenance = next(step for step in steps if step.get("name") == "Record evaluation provenance")
+    assert "verify_bbbc039_checkpoint.py" in recipe_verification["run"]
+    assert steps.index(recipe_verification) < steps.index(provenance)
+
     assert "baseline_commit_sha" in provenance["run"]
     assert "baseline_checkpoint_sha256" in provenance["run"]
 
