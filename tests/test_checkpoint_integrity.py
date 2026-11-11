@@ -252,3 +252,14 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
     assert 'while [ "$SECONDS" -lt "$deadline" ]' in script
     assert "--max-time 15" in script
     assert "--retry" not in script
+
+
+def test_bbbc039_baseline_training_is_main_only():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load(
+        (root / ".github/workflows/bbbc039_baseline.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["train-evaluate"]
+    assert job["if"] == "${{ github.ref == 'refs/heads/main' }}"
+    assert job["timeout-minutes"] == 350
+
