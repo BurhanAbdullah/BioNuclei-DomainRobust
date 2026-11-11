@@ -24,6 +24,8 @@ model:
   out_channels: 3
   base_channels: 32
 
+# Keep only options consumed by scripts/train_bbbc039.py. Augmentation,
+# mixed precision and early stopping are not implemented by this trainer.
 training:
   device: auto
   epochs: 20
@@ -31,19 +33,11 @@ training:
   num_workers: 4
   learning_rate: 0.0003
   weight_decay: 0.00001
-  amp: true
-  early_stopping_patience: 20
 
 loss:
   segmentation: cross_entropy
   boundary_weight: 2.0
   dice_weight: 1.0
-
-augmentation:
-  horizontal_flip: true
-  vertical_flip: true
-  rotation_90: true
-  intensity_jitter: false
 
 metrics:
   - dice
