@@ -109,7 +109,7 @@ def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity(
     assert "baseline_checkpoint_sha256" in provenance["run"]
 
 
-def test_baseline_workflow_applies_the_requested_training_seed() -> None:
+def test_baseline_workflow_uses_fixed_release_training_recipe() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer_path = root / "scripts" / "train_bbbc039.py"
     trainer_source = trainer_path.read_text(encoding="utf-8")
@@ -136,7 +136,10 @@ def test_baseline_workflow_applies_the_requested_training_seed() -> None:
         step for step in baseline["jobs"]["train-evaluate"]["steps"]
         if step.get("name") == "Train boundary-aware U-Net baseline"
     )
-    assert train_step["env"]["SEED"] == "${{ inputs.seed || '42' }}"
+    assert (baseline["on"]["workflow_dispatch"] or {}) == {}
+    assert train_step["env"]["EPOCHS"] == "20"
+    assert train_step["env"]["SEED"] == "42"
+    assert '--epochs "$EPOCHS"' in train_step["run"]
     assert '--seed "$SEED"' in train_step["run"]
 
 
