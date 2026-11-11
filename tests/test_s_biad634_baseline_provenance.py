@@ -10,7 +10,10 @@ import yaml
 
 from scripts.verify_bbbc039_baseline_run import validate_baseline_run
 from scripts.verify_bbbc039_checkpoint import validate_checkpoint_metadata
-from scripts.verify_bbbc039_artifact_provenance import build_baseline_artifact_provenance
+from scripts.verify_bbbc039_artifact_provenance import (
+    build_baseline_artifact_provenance,
+    build_s_biad634_dataset_provenance,
+)
 
 
 EXPECTED_SHA = "d4a653e94501e8b9f1ec9de09ff71720f90ab340"
@@ -255,6 +258,84 @@ def test_records_dataset_release_split_and_config_hashes(tmp_path):
     assert provenance["source_archive_sha256"] == {
         name: "a" * 64 for name in ("images", "masks", "metadata")
     }
+
+
+
+
+def _write_s_biad634_manifest(
+    path: Path,
+    *,
+    archive_hash: str = "b" * 64,
+    raw_count: int = 79,
+    groundtruth_count: int = 79,
+):
+    raw_images = [f"rawimages/image-{index}.tif" for index in range(raw_count)]
+    groundtruth = [f"groundtruth/image-{index}.tif" for index in range(groundtruth_count)]
+    metadata = ["metadata/experiment.txt", "metadata/labels.csv"]
+    files = raw_images + groundtruth + metadata
+    manifest = {
+        "dataset": "S-BIAD634 / S-BSST265",
+        "source_url": "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip",
+        "archive_sha256": archive_hash,
+        "expected_public_license": "CC0",
+        "files": files,
+        "raw_image_files": raw_images,
+        "groundtruth_files": groundtruth,
+        "metadata_candidates": metadata,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return manifest
+
+
+def test_records_target_s_biad634_manifest_and_archive_identity(tmp_path):
+    manifest_path = tmp_path / "data/raw/S-BIAD634/download_manifest.json"
+    _write_s_biad634_manifest(manifest_path)
+    provenance = build_s_biad634_dataset_provenance(manifest_path)
+    assert provenance["dataset"] == "S-BIAD634 / S-BSST265"
+    assert provenance["source_url"] == "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
+    assert provenance["expected_public_license"] == "CC0"
+    assert provenance["archive_sha256"] == "b" * 64
+    assert provenance["manifest_sha256"] == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    assert provenance["file_count"] == 160
+    assert provenance["raw_image_count"] == 79
+    assert provenance["groundtruth_count"] == 79
+    assert provenance["metadata_candidate_count"] == 2
+
+
+def test_rejects_target_s_biad634_manifest_with_invalid_archive_digest(tmp_path):
+    manifest_path = tmp_path / "data/raw/S-BIAD634/download_manifest.json"
+    _write_s_biad634_manifest(manifest_path, archive_hash="invalid")
+    with pytest.raises(ValueError, match="archive SHA-256"):
+        build_s_biad634_dataset_provenance(manifest_path)
+
+
+def test_rejects_target_s_biad634_manifest_without_complete_image_pairs(tmp_path):
+    manifest_path = tmp_path / "data/raw/S-BIAD634/download_manifest.json"
+    _write_s_biad634_manifest(manifest_path, raw_count=78)
+    with pytest.raises(ValueError, match="exactly 79"):
+        build_s_biad634_dataset_provenance(manifest_path)
+
+
+def test_zero_shot_workflow_binds_target_dataset_manifest_after_download():
+    workflow_path = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "s_biad634_zero_shot.yml"
+    )
+    workflow = yaml.load(
+        workflow_path.read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["zero-shot"]["steps"]
+    download = next(step for step in steps if step.get("name") == "Download and inventory S-BIAD634")
+    bind = next(step for step in steps if step.get("name") == "Bind target dataset provenance")
+    evaluate = next(step for step in steps if step.get("name") == "Run zero-shot transfer evaluation")
+    assert steps.index(download) < steps.index(bind) < steps.index(evaluate)
+    assert "build_s_biad634_dataset_provenance" in bind["run"]
+    assert "download_manifest.json" in bind["run"]
+    assert "target_dataset_provenance" in bind["run"]
 
 
 def test_rejects_baseline_artifact_with_non_official_split_counts(tmp_path):
