@@ -140,6 +140,18 @@ def test_baseline_workflow_uses_fixed_release_training_recipe() -> None:
     config = yaml.safe_load((root / "configs" / "bbbc039_baseline.yaml").read_text(encoding="utf-8"))
     assert config["training"]["epochs"] == 20
     assert config["seed"] == 42
+    # Keep checkpoint metadata truthful: only declare training options the
+    # canonical trainer actually consumes; AMP, early stopping and augmentation
+    # were previously present in YAML but never executed.
+    assert set(config["training"]) == {
+        "device",
+        "epochs",
+        "batch_size",
+        "num_workers",
+        "learning_rate",
+        "weight_decay",
+    }
+    assert "augmentation" not in config
     assert train_step["env"]["EPOCHS"] == str(config["training"]["epochs"])
     assert train_step["env"]["SEED"] == str(config["seed"])
     assert '--epochs "$EPOCHS"' in train_step["run"]
