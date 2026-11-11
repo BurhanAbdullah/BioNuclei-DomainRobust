@@ -137,8 +137,11 @@ def test_baseline_workflow_uses_fixed_release_training_recipe() -> None:
         if step.get("name") == "Train boundary-aware U-Net baseline"
     )
     assert (baseline["on"]["workflow_dispatch"] or {}) == {}
-    assert train_step["env"]["EPOCHS"] == "20"
-    assert train_step["env"]["SEED"] == "42"
+    config = yaml.safe_load((root / "configs" / "bbbc039_baseline.yaml").read_text(encoding="utf-8"))
+    assert config["training"]["epochs"] == 20
+    assert config["seed"] == 42
+    assert train_step["env"]["EPOCHS"] == str(config["training"]["epochs"])
+    assert train_step["env"]["SEED"] == str(config["seed"])
     assert '--epochs "$EPOCHS"' in train_step["run"]
     assert '--seed "$SEED"' in train_step["run"]
 
