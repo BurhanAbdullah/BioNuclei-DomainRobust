@@ -109,7 +109,7 @@ def test_zero_shot_workflow_only_accepts_main_baseline_and_records_its_identity(
     assert "baseline_checkpoint_sha256" in provenance["run"]
 
 
-def test_baseline_workflow_uses_fixed_release_training_recipe() -> None:
+def test_baseline_workflow_uses_documented_release_training_recipe() -> None:
     root = Path(__file__).resolve().parents[1]
     trainer_path = root / "scripts" / "train_bbbc039.py"
     trainer_source = trainer_path.read_text(encoding="utf-8")
@@ -138,11 +138,11 @@ def test_baseline_workflow_uses_fixed_release_training_recipe() -> None:
     )
     assert (baseline["on"]["workflow_dispatch"] or {}) == {}
     config = yaml.safe_load((root / "configs" / "bbbc039_baseline.yaml").read_text(encoding="utf-8"))
-    assert config["training"]["epochs"] == 20
+    assert config["training"]["epochs"] == 100
     assert config["seed"] == 42
     # Keep checkpoint metadata truthful: only declare training options the
-    # canonical trainer actually consumes; AMP, early stopping and augmentation
-    # were previously present in YAML but never executed.
+    # canonical trainer actually consumes. Geometric augmentation, AMP and
+    # early stopping are not implemented and must not be implied by the YAML.
     assert set(config["training"]) == {
         "device",
         "epochs",
@@ -152,10 +152,11 @@ def test_baseline_workflow_uses_fixed_release_training_recipe() -> None:
         "weight_decay",
     }
     assert "augmentation" not in config
-    assert train_step["env"]["EPOCHS"] == str(config["training"]["epochs"])
-    assert train_step["env"]["SEED"] == str(config["seed"])
-    assert '--epochs "$EPOCHS"' in train_step["run"]
-    assert '--seed "$SEED"' in train_step["run"]
+    # The canonical workflow must use the committed configuration as the
+    # single source of truth, not reintroduce a second epoch/seed override.
+    assert "env" not in train_step
+    assert "--epochs" not in train_step["run"]
+    assert "--seed" not in train_step["run"]
 
 
 def test_baseline_training_is_restricted_to_main() -> None:
