@@ -114,6 +114,19 @@ jobs:
           BASELINE_CHECKPOINT_SHA256: ${{ steps.checkpoint.outputs.sha256 }}
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Bind target dataset provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.verify_bbbc039_artifact_provenance import build_s_biad634_dataset_provenance
+          provenance_path = Path('outputs/s_biad634_zero_shot/provenance.json')
+          provenance = json.loads(provenance_path.read_text(encoding='utf-8'))
+          provenance['target_dataset_provenance'] = build_s_biad634_dataset_provenance(
+              Path('data/raw/S-BIAD634/download_manifest.json')
+          )
+          provenance_path.write_text(json.dumps(provenance, indent=2) + '\\n', encoding='utf-8')
+          PY
       - name: Run zero-shot transfer evaluation
         run: |
           PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
