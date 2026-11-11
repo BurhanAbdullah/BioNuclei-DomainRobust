@@ -36,6 +36,67 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+
+_S_BIAD634_DATASET = "S-BIAD634 / S-BSST265"
+_S_BIAD634_SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
+_S_BIAD634_IMAGE_COUNT = 79
+
+
+def build_s_biad634_dataset_provenance(manifest_path: Path) -> dict[str, Any]:
+    """Validate and fingerprint the exact target-domain dataset used for transfer."""
+    manifest = _read_json_mapping(manifest_path)
+    if manifest.get("dataset") != _S_BIAD634_DATASET:
+        raise ValueError("S-BIAD634 manifest identifies an unexpected dataset")
+    if manifest.get("source_url") != _S_BIAD634_SOURCE_URL:
+        raise ValueError("S-BIAD634 manifest does not identify the official BioStudies archive")
+    if manifest.get("expected_public_license") != "CC0":
+        raise ValueError("S-BIAD634 manifest does not record the expected CC0 license")
+
+    archive_sha256 = manifest.get("archive_sha256")
+    if not isinstance(archive_sha256, str) or not _SHA256_RE.fullmatch(archive_sha256):
+        raise ValueError("S-BIAD634 archive SHA-256 is missing or invalid")
+
+    files = manifest.get("files")
+    if not isinstance(files, list) or any(not isinstance(item, str) or not item.strip() for item in files):
+        raise ValueError("S-BIAD634 manifest has an invalid extracted-file inventory")
+    if len(files) != len(set(files)):
+        raise ValueError("S-BIAD634 extracted-file inventory contains duplicates")
+    file_set = set(files)
+
+    inventories: dict[str, list[str]] = {}
+    for field in ("raw_image_files", "groundtruth_files", "metadata_candidates"):
+        members = manifest.get(field)
+        if not isinstance(members, list) or any(
+            not isinstance(item, str) or not item.strip() for item in members
+        ):
+            raise ValueError(f"S-BIAD634 manifest has an invalid {field} inventory")
+        if len(members) != len(set(members)):
+            raise ValueError(f"S-BIAD634 {field} inventory contains duplicates")
+        if not set(members).issubset(file_set):
+            raise ValueError(f"S-BIAD634 {field} inventory references files outside the archive inventory")
+        inventories[field] = members
+
+    raw_count = len(inventories["raw_image_files"])
+    groundtruth_count = len(inventories["groundtruth_files"])
+    if raw_count != _S_BIAD634_IMAGE_COUNT or groundtruth_count != _S_BIAD634_IMAGE_COUNT:
+        raise ValueError(
+            "S-BIAD634 manifest must inventory exactly 79 raw images and 79 ground-truth masks: "
+            f"raw={raw_count}, groundtruth={groundtruth_count}"
+        )
+
+    return {
+        "dataset": _S_BIAD634_DATASET,
+        "source_url": _S_BIAD634_SOURCE_URL,
+        "expected_public_license": "CC0",
+        "archive_sha256": archive_sha256,
+        "manifest_sha256": _sha256(manifest_path),
+        "file_count": len(files),
+        "raw_image_count": raw_count,
+        "groundtruth_count": groundtruth_count,
+        "metadata_candidate_count": len(inventories["metadata_candidates"]),
+    }
+
+
 def build_baseline_artifact_provenance(
     artifact_root: Path,
     config_path: Path,
