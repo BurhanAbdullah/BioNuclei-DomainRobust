@@ -11,7 +11,9 @@ on:
       - "webapp/community.py"
       - "webapp/app.py"
       - "webapp/community_app.py"
+      - "webapp/Dockerfile"
       - "webapp/community.Dockerfile"
+      - "deploy/render-cpu-constraints.txt"
       - "scripts/validate_tiled_checkpoint.py"
       - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
@@ -26,7 +28,9 @@ on:
       - "webapp/community.py"
       - "webapp/app.py"
       - "webapp/community_app.py"
+      - "webapp/Dockerfile"
       - "webapp/community.Dockerfile"
+      - "deploy/render-cpu-constraints.txt"
       - "scripts/validate_tiled_checkpoint.py"
       - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
@@ -63,7 +67,7 @@ jobs:
           set -euo pipefail
           curl --fail --location --retry 3 --retry-delay 2 --retry-all-errors \
             "$CHECKPOINT_URL" --output "$CHECKPOINT_PATH"
-          printf '%s  %s\n' "$EXPECTED_SHA256" "$CHECKPOINT_PATH" | sha256sum --check --strict
+          printf "%s  %s\\n" "$EXPECTED_SHA256" "$CHECKPOINT_PATH" | sha256sum --check --strict
           echo "BIONUCLEI_CHECKPOINT=$CHECKPOINT_PATH" >> "$GITHUB_ENV"
           echo "BIONUCLEI_EXPECTED_CHECKPOINT_SHA256=$EXPECTED_SHA256" >> "$GITHUB_ENV"
 
