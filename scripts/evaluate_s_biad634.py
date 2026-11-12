@@ -50,28 +50,20 @@ def pair_files(root):
     pairs = []
     missing = []
     ambiguous = []
-    used_masks = set()
     for image in images:
         matches = candidates.get(image.stem, [])
         if len(matches) == 1:
-            mask = matches[0]
-            if mask in used_masks:
-                ambiguous.append(image.stem)
-            else:
-                pairs.append((image, mask))
-                used_masks.add(mask)
+            pairs.append((image, matches[0]))
         elif not matches:
             missing.append(image.stem)
         else:
             ambiguous.append(image.stem)
 
-    unused_masks = sorted(mask for mask in masks if mask not in used_masks)
-    if missing or ambiguous or len(pairs) != len(images) or unused_masks:
+    if missing or ambiguous or len(pairs) != len(images):
         raise RuntimeError(
             "Could not establish a one-to-one S-BIAD634 image/ground-truth pairing: "
-            f"images={len(images)}, groundtruth_tif_files={len(masks)}, pairs={len(pairs)}, "
-            f"missing={missing[:10]}, ambiguous={ambiguous[:10]}, "
-            f"unused_groundtruth={[mask.name for mask in unused_masks[:10]]}"
+            f"images={len(images)}, groundtruth_files={len(masks)}, pairs={len(pairs)}, "
+            f"missing={missing[:10]}, ambiguous={ambiguous[:10]}"
         )
     return pairs
 
