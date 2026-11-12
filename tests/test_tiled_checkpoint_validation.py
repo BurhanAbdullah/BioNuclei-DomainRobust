@@ -425,6 +425,85 @@ def test_cgroup_memory_evidence_is_bound_to_runner_manifest(tmp_path: Path) -> N
     assert persisted["manifest_sha256"] == sha256_file(evidence_dir / "manifest.json")
 
 
+def test_failed_cgroup_memory_gate_is_bound_without_becoming_a_pass(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    (evidence_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                "public_inference": False,
+                "files": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    memory_evidence = {
+        "limit_bytes": 503316480,
+        "peak_bytes": 503316480,
+        "accounting_source": "cgroup_v2",
+    }
+    memory_path = evidence_dir / "cgroup-memory.json"
+    memory_path.write_text(json.dumps(memory_evidence), encoding="utf-8")
+    reason = "memory validation step outcome: failure"
+
+    persisted = persist_cgroup_memory_evidence(
+        evidence_dir,
+        memory_evidence["limit_bytes"],
+        memory_evidence["peak_bytes"],
+        memory_evidence["accounting_source"],
+        gate_passed=False,
+        failure_reason=reason,
+    )
+
+    updated = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert updated["cgroup_memory_gate"] == "failed"
+    assert updated["cgroup_memory_failure_reason"] == reason
+    assert updated["cgroup_memory_peak_bytes"] == 503316480
+    assert updated["cgroup_memory_headroom_bytes"] == 0
+    assert updated["files"]["cgroup-memory.json"] == {
+        "sha256": sha256_file(memory_path),
+        "size_bytes": memory_path.stat().st_size,
+    }
+    assert persisted["cgroup_memory_gate"] == "failed"
+
+
+def test_unavailable_cgroup_metrics_are_bound_as_unverified(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    (evidence_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                "public_inference": False,
+                "files": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    reason = "memory validation step outcome: skipped"
+    memory_path = evidence_dir / "cgroup-memory.json"
+    memory_path.write_text(
+        json.dumps({"status": "unverified", "reason": reason}),
+        encoding="utf-8",
+    )
+
+    persisted = persist_cgroup_memory_evidence(
+        evidence_dir,
+        None,
+        None,
+        None,
+        gate_passed=False,
+        failure_reason=reason,
+    )
+
+    updated = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert updated["cgroup_memory_gate"] == "unverified"
+    assert updated["cgroup_memory_failure_reason"] == reason
+    assert "cgroup_memory_peak_bytes" not in updated
+    assert persisted["cgroup_memory_gate"] == "unverified"
+
+
 @pytest.mark.parametrize(
     ("limit_bytes", "peak_bytes", "accounting_source", "message"),
     [
@@ -518,5 +597,10 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
     assert 'memory_source="cgroup_v2"' in memory["run"]
     assert 'memory_source="cgroup_v1"' in memory["run"]
     assert "persist_cgroup_memory_evidence" in persist["run"]
-    assert "steps.memory_validation.outcome == 'success'" in upload["if"]
+    assert "always()" in persist["if"]
+    assert "steps.checkpoint_validation.outcome == 'success'" in persist["if"]
+    assert "MEMORY_VALIDATION_OUTCOME" in persist["env"]
+    assert "always()" in upload["if"]
+    assert "steps.checkpoint_validation.outcome == 'success'" in upload["if"]
     assert "steps.persist_memory_evidence.outcome == 'success'" in upload["if"]
+    assert "steps.memory_validation.outcome == 'success'" not in upload["if"]
