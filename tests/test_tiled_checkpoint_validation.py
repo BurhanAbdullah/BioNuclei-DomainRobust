@@ -80,7 +80,7 @@ def test_persist_validation_evidence_rejects_disposable_job_subdirectory(tmp_pat
         )
 
 
-def test_constrained_memory_container_caps_numeric_thread_pools_without_weakening_limit() -> None:
+def test_constrained_memory_validation_uses_production_image_thread_defaults() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.load(
         (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
@@ -89,13 +89,19 @@ def test_constrained_memory_container_caps_numeric_thread_pools_without_weakenin
         Loader=yaml.BaseLoader,
     )
     steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    build_step = next(
+        step for step in steps
+        if step.get("name") == "Build production community image for constrained-memory validation"
+    )
+    assert "--file webapp/community.Dockerfile" in build_step["run"]
+
     memory_step = next(
         step for step in steps
         if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
     )
     command = memory_step["run"]
     for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-        assert f"--env {variable}=1" in command
+        assert f"--env {variable}=1" not in command
     assert "--memory=503316480" in command
     assert '[ "$memory_peak" -le 492830720 ]' in command
 
