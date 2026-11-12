@@ -126,3 +126,17 @@ def test_both_production_images_use_the_same_single_thread_defaults() -> None:
         env_block = (root / relative).read_text(encoding="utf-8").split("\n\n", 2)[1]
         for variable in variables:
             assert f"{variable}=1" in env_block, f"{relative} is missing {variable}=1"
+
+
+def test_both_production_images_pin_cpu_only_pytorch() -> None:
+    root = Path(__file__).resolve().parents[1]
+    constraints = (root / "deploy" / "render-cpu-constraints.txt").read_text(encoding="utf-8")
+    assert "--extra-index-url https://download.pytorch.org/whl/cpu" in constraints
+    assert "torch==2.14.0+cpu" in constraints
+    assert "torchvision==0.29.0+cpu" in constraints
+
+    for relative in ("webapp/Dockerfile", "webapp/community.Dockerfile"):
+        dockerfile = (root / relative).read_text(encoding="utf-8")
+        assert "COPY deploy/render-cpu-constraints.txt ./deploy/render-cpu-constraints.txt" in dockerfile
+        assert 'pip install --constraint deploy/render-cpu-constraints.txt -e ".[web]"' in dockerfile
+        assert "torch.version.cuda is None" in dockerfile
