@@ -301,6 +301,7 @@ def test_records_target_s_biad634_manifest_and_archive_identity(tmp_path):
     assert provenance["raw_image_count"] == 79
     assert provenance["groundtruth_count"] == 79
     assert provenance["paired_image_count"] == 79
+    assert provenance["unmatched_groundtruth_count"] == 0
     assert len(provenance["pairing_sha256"]) == 64
     assert provenance["metadata_candidate_count"] == 2
 
@@ -659,18 +660,6 @@ def test_evaluator_rejects_duplicate_raw_image_stems_that_would_reuse_a_mask(tmp
         pair_files(tmp_path)
 
 
-def test_evaluator_rejects_unmatched_groundtruth_masks(tmp_path):
-    from scripts.evaluate_s_biad634 import pair_files
-
-    _write_pairing_tree(
-        tmp_path,
-        ["image-1.tif"],
-        ["image-1.tif", "orphan.tif"],
-    )
-    with pytest.raises(RuntimeError, match="unused_groundtruth"):
-        pair_files(tmp_path)
-
-
 def test_evaluator_rejects_ambiguous_groundtruth_stems(tmp_path):
     from scripts.evaluate_s_biad634 import pair_files
 
@@ -681,4 +670,14 @@ def test_evaluator_rejects_ambiguous_groundtruth_stems(tmp_path):
     )
     with pytest.raises(RuntimeError, match="ambiguous"):
         pair_files(tmp_path)
+
+
+def test_target_provenance_records_unmatched_auxiliary_groundtruth_files(tmp_path):
+    manifest_path = tmp_path / "data/raw/S-BIAD634/download_manifest.json"
+    _write_s_biad634_manifest(manifest_path, groundtruth_count=80)
+    provenance = build_s_biad634_dataset_provenance(manifest_path)
+    assert provenance["raw_image_count"] == 79
+    assert provenance["groundtruth_count"] == 80
+    assert provenance["paired_image_count"] == 79
+    assert provenance["unmatched_groundtruth_count"] == 1
 
