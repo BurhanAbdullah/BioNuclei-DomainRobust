@@ -143,6 +143,19 @@ def test_both_production_images_pin_cpu_only_pytorch() -> None:
         assert 'pip install --constraint deploy/render-cpu-constraints.txt -e ".[web]"' in dockerfile
         assert "torch.version.cuda is None" in dockerfile
 
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    install = next(
+        step for step in workflow["jobs"]["released-checkpoint"]["steps"]
+        if step.get("name") == "Install production web dependencies"
+    )
+    assert "--constraint deploy/render-cpu-constraints.txt" in install["run"]
+    assert "torch.version.cuda is None" in install["run"]
+
 
 @pytest.mark.parametrize(
     ("exit_codes", "expected_status", "expected_calls"),
