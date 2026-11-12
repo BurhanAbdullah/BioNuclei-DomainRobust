@@ -32,10 +32,17 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         raise ValueError("Expected semantic class values in {0, 1, 2}")
 
     foreground = semantic != 0
+    foreground_components, foreground_count = ndimage.label(
+        foreground, structure=_CONNECTIVITY_8
+    )
+    if foreground_count == 0:
+        return np.zeros(semantic.shape, dtype=np.int32)
+
     interior = semantic == 1
     markers, marker_count = ndimage.label(interior, structure=_CONNECTIVITY_8)
     if marker_count == 0:
-        return np.zeros(semantic.shape, dtype=np.int32)
+        # Tiny nuclei can be entirely boundary class after target erosion.
+        return foreground_components.astype(np.int32, copy=False)
 
     distance = ndimage.distance_transform_edt(interior).astype(np.float32, copy=False)
     instances = watershed(
@@ -45,4 +52,21 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         connectivity=_CONNECTIVITY_8,
         watershed_line=False,
     )
+
+    # Keep disconnected boundary-only components as single objects. There is
+    # no interior evidence with which to split them, but dropping them would
+    # silently discard valid tiny nuclei and model-predicted foreground.
+    seeded_components = np.zeros(foreground_count + 1, dtype=bool)
+    seeded_components[np.unique(foreground_components[markers > 0])] = True
+    unseeded_components = np.flatnonzero(~seeded_components[1:]) + 1
+    if unseeded_components.size:
+        fallback_labels = np.zeros(foreground_count + 1, dtype=np.int32)
+        fallback_labels[unseeded_components] = np.arange(
+            marker_count + 1,
+            marker_count + unseeded_components.size + 1,
+            dtype=np.int32,
+        )
+        fallback_mask = (foreground_components > 0) & ~seeded_components[foreground_components]
+        instances[fallback_mask] = fallback_labels[foreground_components[fallback_mask]]
+
     return instances.astype(np.int32, copy=False)
