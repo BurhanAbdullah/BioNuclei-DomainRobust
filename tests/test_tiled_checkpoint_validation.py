@@ -3,13 +3,20 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import re
 import zipfile
 from pathlib import Path
 
 import pytest
 import yaml
 
-from scripts.validate_tiled_checkpoint import persist_validation_evidence, sha256_file
+from scripts.validate_tiled_checkpoint import (
+    persist_cgroup_memory_evidence,
+    persist_validation_evidence,
+    resolve_revision_provenance,
+    sha256_file,
+    validation_revision_provenance,
+)
 
 
 def _sources(root: Path) -> tuple[Path, Path, Path]:
@@ -247,3 +254,269 @@ def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
     else:
         assert "Constrained-memory validation attempt 2/2" not in completed.stdout
 
+
+def test_production_api_image_runs_health_with_the_pinned_checkpoint() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    api_build = next(
+        step for step in steps
+        if step.get("name") == "Build production API image and verify CPU-only PyTorch"
+    )
+    api_health = next(
+        step for step in steps
+        if step.get("name") == "Run production API image health check with the pinned checkpoint"
+    )
+    community_build = next(
+        step for step in steps
+        if step.get("name") == "Build production community image for constrained-memory validation"
+    )
+
+    assert steps.index(api_build) < steps.index(api_health) < steps.index(community_build)
+    command = api_health["run"]
+    for required in (
+        "docker run --detach",
+        "--volume \"$BIONUCLEI_CHECKPOINT:/opt/models/bionuclei.pt:ro\"",
+        "http://127.0.0.1:18000/health",
+        "checkpoint_available",
+        "checkpoint_verified",
+        "checkpoint_sha256",
+        "docker logs",
+        "docker rm -f",
+    ):
+        assert required in command
+    assert api_health["env"]["EXPECTED_SHA256"] == (
+        "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+    )
+
+
+def test_pull_request_manifest_binds_source_base_and_tested_merge_commits() -> None:
+    source_sha = "a" * 40
+    base_sha = "b" * 40
+    merge_sha = "c" * 40
+
+    provenance = resolve_revision_provenance(
+        "pull_request",
+        merge_sha,
+        {
+            "pull_request": {
+                "head": {"sha": source_sha},
+                "base": {"sha": base_sha},
+            }
+        },
+    )
+
+    assert provenance == {
+        "event_name": "pull_request",
+        "head_sha": source_sha,
+        "base_sha": base_sha,
+        "tested_sha": merge_sha,
+    }
+
+
+def test_push_manifest_uses_the_pushed_commit_as_source_and_tested_sha() -> None:
+    pushed_sha = "d" * 40
+
+    provenance = resolve_revision_provenance("push", pushed_sha)
+
+    assert provenance == {
+        "event_name": "push",
+        "head_sha": pushed_sha,
+        "base_sha": None,
+        "tested_sha": pushed_sha,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"pull_request": {"head": {"sha": "a" * 40}}},
+        {
+            "pull_request": {
+                "head": {"sha": "not-a-sha"},
+                "base": {"sha": "b" * 40},
+            }
+        },
+    ],
+)
+def test_pull_request_provenance_fails_closed_without_valid_head_and_base(payload) -> None:
+    with pytest.raises(ValueError):
+        resolve_revision_provenance("pull_request", "c" * 40, payload)
+
+
+def test_revision_provenance_rejects_invalid_workflow_sha() -> None:
+    with pytest.raises(ValueError, match="GITHUB_SHA"):
+        resolve_revision_provenance("push", "not-a-sha")
+
+
+def test_validation_revision_provenance_reads_pull_request_event_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_sha = "e" * 40
+    base_sha = "f" * 40
+    merge_sha = "1" * 40
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps(
+            {
+                "pull_request": {
+                    "head": {"sha": source_sha},
+                    "base": {"sha": base_sha},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_SHA", merge_sha)
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+
+    assert validation_revision_provenance() == {
+        "event_name": "pull_request",
+        "head_sha": source_sha,
+        "base_sha": base_sha,
+        "tested_sha": merge_sha,
+    }
+
+
+def test_cgroup_memory_evidence_is_bound_to_runner_manifest(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    manifest = {
+        "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+        "public_inference": False,
+        "files": {},
+    }
+    (evidence_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    memory_evidence = {
+        "limit_bytes": 503316480,
+        "peak_bytes": 243752960,
+        "accounting_source": "cgroup_v2",
+    }
+    memory_path = evidence_dir / "cgroup-memory.json"
+    memory_path.write_text(json.dumps(memory_evidence), encoding="utf-8")
+
+    persisted = persist_cgroup_memory_evidence(
+        evidence_dir,
+        memory_evidence["limit_bytes"],
+        memory_evidence["peak_bytes"],
+        memory_evidence["accounting_source"],
+    )
+
+    updated = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert updated["cgroup_memory_limit_bytes"] == 503316480
+    assert updated["cgroup_memory_peak_bytes"] == 243752960
+    assert updated["cgroup_memory_headroom_bytes"] == 259563520
+    assert updated["cgroup_memory_safety_target_bytes"] == 492830720
+    assert updated["cgroup_memory_accounting_source"] == "cgroup_v2"
+    assert updated["cgroup_memory_gate"] == "passed"
+    assert updated["files"]["cgroup-memory.json"] == {
+        "sha256": sha256_file(memory_path),
+        "size_bytes": memory_path.stat().st_size,
+    }
+    assert persisted["manifest_sha256"] == sha256_file(evidence_dir / "manifest.json")
+
+
+@pytest.mark.parametrize(
+    ("limit_bytes", "peak_bytes", "accounting_source", "message"),
+    [
+        (503316479, 243752960, "cgroup_v2", "480 MiB"),
+        (503316480, 492830721, "cgroup_v2", "470 MiB safety target"),
+        (503316480, 243752960, "unknown", "cgroup v1 or v2"),
+        (True, 243752960, "cgroup_v2", "must be an integer"),
+    ],
+)
+def test_cgroup_memory_evidence_rejects_unverified_or_over_budget_values(
+    tmp_path: Path,
+    limit_bytes: object,
+    peak_bytes: object,
+    accounting_source: object,
+    message: str,
+) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    (evidence_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                "public_inference": False,
+                "files": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (evidence_dir / "cgroup-memory.json").write_text(
+        json.dumps(
+            {
+                "limit_bytes": limit_bytes,
+                "peak_bytes": peak_bytes,
+                "accounting_source": accounting_source,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match=message):
+        persist_cgroup_memory_evidence(
+            evidence_dir,
+            limit_bytes,
+            peak_bytes,
+            accounting_source,
+        )
+
+
+def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    memory = next(
+        step for step in steps
+        if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
+    )
+    persist = next(
+        step for step in steps
+        if step.get("name") == "Persist constrained-memory evidence in the runner manifest"
+    )
+    upload = next(
+        step for step in steps
+        if step.get("name") == "Upload verified runner-only checkpoint evidence"
+    )
+
+    assert memory.get("id") == "memory_validation"
+    assert steps.index(memory) < steps.index(persist) < steps.index(upload)
+    assert '--volume "$EVIDENCE_DIR:/evidence"' in memory["run"]
+    assert "/evidence/cgroup-memory.json" in memory["run"]
+    assert 'printf "{\\"limit_bytes\\":%s,\\"peak_bytes\\":%s,\\"accounting_source\\":\\"%s\\"}\\n"' in memory["run"]
+    shell_match = re.search(
+        r"sh -lc '\n(.*?)\n[ \t]*'\n[ \t]*then(?:\n|$)",
+        memory["run"],
+        flags=re.DOTALL,
+    )
+    assert shell_match is not None, "could not isolate the constrained-memory shell script"
+    inner_script = shell_match.group(1)
+    syntax = subprocess.run(
+        ["sh", "-n"],
+        input=inner_script,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+    assert 'memory_source="cgroup_v2"' in memory["run"]
+    assert 'memory_source="cgroup_v1"' in memory["run"]
+    assert "persist_cgroup_memory_evidence" in persist["run"]
+    assert "steps.memory_validation.outcome == 'success'" in upload["if"]
+    assert "steps.persist_memory_evidence.outcome == 'success'" in upload["if"]

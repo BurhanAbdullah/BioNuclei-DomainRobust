@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -51,6 +52,70 @@ def build_fixture(path: Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def resolve_revision_provenance(
+    event_name: str,
+    workflow_sha: str,
+    event_payload: dict[str, object] | None = None,
+) -> dict[str, str | None]:
+    """Distinguish the PR source/base commits from the commit actually tested.
+
+    On pull_request events GitHub sets GITHUB_SHA to the synthetic merge
+    commit. The event payload carries the source head and target base SHAs.
+    For push/workflow_dispatch, GITHUB_SHA is both the source and tested SHA.
+    """
+    if not _GIT_SHA_RE.fullmatch(workflow_sha):
+        raise ValueError("GITHUB_SHA must be a full lowercase 40-character commit SHA")
+
+    if event_name == "pull_request":
+        if not isinstance(event_payload, dict):
+            raise ValueError("pull_request event payload is required for revision provenance")
+        pull_request = event_payload.get("pull_request")
+        if not isinstance(pull_request, dict):
+            raise ValueError("pull_request event payload is missing pull_request metadata")
+        head = pull_request.get("head")
+        base = pull_request.get("base")
+        head_sha = head.get("sha") if isinstance(head, dict) else None
+        base_sha = base.get("sha") if isinstance(base, dict) else None
+        if not isinstance(head_sha, str) or not _GIT_SHA_RE.fullmatch(head_sha):
+            raise ValueError("pull_request event payload has no valid source head SHA")
+        if not isinstance(base_sha, str) or not _GIT_SHA_RE.fullmatch(base_sha):
+            raise ValueError("pull_request event payload has no valid target base SHA")
+        return {
+            "event_name": event_name,
+            "head_sha": head_sha,
+            "base_sha": base_sha,
+            "tested_sha": workflow_sha,
+        }
+
+    return {
+        "event_name": event_name or "unknown",
+        "head_sha": workflow_sha,
+        "base_sha": None,
+        "tested_sha": workflow_sha,
+    }
+
+
+def validation_revision_provenance() -> dict[str, str | None]:
+    """Resolve exact source and tested revisions from the GitHub Actions event."""
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    workflow_sha = os.environ.get("GITHUB_SHA", "")
+    event_payload = None
+    if event_name == "pull_request":
+        event_path = os.environ.get("GITHUB_EVENT_PATH", "").strip()
+        if not event_path:
+            raise ValueError("GITHUB_EVENT_PATH is required for pull_request provenance")
+        try:
+            event_payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("cannot read pull_request event payload for revision provenance") from exc
+        if not isinstance(event_payload, dict):
+            raise ValueError("pull_request event payload must be a JSON object")
+    return resolve_revision_provenance(event_name, workflow_sha, event_payload)
 
 
 def persist_validation_evidence(
@@ -114,6 +179,92 @@ def persist_validation_evidence(
         "files": file_entries,
     }
 
+
+def persist_cgroup_memory_evidence(
+    evidence_dir: Path,
+    memory_limit_bytes: object,
+    memory_peak_bytes: object,
+    accounting_source: object,
+) -> dict[str, object]:
+    """Bind the constrained Docker worker's measured cgroup peak to its evidence manifest."""
+    output_dir = evidence_dir.expanduser().resolve()
+    manifest_path = output_dir / "manifest.json"
+    memory_path = output_dir / "cgroup-memory.json"
+    require(manifest_path.is_file(), "Checkpoint evidence manifest is missing before memory binding")
+    require(memory_path.is_file(), "Constrained-memory cgroup evidence file is missing")
+
+    require(
+        isinstance(memory_limit_bytes, int) and not isinstance(memory_limit_bytes, bool),
+        "Cgroup memory limit must be an integer",
+    )
+    require(
+        isinstance(memory_peak_bytes, int) and not isinstance(memory_peak_bytes, bool),
+        "Cgroup memory peak must be an integer",
+    )
+    require(
+        memory_limit_bytes == 503316480,
+        "Cgroup memory limit must be the enforced 480 MiB limit",
+    )
+    require(
+        0 < memory_peak_bytes <= 492830720,
+        "Cgroup memory peak must remain at or below the 470 MiB safety target",
+    )
+    require(
+        isinstance(accounting_source, str) and accounting_source in {"cgroup_v1", "cgroup_v2"},
+        "Cgroup memory accounting source must identify cgroup v1 or v2",
+    )
+
+    memory_payload = json.loads(memory_path.read_text(encoding="utf-8"))
+    require(isinstance(memory_payload, dict), "Cgroup memory evidence must be a JSON object")
+    require(
+        memory_payload == {
+            "limit_bytes": memory_limit_bytes,
+            "peak_bytes": memory_peak_bytes,
+            "accounting_source": accounting_source,
+        },
+        "Cgroup memory evidence file does not match the validated measurements",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    require(isinstance(manifest, dict), "Checkpoint evidence manifest must be a JSON object")
+    require(
+        manifest.get("evidence_scope")
+        == "github_actions_checkpoint_validation_runner_only_not_public_inference",
+        "Memory evidence may only be attached to runner-only checkpoint evidence",
+    )
+    require(
+        manifest.get("public_inference") is False,
+        "Runner evidence must not claim public inference",
+    )
+    files = manifest.get("files")
+    require(isinstance(files, dict), "Checkpoint evidence manifest has no file identity map")
+    files["cgroup-memory.json"] = {
+        "sha256": sha256_file(memory_path),
+        "size_bytes": memory_path.stat().st_size,
+    }
+    manifest.update(
+        {
+            "cgroup_memory_limit_bytes": memory_limit_bytes,
+            "cgroup_memory_peak_bytes": memory_peak_bytes,
+            "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
+            "cgroup_memory_safety_target_bytes": 492830720,
+            "cgroup_memory_accounting_source": accounting_source,
+            "cgroup_memory_gate": "passed",
+        }
+    )
+
+    temporary_manifest = manifest_path.with_name("manifest.json.tmp")
+    temporary_manifest.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary_manifest.replace(manifest_path)
+    return {
+        "manifest_sha256": sha256_file(manifest_path),
+        "cgroup_memory_limit_bytes": memory_limit_bytes,
+        "cgroup_memory_peak_bytes": memory_peak_bytes,
+        "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
+    }
 
 def main() -> None:
     checkpoint_raw = os.environ.get("BIONUCLEI_CHECKPOINT", "")
@@ -281,11 +432,11 @@ def main() -> None:
             evidence_dir_raw = os.environ.get("BIONUCLEI_VALIDATION_EVIDENCE_DIR", "").strip()
             if evidence_dir_raw:
                 evidence_manifest = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
                     "run_id": os.environ.get("GITHUB_RUN_ID"),
                     "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-                    "head_sha": os.environ.get("GITHUB_SHA"),
+                    **validation_revision_provenance(),
                     "fixture_sha256": fixture_sha,
                     "checkpoint_sha256_before": before_sha,
                     "checkpoint_sha256_after": after_sha,
