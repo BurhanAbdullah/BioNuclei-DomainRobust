@@ -307,7 +307,7 @@ jobs:
           if not isinstance(memory, dict):
               memory = {}
           required = {"limit_bytes", "peak_bytes", "accounting_source"}
-          if required.issubset(memory):
+          if required.issubset(memory) and all(memory.get(key) is not None for key in required):
               limit_bytes = memory.get("limit_bytes")
               peak_bytes = memory.get("peak_bytes")
               accounting_source = memory.get("accounting_source")
@@ -315,7 +315,7 @@ jobs:
               raise SystemExit("Successful memory validation did not persist cgroup measurements")
           else:
               memory = {"status": "unverified", "reason": failure_reason}
-              memory_path.write_text(json.dumps(memory, sort_keys=True) + "\\n", encoding="utf-8")
+              memory_path.write_text(json.dumps(memory, sort_keys=True) + "\n", encoding="utf-8")
               limit_bytes = peak_bytes = accounting_source = None
 
           persisted = persist_cgroup_memory_evidence(
