@@ -123,6 +123,12 @@ jobs:
           BIONUCLEI_VALIDATION_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
         run: python scripts/validate_tiled_checkpoint.py
 
+      # The API and community services are separate Render images; build both.
+      - name: Build production API image and verify CPU-only PyTorch
+        run: |
+          set -euo pipefail
+          docker build --file webapp/Dockerfile --tag bionuclei-api-image .
+
       - name: Build production community image for constrained-memory validation
         run: |
           set -euo pipefail
