@@ -54,7 +54,6 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
