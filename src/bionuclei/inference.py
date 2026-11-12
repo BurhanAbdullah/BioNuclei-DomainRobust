@@ -15,10 +15,6 @@ import tifffile
 import torch
 import torch.nn.functional as F
 from scipy import ndimage
-from skimage.io import imread
-from skimage.measure import regionprops
-
-from .data import decode_instance_mask
 from .metrics import boundary_f1, dice_coefficient, iou_score
 from .models import BoundaryUNet
 from .postprocessing import split_boundary_instances
@@ -96,6 +92,10 @@ def _split_instances(logits: torch.Tensor) -> np.ndarray:
 
 
 def _measure(instances: np.ndarray) -> list[dict[str, float | int]]:
+    # Import after model inference so scikit-image does not inflate the
+    # peak memory of the constrained CPU forward pass.
+    from skimage.measure import regionprops
+
     measurements: list[dict[str, float | int]] = []
     for prop in regionprops(instances):
         measurements.append({
@@ -249,6 +249,11 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
 def evaluate(input_path: Path, ground_truth: Path, checkpoint: Path, output: Path, device: str = "cpu") -> dict:
     """Run prediction and report benchmark metrics when ground truth is supplied."""
     result = predict(input_path, checkpoint, output, device)
+    # Evaluation-only readers are loaded on demand, outside the public
+    # inference worker's model-memory critical path.
+    from skimage.io import imread
+    from .data import decode_instance_mask
+
     target = decode_instance_mask(np.asarray(imread(ground_truth)))
     pred = np.asarray(tifffile.imread(output / "segmentation_mask.tif"))
     if pred.shape != target.shape:
