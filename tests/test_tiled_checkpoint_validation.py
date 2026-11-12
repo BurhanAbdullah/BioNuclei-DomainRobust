@@ -247,3 +247,43 @@ def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
     else:
         assert "Constrained-memory validation attempt 2/2" not in completed.stdout
 
+
+
+def test_production_api_image_runs_health_with_the_pinned_checkpoint() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    api_build = next(
+        step for step in steps
+        if step.get("name") == "Build production API image and verify CPU-only PyTorch"
+    )
+    api_health = next(
+        step for step in steps
+        if step.get("name") == "Run production API image health check with the pinned checkpoint"
+    )
+    community_build = next(
+        step for step in steps
+        if step.get("name") == "Build production community image for constrained-memory validation"
+    )
+
+    assert steps.index(api_build) < steps.index(api_health) < steps.index(community_build)
+    command = api_health["run"]
+    for required in (
+        "docker run --detach",
+        "--volume \"$BIONUCLEI_CHECKPOINT:/opt/models/bionuclei.pt:ro\"",
+        "http://127.0.0.1:18000/health",
+        "checkpoint_available",
+        "checkpoint_verified",
+        "checkpoint_sha256",
+        "docker logs",
+        "docker rm -f",
+    ):
+        assert required in command
+    assert api_health["env"]["EXPECTED_SHA256"] == (
+        "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+    )
