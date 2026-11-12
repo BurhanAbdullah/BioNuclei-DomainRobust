@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 from scipy import ndimage
-from skimage.segmentation import watershed
 
 
 _CONNECTIVITY_4 = ndimage.generate_binary_structure(2, 1)
@@ -16,12 +15,16 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
 
     Interior components are the instance markers. Predicted boundary pixels
     remain inside the foreground mask and are partitioned into marker basins
-    by watershed, so touching nuclei stay separate without discarding their
-    boundary pixels. Boundary-only fallback components use 4-connectivity:
-    two tiny nuclei that touch only diagonally must not be merged merely
-    because target erosion left both without interior markers. This fallback
-    is necessarily conservative because a diagonal-only single object is
-    ambiguous without an interior marker.
+    by an 8-connected geodesic watershed, so touching nuclei stay separate
+    without discarding their boundary pixels. The compiled SciPy IFT avoids
+    the Python priority-queue allocation used by scikit-image watershed,
+    which is important under the public worker's 480 MiB memory ceiling.
+
+    Boundary-only fallback components use 4-connectivity: two tiny nuclei
+    that touch only diagonally must not be merged merely because target
+    erosion left both without interior markers. This fallback is necessarily
+    conservative because a diagonal-only single object is ambiguous without
+    an interior marker.
     """
     semantic = np.asarray(classes)
     if semantic.ndim != 2:
@@ -51,14 +54,18 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         # Tiny nuclei can be entirely boundary class after target erosion.
         return foreground_components.astype(np.int32, copy=False)
 
-    distance = ndimage.distance_transform_edt(interior).astype(np.float32, copy=False)
-    instances = watershed(
-        -distance,
-        markers,
-        mask=foreground,
-        connectivity=_CONNECTIVITY_8,
-        watershed_line=False,
+    # All interior pixels are markers; only class-2 boundary pixels are
+    # unmarked. Their topographic elevation is therefore flat, so a constant
+    # uint8 surface gives the same geodesic multi-source flood without
+    # allocating a float distance map or a Python-level watershed queue.
+    watershed_markers = markers.astype(np.int32, copy=True)
+    watershed_markers[~foreground] = -1  # Negative IFT markers are barriers.
+    instances = ndimage.watershed_ift(
+        np.zeros(semantic.shape, dtype=np.uint8),
+        watershed_markers,
+        structure=_CONNECTIVITY_8,
     )
+    instances[~foreground] = 0
 
     # Keep unseeded boundary-only components as single objects. Components
     # that touch seeded regions only diagonally remain independent.
