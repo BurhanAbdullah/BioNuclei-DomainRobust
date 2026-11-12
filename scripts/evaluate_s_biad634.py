@@ -9,6 +9,7 @@ from skimage.io import imread
 from bionuclei.data import decode_instance_mask
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
+from bionuclei.postprocessing import split_boundary_instances
 from scripts.metrics_instance import instance_prf
 
 
@@ -67,6 +68,9 @@ def predict_semantic(model,x,tile_size=512,overlap=32):
     return np.argmax(logits_sum/np.maximum(weights[None],1),axis=0)
 
 
+def split_instances(classes):return split_boundary_instances(classes)
+
+
 def load_mask(path):return decode_instance_mask(np.asarray(imread(path)))
 
 
@@ -76,7 +80,7 @@ def main():
     for image_path,mask_path in pair_files(a.data_root):
         raw=np.asarray(tifffile.imread(image_path)); image=to_model_grayscale(raw); target=load_mask(mask_path)
         if image.shape!=target.shape:raise ValueError(f'Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}')
-        x=image.astype(np.float32); scale=np.percentile(x,99.5); x=np.clip(x/max(float(scale),1.0),0,1); classes=predict_semantic(model,x,a.tile_size,a.overlap); pred,_=ndimage.label(classes!=0,structure=np.ones((3,3),dtype=np.uint8)); pred=pred.astype(np.int32)
+        x=image.astype(np.float32); scale=np.percentile(x,99.5); x=np.clip(x/max(float(scale),1.0),0,1); classes=predict_semantic(model,x,a.tile_size,a.overlap); pred=split_instances(classes)
         prf=instance_prf(pred,target,iou_threshold=0.5)
         results.append({'image':image_path.name,'dice':dice_coefficient(pred>0,target>0),'iou':iou_score(pred>0,target>0),'precision':prf['precision'],'recall':prf['recall'],'f1_score':prf['f1_score'],'aji':aji_score(pred,target),'boundary_f1':boundary_f1(boundary_band(pred),boundary_band(target)),'height':int(image.shape[0]),'width':int(image.shape[1]),'n_target_instances':int(np.max(target)),'n_pred_instances':int(np.max(pred)),'tp':prf['tp'],'fp':prf['fp'],'fn':prf['fn']})
     metrics=('dice','iou','precision','recall','f1_score','aji','boundary_f1')
