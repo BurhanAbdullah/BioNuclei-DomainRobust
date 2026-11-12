@@ -78,31 +78,37 @@ def build_s_biad634_dataset_provenance(manifest_path: Path) -> dict[str, Any]:
 
     raw_count = len(inventories["raw_image_files"])
     groundtruth_count = len(inventories["groundtruth_files"])
-    if raw_count != _S_BIAD634_IMAGE_COUNT or groundtruth_count != _S_BIAD634_IMAGE_COUNT:
+    if raw_count != _S_BIAD634_IMAGE_COUNT or groundtruth_count < raw_count:
         raise ValueError(
-            "S-BIAD634 manifest must inventory exactly 79 raw images and 79 ground-truth masks: "
+            "S-BIAD634 manifest must inventory exactly 79 raw images and at least 79 ground-truth masks: "
             f"raw={raw_count}, groundtruth={groundtruth_count}"
         )
 
-    raw_by_stem = {Path(path).stem: path for path in inventories["raw_image_files"]}
-    groundtruth_by_stem = {Path(path).stem: path for path in inventories["groundtruth_files"]}
-    if len(raw_by_stem) != raw_count:
+    raw_stems = [Path(path).stem for path in inventories["raw_image_files"]]
+    if len(set(raw_stems)) != raw_count:
         raise ValueError("S-BIAD634 raw-image inventory contains duplicate image stems")
-    if len(groundtruth_by_stem) != groundtruth_count:
-        raise ValueError("S-BIAD634 ground-truth inventory contains duplicate mask stems")
-    if set(raw_by_stem) != set(groundtruth_by_stem):
-        missing_masks = sorted(set(raw_by_stem) - set(groundtruth_by_stem))
-        orphan_masks = sorted(set(groundtruth_by_stem) - set(raw_by_stem))
+    raw_by_stem = {
+        Path(path).stem: path for path in inventories["raw_image_files"]
+    }
+    groundtruth_by_stem: dict[str, list[str]] = {}
+    for path in inventories["groundtruth_files"]:
+        groundtruth_by_stem.setdefault(Path(path).stem, []).append(path)
+
+    missing_masks = sorted(stem for stem in raw_by_stem if stem not in groundtruth_by_stem)
+    ambiguous_masks = sorted(
+        stem for stem in raw_by_stem if len(groundtruth_by_stem.get(stem, [])) != 1
+    )
+    if missing_masks or ambiguous_masks:
         raise ValueError(
-            "S-BIAD634 image and ground-truth inventories do not form one-to-one stem pairs: "
-            f"missing_masks={missing_masks[:10]}, orphan_masks={orphan_masks[:10]}"
+            "S-BIAD634 raw images must each have exactly one matching ground-truth mask: "
+            f"missing_masks={missing_masks[:10]}, ambiguous_masks={ambiguous_masks[:10]}"
         )
 
     pairing = [
         {
             "stem": stem,
             "raw_image": raw_by_stem[stem],
-            "groundtruth": groundtruth_by_stem[stem],
+            "groundtruth": groundtruth_by_stem[stem][0],
         }
         for stem in sorted(raw_by_stem)
     ]
@@ -120,6 +126,7 @@ def build_s_biad634_dataset_provenance(manifest_path: Path) -> dict[str, Any]:
         "raw_image_count": raw_count,
         "groundtruth_count": groundtruth_count,
         "paired_image_count": len(pairing),
+        "unmatched_groundtruth_count": groundtruth_count - len(pairing),
         "pairing_sha256": pairing_sha256,
         "metadata_candidate_count": len(inventories["metadata_candidates"]),
     }
