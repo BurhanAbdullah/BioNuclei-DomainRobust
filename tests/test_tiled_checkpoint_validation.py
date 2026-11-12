@@ -105,6 +105,5 @@ def test_both_production_images_use_the_same_single_thread_defaults() -> None:
     variables = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS")
     for relative in ("webapp/Dockerfile", "webapp/community.Dockerfile"):
         env_block = (root / relative).read_text(encoding="utf-8").split("\n\n", 2)[1]
-        with pytest.MonkeyPatch.context() as _:
-            for variable in variables:
-                assert f"{variable}=1" in env_block, f"{relative} is missing {variable}=1"
+        for variable in variables:
+            assert f"{variable}=1" in env_block, f"{relative} is missing {variable}=1"
