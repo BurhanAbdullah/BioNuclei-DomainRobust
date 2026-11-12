@@ -21,9 +21,13 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
     """
     semantic = np.asarray(classes)
     if semantic.ndim != 2:
-        raise ValueError(f"Expected a 2-D semantic class map; got shape {semantic.shape}")
+        raise ValueError(
+            f"Expected a 2-D semantic class map; got shape {semantic.shape}"
+        )
     if not np.issubdtype(semantic.dtype, np.integer):
-        raise ValueError(f"Expected integer semantic classes; got dtype {semantic.dtype}")
+        raise ValueError(
+            f"Expected integer semantic classes; got dtype {semantic.dtype}"
+        )
     if np.any((semantic < 0) | (semantic > 2)):
         raise ValueError("Expected semantic class values in {0, 1, 2}")
 
