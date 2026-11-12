@@ -80,7 +80,6 @@ def test_persist_validation_evidence_rejects_disposable_job_subdirectory(tmp_pat
         )
 
 
-
 def test_constrained_memory_container_caps_numeric_thread_pools_without_weakening_limit() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.load(
@@ -99,3 +98,13 @@ def test_constrained_memory_container_caps_numeric_thread_pools_without_weakenin
         assert f"--env {variable}=1" in command
     assert "--memory=503316480" in command
     assert '[ "$memory_peak" -le 492830720 ]' in command
+
+
+def test_both_production_images_use_the_same_single_thread_defaults() -> None:
+    root = Path(__file__).resolve().parents[1]
+    variables = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+    for relative in ("webapp/Dockerfile", "webapp/community.Dockerfile"):
+        env_block = (root / relative).read_text(encoding="utf-8").split("\n\n", 2)[1]
+        with pytest.MonkeyPatch.context() as _:
+            for variable in variables:
+                assert f"{variable}=1" in env_block, f"{relative} is missing {variable}=1"
