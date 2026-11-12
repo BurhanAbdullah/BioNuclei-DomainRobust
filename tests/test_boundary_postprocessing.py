@@ -45,7 +45,10 @@ def test_boundary_pixels_separate_touching_instances_and_are_reassigned() -> Non
     classes = _touching_boundary_map()
 
     # The old foreground-union rule collapses both nuclei into one component.
-    assert ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))[1] == 1
+    old_component_count = ndimage.label(
+        classes != 0, structure=np.ones((3, 3), dtype=np.uint8)
+    )[1]
+    assert old_component_count == 1
 
     instances = split_boundary_instances(classes)
 
