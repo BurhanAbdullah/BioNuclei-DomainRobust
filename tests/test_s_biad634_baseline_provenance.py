@@ -597,3 +597,30 @@ def test_baseline_training_is_restricted_to_main() -> None:
     workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     assert workflow["jobs"]["train-evaluate"]["if"] == "${{ github.ref == 'refs/heads/main' }}"
+
+
+def test_zero_shot_evaluator_loads_checkpoint_with_weights_only(monkeypatch, tmp_path):
+    from scripts import evaluate_s_biad634
+
+    checkpoint_path = tmp_path / "baseline.pt"
+    expected = {"model": {"weight": object()}, "config": {"model": {}}}
+    observed = {}
+
+    def safe_load(path, *, map_location, weights_only):
+        observed.update(
+            {
+                "path": Path(path),
+                "map_location": map_location,
+                "weights_only": weights_only,
+            }
+        )
+        return expected
+
+    monkeypatch.setattr(evaluate_s_biad634.torch, "load", safe_load)
+
+    assert evaluate_s_biad634.load_checkpoint(checkpoint_path) is expected
+    assert observed == {
+        "path": checkpoint_path,
+        "map_location": "cpu",
+        "weights_only": True,
+    }
