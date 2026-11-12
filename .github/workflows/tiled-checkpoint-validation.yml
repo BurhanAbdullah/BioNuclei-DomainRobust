@@ -124,6 +124,10 @@ jobs:
           EXPECTED_SHA256: 7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92
         run: |
           set -euo pipefail
+          VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"
+          mkdir -p "$VALIDATOR_DIR"
+          cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"
+
           for attempt in 1 2; do
             echo "Constrained-memory validation attempt ${attempt}/2"
           docker run --rm \
@@ -134,6 +138,7 @@ jobs:
             --env BIONUCLEI_CHECKPOINT=/checkpoint.pt \
             --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
             --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
+            --volume "$VALIDATOR_DIR:/app/scripts:ro" \
             bionuclei-memory-gate \
             sh -lc '
               set +e

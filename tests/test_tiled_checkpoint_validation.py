@@ -100,6 +100,12 @@ def test_constrained_memory_validation_uses_production_image_thread_defaults() -
         if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
     )
     command = memory_step["run"]
+    # Keep the validation harness outside the production image while mounting
+    # only the single read-only validator at the path it expects under /app.
+    assert 'VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"' in command
+    assert 'cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"' in command
+    assert '--volume "$VALIDATOR_DIR:/app/scripts:ro"' in command
+    assert "python scripts/validate_tiled_checkpoint.py" in command
     for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         assert f"--env {variable}=1" not in command
     assert "--memory=503316480" in command
