@@ -180,7 +180,6 @@ def persist_validation_evidence(
     }
 
 
-
 def persist_cgroup_memory_evidence(
     evidence_dir: Path,
     memory_limit_bytes: object,
@@ -202,13 +201,16 @@ def persist_cgroup_memory_evidence(
         isinstance(memory_peak_bytes, int) and not isinstance(memory_peak_bytes, bool),
         "Cgroup memory peak must be an integer",
     )
-    require(memory_limit_bytes == 503316480, "Cgroup memory limit must be the enforced 480 MiB limit")
+    require(
+        memory_limit_bytes == 503316480,
+        "Cgroup memory limit must be the enforced 480 MiB limit",
+    )
     require(
         0 < memory_peak_bytes <= 492830720,
         "Cgroup memory peak must remain at or below the 470 MiB safety target",
     )
     require(
-        accounting_source in {"cgroup_v1", "cgroup_v2"},
+        isinstance(accounting_source, str) and accounting_source in {"cgroup_v1", "cgroup_v2"},
         "Cgroup memory accounting source must identify cgroup v1 or v2",
     )
 
@@ -230,7 +232,10 @@ def persist_cgroup_memory_evidence(
         == "github_actions_checkpoint_validation_runner_only_not_public_inference",
         "Memory evidence may only be attached to runner-only checkpoint evidence",
     )
-    require(manifest.get("public_inference") is False, "Runner evidence must not claim public inference")
+    require(
+        manifest.get("public_inference") is False,
+        "Runner evidence must not claim public inference",
+    )
     files = manifest.get("files")
     require(isinstance(files, dict), "Checkpoint evidence manifest has no file identity map")
     files["cgroup-memory.json"] = {
@@ -250,7 +255,7 @@ def persist_cgroup_memory_evidence(
 
     temporary_manifest = manifest_path.with_name("manifest.json.tmp")
     temporary_manifest.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\\n",
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     temporary_manifest.replace(manifest_path)

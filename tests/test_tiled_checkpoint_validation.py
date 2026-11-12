@@ -10,8 +10,8 @@ import pytest
 import yaml
 
 from scripts.validate_tiled_checkpoint import (
-    persist_validation_evidence,
     persist_cgroup_memory_evidence,
+    persist_validation_evidence,
     resolve_revision_provenance,
     sha256_file,
     validation_revision_provenance,
@@ -481,9 +481,18 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
         Loader=yaml.BaseLoader,
     )
     steps = workflow["jobs"]["released-checkpoint"]["steps"]
-    memory = next(step for step in steps if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit")
-    persist = next(step for step in steps if step.get("name") == "Persist constrained-memory evidence in the runner manifest")
-    upload = next(step for step in steps if step.get("name") == "Upload verified runner-only checkpoint evidence")
+    memory = next(
+        step for step in steps
+        if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
+    )
+    persist = next(
+        step for step in steps
+        if step.get("name") == "Persist constrained-memory evidence in the runner manifest"
+    )
+    upload = next(
+        step for step in steps
+        if step.get("name") == "Upload verified runner-only checkpoint evidence"
+    )
 
     assert memory.get("id") == "memory_validation"
     assert steps.index(memory) < steps.index(persist) < steps.index(upload)
