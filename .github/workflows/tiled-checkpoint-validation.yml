@@ -141,9 +141,22 @@ jobs:
             --volume "$VALIDATOR_DIR:/app/scripts:ro" \
             bionuclei-memory-gate \
             sh -lc '
+              env_status=0
+              for variable in OMP_NUM_THREADS MKL_NUM_THREADS OPENBLAS_NUM_THREADS NUMEXPR_NUM_THREADS; do
+                value="$(printenv "$variable" 2>/dev/null || true)"
+                echo "Production image $variable=$value"
+                if [ "$value" != "1" ]; then
+                  env_status=1
+                fi
+              done
               set +e
-              python scripts/validate_tiled_checkpoint.py
-              worker_status=$?
+              if [ "$env_status" -eq 0 ]; then
+                python scripts/validate_tiled_checkpoint.py
+                worker_status=$?
+              else
+                echo "Production image thread-pool defaults are not all set to 1" >&2
+                worker_status=1
+              fi
               set -e
               if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.peak ]; then
                 memory_limit=$(cat /sys/fs/cgroup/memory.max)
