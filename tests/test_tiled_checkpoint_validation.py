@@ -88,6 +88,10 @@ def test_constrained_memory_validation_uses_production_image_thread_defaults() -
         ),
         Loader=yaml.BaseLoader,
     )
+    triggers = workflow["on"]
+    for event in ("pull_request", "push"):
+        assert "webapp/community.Dockerfile" in triggers[event]["paths"]
+
     steps = workflow["jobs"]["released-checkpoint"]["steps"]
     build_step = next(
         step for step in steps
