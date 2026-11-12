@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import re
 import zipfile
 from pathlib import Path
 
@@ -499,7 +500,13 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
     assert '--volume "$EVIDENCE_DIR:/evidence"' in memory["run"]
     assert "/evidence/cgroup-memory.json" in memory["run"]
     assert 'printf "{\\"limit_bytes\\":%s,\\"peak_bytes\\":%s,\\"accounting_source\\":\\"%s\\"}\\n"' in memory["run"]
-    inner_script = memory["run"].split("sh -lc '", 1)[1].split("\n'\nthen", 1)[0]
+    shell_match = re.search(
+        r"sh -lc '\\n(.*?)\\n[ \\t]*'\\n[ \\t]*then(?:\\n|$)",
+        memory["run"],
+        flags=re.DOTALL,
+    )
+    assert shell_match is not None, "could not isolate the constrained-memory shell script"
+    inner_script = shell_match.group(1)
     syntax = subprocess.run(
         ["sh", "-n"],
         input=inner_script,
