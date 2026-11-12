@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.validate_tiled_checkpoint import persist_validation_evidence, sha256_file
 
@@ -77,3 +78,24 @@ def test_persist_validation_evidence_rejects_disposable_job_subdirectory(tmp_pat
             specialists,
             manifest,
         )
+
+
+
+def test_constrained_memory_container_caps_numeric_thread_pools_without_weakening_limit() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    memory_step = next(
+        step for step in steps
+        if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
+    )
+    command = memory_step["run"]
+    for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        assert f"--env {variable}=1" in command
+    assert "--memory=503316480" in command
+    assert '[ "$memory_peak" -le 492830720 ]' in command
