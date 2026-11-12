@@ -501,7 +501,7 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
     assert "/evidence/cgroup-memory.json" in memory["run"]
     assert 'printf "{\\"limit_bytes\\":%s,\\"peak_bytes\\":%s,\\"accounting_source\\":\\"%s\\"}\\n"' in memory["run"]
     shell_match = re.search(
-        r"sh -lc '\\n(.*?)\\n[ \\t]*'\\n[ \\t]*then(?:\\n|$)",
+        r"sh -lc '\n(.*?)\n[ \t]*'\n[ \t]*then(?:\n|$)",
         memory["run"],
         flags=re.DOTALL,
     )
