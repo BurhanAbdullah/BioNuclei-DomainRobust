@@ -280,7 +280,7 @@ jobs:
         id: persist_memory_evidence
         if: steps.checkpoint_validation.outcome == 'success' && steps.memory_validation.outcome == 'success'
         env:
-          EVIDENCE_DIR: \${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
+          EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
         run: |
           set -euo pipefail
           python - <<'PY'
