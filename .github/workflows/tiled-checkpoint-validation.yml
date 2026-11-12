@@ -114,17 +114,10 @@ jobs:
           BIONUCLEI_VALIDATION_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
         run: python scripts/validate_tiled_checkpoint.py
 
-      - name: Build isolated image for constrained-memory validation
+      - name: Build production community image for constrained-memory validation
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/Dockerfile.bionuclei-memory" <<'EOF'
-          FROM python:3.11-slim-bookworm
-          RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
-          WORKDIR /app
-          COPY . /app
-          RUN python -m pip install --no-cache-dir --upgrade pip && python -m pip install --no-cache-dir -e '.[web]'
-          EOF
-          docker build --file "$RUNNER_TEMP/Dockerfile.bionuclei-memory" --tag bionuclei-memory-gate .
+          docker build --file webapp/community.Dockerfile --tag bionuclei-memory-gate .
 
       - name: Run real checkpoint worker with a 480 MiB hard memory limit
         env:
@@ -140,10 +133,6 @@ jobs:
             --pids-limit=256 \
             --env BIONUCLEI_CHECKPOINT=/checkpoint.pt \
             --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
-            --env OMP_NUM_THREADS=1 \
-            --env MKL_NUM_THREADS=1 \
-            --env OPENBLAS_NUM_THREADS=1 \
-            --env NUMEXPR_NUM_THREADS=1 \
             --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
             bionuclei-memory-gate \
             sh -lc '
