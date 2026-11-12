@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.validate_tiled_checkpoint import persist_validation_evidence, sha256_file
+from scripts.validate_tiled_checkpoint import (
+    persist_validation_evidence,
+    resolve_revision_provenance,
+    sha256_file,
+    validation_revision_provenance,
+)
 
 
 def _sources(root: Path) -> tuple[Path, Path, Path]:
@@ -287,3 +292,96 @@ def test_production_api_image_runs_health_with_the_pinned_checkpoint() -> None:
     assert api_health["env"]["EXPECTED_SHA256"] == (
         "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
     )
+
+
+def test_pull_request_manifest_binds_source_base_and_tested_merge_commits() -> None:
+    source_sha = "a" * 40
+    base_sha = "b" * 40
+    merge_sha = "c" * 40
+
+    provenance = resolve_revision_provenance(
+        "pull_request",
+        merge_sha,
+        {
+            "pull_request": {
+                "head": {"sha": source_sha},
+                "base": {"sha": base_sha},
+            }
+        },
+    )
+
+    assert provenance == {
+        "event_name": "pull_request",
+        "head_sha": source_sha,
+        "base_sha": base_sha,
+        "tested_sha": merge_sha,
+    }
+
+
+def test_push_manifest_uses_the_pushed_commit_as_source_and_tested_sha() -> None:
+    pushed_sha = "d" * 40
+
+    provenance = resolve_revision_provenance("push", pushed_sha)
+
+    assert provenance == {
+        "event_name": "push",
+        "head_sha": pushed_sha,
+        "base_sha": None,
+        "tested_sha": pushed_sha,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"pull_request": {"head": {"sha": "a" * 40}}},
+        {
+            "pull_request": {
+                "head": {"sha": "not-a-sha"},
+                "base": {"sha": "b" * 40},
+            }
+        },
+    ],
+)
+def test_pull_request_provenance_fails_closed_without_valid_head_and_base(payload) -> None:
+    with pytest.raises(ValueError):
+        resolve_revision_provenance("pull_request", "c" * 40, payload)
+
+
+def test_revision_provenance_rejects_invalid_workflow_sha() -> None:
+    with pytest.raises(ValueError, match="GITHUB_SHA"):
+        resolve_revision_provenance("push", "not-a-sha")
+
+
+def test_validation_revision_provenance_reads_pull_request_event_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_sha = "e" * 40
+    base_sha = "f" * 40
+    merge_sha = "1" * 40
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps(
+            {
+                "pull_request": {
+                    "head": {"sha": source_sha},
+                    "base": {"sha": base_sha},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_SHA", merge_sha)
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+
+    assert validation_revision_provenance() == {
+        "event_name": "pull_request",
+        "head_sha": source_sha,
+        "base_sha": base_sha,
+        "tested_sha": merge_sha,
+    }
+
