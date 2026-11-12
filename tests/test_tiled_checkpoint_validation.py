@@ -92,7 +92,10 @@ def test_constrained_memory_validation_uses_production_image_thread_defaults() -
     )
     triggers = workflow["on"]
     for event in ("pull_request", "push"):
-        assert "webapp/community.Dockerfile" in triggers[event]["paths"]
+        paths = set(triggers[event]["paths"])
+        assert "webapp/Dockerfile" in paths
+        assert "webapp/community.Dockerfile" in paths
+        assert "deploy/render-cpu-constraints.txt" in paths
 
     steps = workflow["jobs"]["released-checkpoint"]["steps"]
     build_step = next(
