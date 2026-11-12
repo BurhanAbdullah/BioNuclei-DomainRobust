@@ -276,11 +276,12 @@ jobs:
           done
           exit "$last_status"
 
-      - name: Persist constrained-memory evidence in the runner manifest
+      - name: Persist constrained-memory outcome in the runner manifest
         id: persist_memory_evidence
-        if: steps.checkpoint_validation.outcome == 'success' && steps.memory_validation.outcome == 'success'
+        if: always() && steps.checkpoint_validation.outcome == 'success'
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
+          MEMORY_VALIDATION_OUTCOME: ${{ steps.memory_validation.outcome }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -291,18 +292,45 @@ jobs:
           from scripts.validate_tiled_checkpoint import persist_cgroup_memory_evidence
 
           evidence_dir = Path(os.environ["EVIDENCE_DIR"])
-          memory = json.loads((evidence_dir / "cgroup-memory.json").read_text(encoding="utf-8"))
+          memory_path = evidence_dir / "cgroup-memory.json"
+          outcome = os.environ.get("MEMORY_VALIDATION_OUTCOME", "unknown")
+          gate_passed = outcome == "success"
+          failure_reason = None if gate_passed else f"memory validation step outcome: {outcome}"
+
+          memory = {}
+          if memory_path.is_file():
+              try:
+                  memory = json.loads(memory_path.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError):
+                  if gate_passed:
+                      raise
+          if not isinstance(memory, dict):
+              memory = {}
+          required = {"limit_bytes", "peak_bytes", "accounting_source"}
+          if required.issubset(memory) and all(memory.get(key) is not None for key in required):
+              limit_bytes = memory.get("limit_bytes")
+              peak_bytes = memory.get("peak_bytes")
+              accounting_source = memory.get("accounting_source")
+          elif gate_passed:
+              raise SystemExit("Successful memory validation did not persist cgroup measurements")
+          else:
+              memory = {"status": "unverified", "reason": failure_reason}
+              memory_path.write_text(json.dumps(memory, sort_keys=True) + "\n", encoding="utf-8")
+              limit_bytes = peak_bytes = accounting_source = None
+
           persisted = persist_cgroup_memory_evidence(
               evidence_dir,
-              memory.get("limit_bytes"),
-              memory.get("peak_bytes"),
-              memory.get("accounting_source"),
+              limit_bytes,
+              peak_bytes,
+              accounting_source,
+              gate_passed=gate_passed,
+              failure_reason=failure_reason,
           )
           print(json.dumps(persisted, indent=2, sort_keys=True))
           PY
 
-      - name: Upload verified runner-only checkpoint evidence
-        if: always() && steps.checkpoint_validation.outcome == 'success' && steps.memory_validation.outcome == 'success' && steps.persist_memory_evidence.outcome == 'success'
+      - name: Upload runner-only checkpoint evidence (including failed memory gates)
+        if: always() && steps.checkpoint_validation.outcome == 'success' && steps.persist_memory_evidence.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-validation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
