@@ -300,6 +300,8 @@ def test_records_target_s_biad634_manifest_and_archive_identity(tmp_path):
     assert provenance["file_count"] == 160
     assert provenance["raw_image_count"] == 79
     assert provenance["groundtruth_count"] == 79
+    assert provenance["paired_image_count"] == 79
+    assert len(provenance["pairing_sha256"]) == 64
     assert provenance["metadata_candidate_count"] == 2
 
 
@@ -597,3 +599,86 @@ def test_baseline_training_is_restricted_to_main() -> None:
     workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     assert workflow["jobs"]["train-evaluate"]["if"] == "${{ github.ref == 'refs/heads/main' }}"
+
+
+@pytest.mark.parametrize(
+    ("inventory", "index", "replacement_path", "message"),
+    [
+        ("raw_image_files", 1, "rawimages/alternate/image-0.tif", "duplicate image stems"),
+        ("groundtruth_files", 1, "groundtruth/alternate/image-0.tif", "duplicate mask stems"),
+        ("groundtruth_files", 0, "groundtruth/mismatched-image.tif", "one-to-one stem pairs"),
+    ],
+)
+def test_rejects_target_manifest_without_one_to_one_image_mask_stems(
+    tmp_path, inventory, index, replacement_path, message
+):
+    manifest_path = tmp_path / "data/raw/S-BIAD634/download_manifest.json"
+    _write_s_biad634_manifest(manifest_path)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    original = payload[inventory][index]
+    payload[inventory][index] = replacement_path
+    payload["files"][payload["files"].index(original)] = replacement_path
+    manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        build_s_biad634_dataset_provenance(manifest_path)
+
+
+def _write_pairing_tree(root: Path, raw_names: list[str], mask_names: list[str]) -> None:
+    for directory, names in (("rawimages", raw_names), ("groundtruth", mask_names)):
+        for name in names:
+            path = root / "experiment" / directory / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+
+def test_evaluator_accepts_only_exact_one_to_one_image_mask_pairs(tmp_path):
+    from scripts.evaluate_s_biad634 import pair_files
+
+    _write_pairing_tree(
+        tmp_path,
+        ["image-1.tif", "image-2.tif"],
+        ["image-1.tif", "image-2.tif"],
+    )
+    pairs = pair_files(tmp_path)
+    assert [(image.name, mask.name) for image, mask in pairs] == [
+        ("image-1.tif", "image-1.tif"),
+        ("image-2.tif", "image-2.tif"),
+    ]
+
+
+def test_evaluator_rejects_duplicate_raw_image_stems_that_would_reuse_a_mask(tmp_path):
+    from scripts.evaluate_s_biad634 import pair_files
+
+    _write_pairing_tree(
+        tmp_path,
+        ["first/image-1.tif", "second/image-1.tif"],
+        ["image-1.tif", "orphan.tif"],
+    )
+    with pytest.raises(RuntimeError, match="raw-image stems are not unique"):
+        pair_files(tmp_path)
+
+
+def test_evaluator_rejects_unmatched_groundtruth_masks(tmp_path):
+    from scripts.evaluate_s_biad634 import pair_files
+
+    _write_pairing_tree(
+        tmp_path,
+        ["image-1.tif"],
+        ["image-1.tif", "orphan.tif"],
+    )
+    with pytest.raises(RuntimeError, match="unused_groundtruth"):
+        pair_files(tmp_path)
+
+
+def test_evaluator_rejects_ambiguous_groundtruth_stems(tmp_path):
+    from scripts.evaluate_s_biad634 import pair_files
+
+    _write_pairing_tree(
+        tmp_path,
+        ["image-1.tif"],
+        ["first/image-1.tif", "second/image-1.tif"],
+    )
+    with pytest.raises(RuntimeError, match="ambiguous"):
+        pair_files(tmp_path)
+
