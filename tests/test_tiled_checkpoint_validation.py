@@ -11,6 +11,7 @@ import yaml
 
 from scripts.validate_tiled_checkpoint import (
     persist_validation_evidence,
+    persist_cgroup_memory_evidence,
     resolve_revision_provenance,
     sha256_file,
     validation_revision_provenance,
@@ -384,3 +385,112 @@ def test_validation_revision_provenance_reads_pull_request_event_file(
         "tested_sha": merge_sha,
     }
 
+
+def test_cgroup_memory_evidence_is_bound_to_runner_manifest(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    manifest = {
+        "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+        "public_inference": False,
+        "files": {},
+    }
+    (evidence_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    memory_evidence = {
+        "limit_bytes": 503316480,
+        "peak_bytes": 243752960,
+        "accounting_source": "cgroup_v2",
+    }
+    memory_path = evidence_dir / "cgroup-memory.json"
+    memory_path.write_text(json.dumps(memory_evidence), encoding="utf-8")
+
+    persisted = persist_cgroup_memory_evidence(
+        evidence_dir,
+        memory_evidence["limit_bytes"],
+        memory_evidence["peak_bytes"],
+        memory_evidence["accounting_source"],
+    )
+
+    updated = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert updated["cgroup_memory_limit_bytes"] == 503316480
+    assert updated["cgroup_memory_peak_bytes"] == 243752960
+    assert updated["cgroup_memory_headroom_bytes"] == 259563520
+    assert updated["cgroup_memory_safety_target_bytes"] == 492830720
+    assert updated["cgroup_memory_accounting_source"] == "cgroup_v2"
+    assert updated["cgroup_memory_gate"] == "passed"
+    assert updated["files"]["cgroup-memory.json"] == {
+        "sha256": sha256_file(memory_path),
+        "size_bytes": memory_path.stat().st_size,
+    }
+    assert persisted["manifest_sha256"] == sha256_file(evidence_dir / "manifest.json")
+
+
+@pytest.mark.parametrize(
+    ("limit_bytes", "peak_bytes", "accounting_source", "message"),
+    [
+        (503316479, 243752960, "cgroup_v2", "480 MiB"),
+        (503316480, 492830721, "cgroup_v2", "470 MiB safety target"),
+        (503316480, 243752960, "unknown", "cgroup v1 or v2"),
+        (True, 243752960, "cgroup_v2", "must be an integer"),
+    ],
+)
+def test_cgroup_memory_evidence_rejects_unverified_or_over_budget_values(
+    tmp_path: Path,
+    limit_bytes: object,
+    peak_bytes: object,
+    accounting_source: object,
+    message: str,
+) -> None:
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    (evidence_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                "public_inference": False,
+                "files": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (evidence_dir / "cgroup-memory.json").write_text(
+        json.dumps(
+            {
+                "limit_bytes": limit_bytes,
+                "peak_bytes": peak_bytes,
+                "accounting_source": accounting_source,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match=message):
+        persist_cgroup_memory_evidence(
+            evidence_dir,
+            limit_bytes,
+            peak_bytes,
+            accounting_source,
+        )
+
+
+def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    memory = next(step for step in steps if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit")
+    persist = next(step for step in steps if step.get("name") == "Persist constrained-memory evidence in the runner manifest")
+    upload = next(step for step in steps if step.get("name") == "Upload verified runner-only checkpoint evidence")
+
+    assert memory.get("id") == "memory_validation"
+    assert steps.index(memory) < steps.index(persist) < steps.index(upload)
+    assert '--volume "$EVIDENCE_DIR:/evidence"' in memory["run"]
+    assert "/evidence/cgroup-memory.json" in memory["run"]
+    assert 'memory_source="cgroup_v2"' in memory["run"]
+    assert 'memory_source="cgroup_v1"' in memory["run"]
+    assert "persist_cgroup_memory_evidence" in persist["run"]
+    assert "steps.memory_validation.outcome == 'success'" in upload["if"]
+    assert "steps.persist_memory_evidence.outcome == 'success'" in upload["if"]

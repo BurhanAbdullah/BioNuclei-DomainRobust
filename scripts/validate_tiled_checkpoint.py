@@ -180,6 +180,87 @@ def persist_validation_evidence(
     }
 
 
+
+def persist_cgroup_memory_evidence(
+    evidence_dir: Path,
+    memory_limit_bytes: object,
+    memory_peak_bytes: object,
+    accounting_source: object,
+) -> dict[str, object]:
+    """Bind the constrained Docker worker's measured cgroup peak to its evidence manifest."""
+    output_dir = evidence_dir.expanduser().resolve()
+    manifest_path = output_dir / "manifest.json"
+    memory_path = output_dir / "cgroup-memory.json"
+    require(manifest_path.is_file(), "Checkpoint evidence manifest is missing before memory binding")
+    require(memory_path.is_file(), "Constrained-memory cgroup evidence file is missing")
+
+    require(
+        isinstance(memory_limit_bytes, int) and not isinstance(memory_limit_bytes, bool),
+        "Cgroup memory limit must be an integer",
+    )
+    require(
+        isinstance(memory_peak_bytes, int) and not isinstance(memory_peak_bytes, bool),
+        "Cgroup memory peak must be an integer",
+    )
+    require(memory_limit_bytes == 503316480, "Cgroup memory limit must be the enforced 480 MiB limit")
+    require(
+        0 < memory_peak_bytes <= 492830720,
+        "Cgroup memory peak must remain at or below the 470 MiB safety target",
+    )
+    require(
+        accounting_source in {"cgroup_v1", "cgroup_v2"},
+        "Cgroup memory accounting source must identify cgroup v1 or v2",
+    )
+
+    memory_payload = json.loads(memory_path.read_text(encoding="utf-8"))
+    require(isinstance(memory_payload, dict), "Cgroup memory evidence must be a JSON object")
+    require(
+        memory_payload == {
+            "limit_bytes": memory_limit_bytes,
+            "peak_bytes": memory_peak_bytes,
+            "accounting_source": accounting_source,
+        },
+        "Cgroup memory evidence file does not match the validated measurements",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    require(isinstance(manifest, dict), "Checkpoint evidence manifest must be a JSON object")
+    require(
+        manifest.get("evidence_scope")
+        == "github_actions_checkpoint_validation_runner_only_not_public_inference",
+        "Memory evidence may only be attached to runner-only checkpoint evidence",
+    )
+    require(manifest.get("public_inference") is False, "Runner evidence must not claim public inference")
+    files = manifest.get("files")
+    require(isinstance(files, dict), "Checkpoint evidence manifest has no file identity map")
+    files["cgroup-memory.json"] = {
+        "sha256": sha256_file(memory_path),
+        "size_bytes": memory_path.stat().st_size,
+    }
+    manifest.update(
+        {
+            "cgroup_memory_limit_bytes": memory_limit_bytes,
+            "cgroup_memory_peak_bytes": memory_peak_bytes,
+            "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
+            "cgroup_memory_safety_target_bytes": 492830720,
+            "cgroup_memory_accounting_source": accounting_source,
+            "cgroup_memory_gate": "passed",
+        }
+    )
+
+    temporary_manifest = manifest_path.with_name("manifest.json.tmp")
+    temporary_manifest.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\\n",
+        encoding="utf-8",
+    )
+    temporary_manifest.replace(manifest_path)
+    return {
+        "manifest_sha256": sha256_file(manifest_path),
+        "cgroup_memory_limit_bytes": memory_limit_bytes,
+        "cgroup_memory_peak_bytes": memory_peak_bytes,
+        "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
+    }
+
 def main() -> None:
     checkpoint_raw = os.environ.get("BIONUCLEI_CHECKPOINT", "")
     expected_checkpoint_sha = os.environ.get("BIONUCLEI_EXPECTED_CHECKPOINT_SHA256", "")

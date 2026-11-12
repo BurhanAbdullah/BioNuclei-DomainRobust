@@ -203,12 +203,14 @@ jobs:
           docker build --file webapp/community.Dockerfile --tag bionuclei-memory-gate .
 
       - name: Run real checkpoint worker with a 480 MiB hard memory limit
+        id: memory_validation
         env:
           EXPECTED_SHA256: 7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92
         run: |
           set -euo pipefail
+          EVIDENCE_DIR="$RUNNER_TEMP/bionuclei-checkpoint-validation-evidence"
           VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"
-          mkdir -p "$VALIDATOR_DIR"
+          mkdir -p "$EVIDENCE_DIR" "$VALIDATOR_DIR"
           cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"
 
           last_status=1
@@ -223,6 +225,7 @@ jobs:
               --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
               --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
               --volume "$VALIDATOR_DIR:/app/scripts:ro" \
+              --volume "$EVIDENCE_DIR:/evidence" \
               bionuclei-memory-gate \
               sh -lc '
                 env_status=0
@@ -245,9 +248,11 @@ jobs:
                 if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.peak ]; then
                   memory_limit=$(cat /sys/fs/cgroup/memory.max)
                   memory_peak=$(cat /sys/fs/cgroup/memory.peak)
+                  memory_source="cgroup_v2"
                 elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ] && [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then
                   memory_limit=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes)
                   memory_peak=$(cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes)
+                  memory_source="cgroup_v1"
                 else
                   echo "Cannot verify cgroup memory accounting; refusing a false pass" >&2
                   exit 1
@@ -256,6 +261,7 @@ jobs:
                 case "$memory_peak" in ""|*[!0-9]*) echo "Invalid cgroup memory peak: $memory_peak" >&2; exit 1;; esac
                 printf "Cgroup memory limit: %s bytes\\n" "$memory_limit"
                 printf "Cgroup memory peak: %s bytes\\n" "$memory_peak"
+                printf '{"limit_bytes":%s,"peak_bytes":%s,"accounting_source":"%s"}\\n' "$memory_limit" "$memory_peak" "$memory_source" > /evidence/cgroup-memory.json
                 [ "$worker_status" -eq 0 ] || exit "$worker_status"
                 [ "$memory_limit" -eq 503316480 ] || { echo "Expected an enforced 480 MiB cgroup limit" >&2; exit 1; }
                 [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
@@ -270,8 +276,33 @@ jobs:
           done
           exit "$last_status"
 
+      - name: Persist constrained-memory evidence in the runner manifest
+        id: persist_memory_evidence
+        if: steps.checkpoint_validation.outcome == 'success' && steps.memory_validation.outcome == 'success'
+        env:
+          EVIDENCE_DIR: \${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from scripts.validate_tiled_checkpoint import persist_cgroup_memory_evidence
+
+          evidence_dir = Path(os.environ["EVIDENCE_DIR"])
+          memory = json.loads((evidence_dir / "cgroup-memory.json").read_text(encoding="utf-8"))
+          persisted = persist_cgroup_memory_evidence(
+              evidence_dir,
+              memory.get("limit_bytes"),
+              memory.get("peak_bytes"),
+              memory.get("accounting_source"),
+          )
+          print(json.dumps(persisted, indent=2, sort_keys=True))
+          PY
+
       - name: Upload verified runner-only checkpoint evidence
-        if: always() && steps.checkpoint_validation.outcome == 'success'
+        if: always() && steps.checkpoint_validation.outcome == 'success' && steps.memory_validation.outcome == 'success' && steps.persist_memory_evidence.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-validation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
