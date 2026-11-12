@@ -28,18 +28,51 @@ def discover(root,directory,suffixes):
 
 
 def pair_files(root):
-    images=discover(root,'rawimages',('.tif','.tiff','.png')); masks=discover(root,'groundtruth',('.tif','.tiff','.png'))
-    if not images:raise RuntimeError('No S-BIAD634 raw images found')
-    stems={p.stem for p in images}; candidates={}
+    images = discover(root, "rawimages", (".tif", ".tiff", ".png"))
+    masks = discover(root, "groundtruth", (".tif", ".tiff", ".png"))
+    if not images:
+        raise RuntimeError("No S-BIAD634 raw images found")
+
+    image_stems = [image.stem for image in images]
+    duplicate_image_stems = sorted(
+        stem for stem in set(image_stems) if image_stems.count(stem) > 1
+    )
+    if duplicate_image_stems:
+        raise RuntimeError(
+            "S-BIAD634 raw-image stems are not unique; refusing to reuse a ground-truth mask: "
+            f"{duplicate_image_stems[:10]}"
+        )
+
+    candidates = {}
     for mask in masks:
-        if mask.stem in stems:candidates.setdefault(mask.stem,[]).append(mask)
-    pairs=[]; missing=[]; ambiguous=[]
+        candidates.setdefault(mask.stem, []).append(mask)
+
+    pairs = []
+    missing = []
+    ambiguous = []
+    used_masks = set()
     for image in images:
-        matches=candidates.get(image.stem,[])
-        if len(matches)==1:pairs.append((image,matches[0]))
-        elif not matches:missing.append(image.stem)
-        else:ambiguous.append(image.stem)
-    if missing or ambiguous or len(pairs)!=len(images):raise RuntimeError(f'Could not deterministically pair S-BIAD634 files: images={len(images)}, groundtruth_tif_files={len(masks)}, pairs={len(pairs)}, missing={missing[:10]}, ambiguous={ambiguous[:10]}')
+        matches = candidates.get(image.stem, [])
+        if len(matches) == 1:
+            mask = matches[0]
+            if mask in used_masks:
+                ambiguous.append(image.stem)
+            else:
+                pairs.append((image, mask))
+                used_masks.add(mask)
+        elif not matches:
+            missing.append(image.stem)
+        else:
+            ambiguous.append(image.stem)
+
+    unused_masks = sorted(mask for mask in masks if mask not in used_masks)
+    if missing or ambiguous or len(pairs) != len(images) or unused_masks:
+        raise RuntimeError(
+            "Could not establish a one-to-one S-BIAD634 image/ground-truth pairing: "
+            f"images={len(images)}, groundtruth_tif_files={len(masks)}, pairs={len(pairs)}, "
+            f"missing={missing[:10]}, ambiguous={ambiguous[:10]}, "
+            f"unused_groundtruth={[mask.name for mask in unused_masks[:10]]}"
+        )
     return pairs
 
 
