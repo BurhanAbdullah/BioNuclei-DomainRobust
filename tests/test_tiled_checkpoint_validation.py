@@ -253,7 +253,6 @@ def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
         assert "Constrained-memory validation attempt 2/2" not in completed.stdout
 
 
-
 def test_production_api_image_runs_health_with_the_pinned_checkpoint() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.load(
