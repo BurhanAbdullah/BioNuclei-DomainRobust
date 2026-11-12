@@ -13,18 +13,19 @@ _CONNECTIVITY_8 = np.ones((3, 3), dtype=np.uint8)
 def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
     """Reconstruct instance labels from {0=background, 1=interior, 2=boundary}.
 
-    Interior components are the instance markers. Predicted boundary pixels
-    remain inside the foreground mask and are partitioned into marker basins
-    by an 8-connected geodesic watershed, so touching nuclei stay separate
-    without discarding their boundary pixels. The compiled SciPy IFT avoids
-    the Python priority-queue allocation used by scikit-image watershed,
-    which is important under the public worker's 480 MiB memory ceiling.
+    Interior components are the instance markers. Boundary pixels in each
+    4-connected foreground component are assigned to their nearest interior
+    marker using SciPy's compiled Euclidean distance transform. Processing
+    one component at a time avoids the Python priority queue used by
+    scikit-image watershed and bounds temporary index arrays to that
+    component's bounding box, which matters under the public worker's 480 MiB
+    memory ceiling.
 
-    Boundary-only fallback components use 4-connectivity: two tiny nuclei
-    that touch only diagonally must not be merged merely because target
-    erosion left both without interior markers. This fallback is necessarily
-    conservative because a diagonal-only single object is ambiguous without
-    an interior marker.
+    Boundary-only components use 4-connectivity: two tiny nuclei that touch
+    only diagonally must not be merged merely because target erosion left
+    both without interior markers. This fallback is necessarily conservative
+    because a diagonal-only single object is ambiguous without an interior
+    marker.
     """
     semantic = np.asarray(classes)
     if semantic.ndim != 2:
@@ -39,9 +40,6 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         raise ValueError("Expected semantic class values in {0, 1, 2}")
 
     foreground = semantic != 0
-    # Use 4-connectivity for fallback component identity. Interior markers and
-    # watershed retain 8-connectivity so seeded, diagonally connected regions
-    # are not fragmented by the fallback policy.
     foreground_components, foreground_count = ndimage.label(
         foreground, structure=_CONNECTIVITY_4
     )
@@ -54,32 +52,39 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         # Tiny nuclei can be entirely boundary class after target erosion.
         return foreground_components.astype(np.int32, copy=False)
 
-    # All interior pixels are markers; only class-2 boundary pixels are
-    # unmarked. Their topographic elevation is therefore flat, so a constant
-    # uint8 surface gives the same geodesic multi-source flood without
-    # allocating a float distance map or a Python-level watershed queue.
-    watershed_markers = markers.astype(np.int32, copy=True)
-    watershed_markers[~foreground] = -1  # Negative IFT markers are barriers.
-    instances = ndimage.watershed_ift(
-        np.zeros(semantic.shape, dtype=np.uint8),
-        watershed_markers,
-        structure=_CONNECTIVITY_8,
-    )
-    instances[~foreground] = 0
+    instances = np.zeros(semantic.shape, dtype=np.int32)
+    next_fallback_label = marker_count + 1
 
-    # Keep unseeded boundary-only components as single objects. Components
-    # that touch seeded regions only diagonally remain independent.
-    seeded_components = np.zeros(foreground_count + 1, dtype=bool)
-    seeded_components[np.unique(foreground_components[markers > 0])] = True
-    unseeded_components = np.flatnonzero(~seeded_components[1:]) + 1
-    if unseeded_components.size:
-        fallback_labels = np.zeros(foreground_count + 1, dtype=np.int32)
-        fallback_labels[unseeded_components] = np.arange(
-            marker_count + 1,
-            marker_count + unseeded_components.size + 1,
-            dtype=np.int32,
+    # Isolate each connected foreground component. A component with one
+    # interior marker needs no distance transform; components with multiple
+    # markers get a local nearest-marker partition. Unseeded components remain
+    # distinct fallback instances.
+    for component_id, component_slice in enumerate(
+        ndimage.find_objects(foreground_components), start=1
+    ):
+        if component_slice is None:
+            continue
+
+        component_mask = foreground_components[component_slice] == component_id
+        component_markers = markers[component_slice]
+        marker_ids = np.unique(
+            component_markers[component_mask & (component_markers > 0)]
         )
-        fallback_mask = (foreground_components > 0) & ~seeded_components[foreground_components]
-        instances[fallback_mask] = fallback_labels[foreground_components[fallback_mask]]
+        instance_view = instances[component_slice]
 
-    return instances.astype(np.int32, copy=False)
+        if marker_ids.size == 0:
+            instance_view[component_mask] = next_fallback_label
+            next_fallback_label += 1
+        elif marker_ids.size == 1:
+            instance_view[component_mask] = marker_ids[0]
+        else:
+            marker_mask = (component_markers > 0) & component_mask
+            nearest_indices = ndimage.distance_transform_edt(
+                ~marker_mask,
+                return_distances=False,
+                return_indices=True,
+            )
+            nearest_markers = component_markers[tuple(nearest_indices)]
+            instance_view[component_mask] = nearest_markers[component_mask]
+
+    return instances
