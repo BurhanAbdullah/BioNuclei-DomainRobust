@@ -606,8 +606,8 @@ def test_baseline_training_is_restricted_to_main() -> None:
     ("inventory", "index", "replacement_path", "message"),
     [
         ("raw_image_files", 1, "rawimages/alternate/image-0.tif", "duplicate image stems"),
-        ("groundtruth_files", 1, "groundtruth/alternate/image-0.tif", "duplicate mask stems"),
-        ("groundtruth_files", 0, "groundtruth/mismatched-image.tif", "one-to-one stem pairs"),
+        ("groundtruth_files", 1, "groundtruth/alternate/image-0.tif", "ambiguous_masks"),
+        ("groundtruth_files", 0, "groundtruth/mismatched-image.tif", "missing_masks"),
     ],
 )
 def test_rejects_target_manifest_without_one_to_one_image_mask_stems(
