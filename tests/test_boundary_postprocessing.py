@@ -58,15 +58,26 @@ def test_boundary_pixels_separate_touching_instances_and_are_reassigned() -> Non
     assert set(np.unique(instances[classes == 2])) == {1, 2}
 
 
-def test_boundary_only_noise_is_not_reported_as_a_nucleus() -> None:
+def test_boundary_only_component_is_retained_as_one_instance() -> None:
     classes = np.zeros((8, 8), dtype=np.uint8)
     classes[2:6, 2:6] = 2
 
     instances = split_boundary_instances(classes)
 
     assert instances.dtype == np.int32
-    assert _instance_count(instances) == 0
-    assert np.all(instances == 0)
+    assert _instance_count(instances) == 1
+    assert np.all(instances[classes > 0] > 0)
+    assert np.all(instances[classes == 0] == 0)
+
+
+def test_disconnected_boundary_only_components_remain_separate() -> None:
+    classes = np.zeros((10, 10), dtype=np.uint8)
+    classes[1:3, 1:3] = 2
+    classes[6:8, 6:8] = 2
+
+    instances = split_boundary_instances(classes)
+
+    assert _instance_count(instances) == 2
 
 
 def test_empty_map_returns_an_empty_instance_mask() -> None:
