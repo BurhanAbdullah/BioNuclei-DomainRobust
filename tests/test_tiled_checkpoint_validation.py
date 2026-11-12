@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -90,7 +92,10 @@ def test_constrained_memory_validation_uses_production_image_thread_defaults() -
     )
     triggers = workflow["on"]
     for event in ("pull_request", "push"):
-        assert "webapp/community.Dockerfile" in triggers[event]["paths"]
+        paths = set(triggers[event]["paths"])
+        assert "webapp/Dockerfile" in paths
+        assert "webapp/community.Dockerfile" in paths
+        assert "deploy/render-cpu-constraints.txt" in paths
 
     steps = workflow["jobs"]["released-checkpoint"]["steps"]
     build_step = next(
@@ -126,3 +131,112 @@ def test_both_production_images_use_the_same_single_thread_defaults() -> None:
         env_block = (root / relative).read_text(encoding="utf-8").split("\n\n", 2)[1]
         for variable in variables:
             assert f"{variable}=1" in env_block, f"{relative} is missing {variable}=1"
+
+
+def test_both_production_images_pin_cpu_only_pytorch() -> None:
+    root = Path(__file__).resolve().parents[1]
+    constraints = (root / "deploy" / "render-cpu-constraints.txt").read_text(encoding="utf-8")
+    assert "--extra-index-url https://download.pytorch.org/whl/cpu" in constraints
+    assert "torch==2.14.0+cpu" in constraints
+    assert "torchvision==0.29.0+cpu" in constraints
+
+    for relative in ("webapp/Dockerfile", "webapp/community.Dockerfile"):
+        dockerfile = (root / relative).read_text(encoding="utf-8")
+        assert "COPY deploy/render-cpu-constraints.txt ./deploy/render-cpu-constraints.txt" in dockerfile
+        assert 'pip install --constraint deploy/render-cpu-constraints.txt -e ".[web]"' in dockerfile
+        assert "torch.version.cuda is None" in dockerfile
+
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    install = next(
+        step for step in workflow["jobs"]["released-checkpoint"]["steps"]
+        if step.get("name") == "Install production web dependencies"
+    )
+    assert "--constraint deploy/render-cpu-constraints.txt" in install["run"]
+    assert "torch.version.cuda is None" in install["run"]
+
+
+@pytest.mark.parametrize(
+    ("exit_codes", "expected_status", "expected_calls"),
+    [
+        ("0", 0, 1),
+        ("17,0", 0, 2),
+        ("17,23", 23, 2),
+    ],
+)
+def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
+    tmp_path: Path,
+    exit_codes: str,
+    expected_status: int,
+    expected_calls: int,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    memory_step = next(
+        step for step in workflow["jobs"]["released-checkpoint"]["steps"]
+        if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
+    )
+    command = memory_step["run"]
+    assert "if docker run --rm" in command
+    assert 'exit "$last_status"' in command
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    counter = tmp_path / "docker-calls.txt"
+    docker = fake_bin / "docker"
+    docker.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "counter = Path(os.environ['DOCKER_CALL_COUNTER'])\n"
+        "calls = int(counter.read_text()) + 1 if counter.exists() else 1\n"
+        "counter.write_text(str(calls))\n"
+        "codes = [int(value) for value in os.environ['DOCKER_EXIT_CODES'].split(',')]\n"
+        "sys.exit(codes[min(calls - 1, len(codes) - 1)])\n",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    checkpoint = tmp_path / "checkpoint.pt"
+    checkpoint.write_bytes(b"immutable-checkpoint-placeholder")
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{env.get('PATH', '')}",
+            "RUNNER_TEMP": str(runner_temp),
+            "BIONUCLEI_CHECKPOINT": str(checkpoint),
+            "EXPECTED_SHA256": "0" * 64,
+            "DOCKER_CALL_COUNTER": str(counter),
+            "DOCKER_EXIT_CODES": exit_codes,
+        }
+    )
+
+    completed = subprocess.run(
+        ["bash", "-c", command],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == expected_status, completed.stdout + completed.stderr
+    assert int(counter.read_text(encoding="utf-8")) == expected_calls
+    assert "Constrained-memory validation attempt 1/2" in completed.stdout
+    if expected_calls == 2:
+        assert "Constrained-memory validation attempt 2/2" in completed.stdout
+    else:
+        assert "Constrained-memory validation attempt 2/2" not in completed.stdout
+

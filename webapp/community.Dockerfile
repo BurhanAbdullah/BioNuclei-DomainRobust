@@ -11,13 +11,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
+COPY deploy/render-cpu-constraints.txt ./deploy/render-cpu-constraints.txt
 COPY src ./src
 COPY webapp ./webapp
 COPY configs ./configs
 COPY docs/RESEARCH_PROTOCOL.md docs/DATASETS.md docs/
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -e ".[web]"
+    && python -m pip install --constraint deploy/render-cpu-constraints.txt -e ".[web]" \
+    && python -c 'import torch; assert torch.version.cuda is None, "Render community image must use CPU-only PyTorch"'
 
 RUN mkdir -p /data/bionuclei-community-jobs /opt/models
 
