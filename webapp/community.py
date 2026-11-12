@@ -21,7 +21,6 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import numpy as np
-import pandas as pd
 import tifffile
 
 from bionuclei.adaptive_agent import build_plan, to_dict
@@ -497,6 +496,10 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     if "intensity" in modules:
         properties += ["mean_intensity", "max_intensity", "min_intensity"]
     table = regionprops_table(mask.astype(np.int32), intensity_image=image, properties=tuple(properties))
+    # The dataframe layer is report-only; defer its import until after
+    # checkpoint inference has released the model and activation tensors.
+    import pandas as pd
+
     frame = pd.DataFrame(table)
     if "morphology" in modules and not frame.empty:
         frame["circularity"] = np.where(frame["perimeter"] > 0, 4.0 * np.pi * frame["area"] / (frame["perimeter"] ** 2), np.nan)

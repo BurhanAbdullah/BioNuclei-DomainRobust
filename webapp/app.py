@@ -28,7 +28,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from scipy import ndimage
 from PIL import Image
 
-from bionuclei.data import decode_instance_mask
 from bionuclei.inference import evaluate, predict
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 
@@ -302,6 +301,8 @@ async def metrics_api(prediction: Annotated[UploadFile, File(...)], ground_truth
     gt_path = await _save_upload(ground_truth, suffix=".png")
     try:
         pred = np.asarray(tifffile.imread(pred_path))
+        from bionuclei.data import decode_instance_mask
+
         target = decode_instance_mask(np.asarray(tifffile.imread(gt_path)))
         if pred.shape != target.shape:
             raise HTTPException(status_code=400, detail="Prediction and ground truth shapes differ")
