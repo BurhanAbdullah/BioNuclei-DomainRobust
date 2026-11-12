@@ -14,7 +14,7 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
     """Reconstruct instance labels from {0=background, 1=interior, 2=boundary}.
 
     Interior components are the instance markers. Predicted boundary pixels
-    remain inside the foreground mask and are assigned to their nearest marker
+    remain inside the foreground mask and are partitioned into marker basins
     by watershed, so touching nuclei stay separate without discarding their
     boundary pixels. A disconnected boundary-only component is retained as
     one object because target erosion can leave tiny nuclei without interiors.
