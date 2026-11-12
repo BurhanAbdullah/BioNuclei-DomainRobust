@@ -80,6 +80,25 @@ def test_disconnected_boundary_only_components_remain_separate() -> None:
     assert _instance_count(instances) == 2
 
 
+def test_unseeded_boundary_component_is_retained_alongside_seeded_nuclei() -> None:
+    instances = np.zeros((12, 20), dtype=np.int32)
+    instances[3:9, 3:10] = 1
+    instances[3:9, 10:17] = 2
+    classes = np.zeros(instances.shape, dtype=np.uint8)
+    structure = ndimage.generate_binary_structure(2, 1)
+    for instance_id in (1, 2):
+        nucleus = instances == instance_id
+        interior = ndimage.binary_erosion(nucleus, structure=structure, border_value=0)
+        classes[nucleus] = 2
+        classes[interior] = 1
+    classes[0:2, 0:2] = 2
+
+    predicted = split_boundary_instances(classes)
+
+    assert _instance_count(predicted) == 3
+    assert np.all(predicted[classes > 0] > 0)
+
+
 def test_empty_map_returns_an_empty_instance_mask() -> None:
     instances = split_boundary_instances(np.zeros((4, 7), dtype=np.uint8))
 
