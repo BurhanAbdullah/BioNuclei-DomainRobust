@@ -74,12 +74,47 @@ def test_disconnected_boundary_only_components_remain_separate() -> None:
     assert _instance_count(instances) == 2
 
 
+def test_diagonally_touching_boundary_only_nuclei_remain_separate() -> None:
+    instances = np.zeros((5, 5), dtype=np.int32)
+    instances[1:3, 1:3] = 1
+    instances[3:5, 3:5] = 2
+    classes = instance_to_boundary_target(instances)
+
+    # Both 2x2 nuclei have no interior after the canonical target erosion.
+    assert not np.any(classes == 1)
+    assert ndimage.label(
+        classes != 0, structure=np.ones((3, 3), dtype=np.uint8)
+    )[1] == 1
+
+    predicted = split_boundary_instances(classes)
+
+    assert _instance_count(predicted) == 2
+    assert np.all(predicted[classes > 0] > 0)
+
+
 def test_unseeded_boundary_component_is_retained_alongside_seeded_nuclei() -> None:
     instances = np.zeros((12, 20), dtype=np.int32)
     instances[3:9, 3:10] = 1
     instances[3:9, 10:17] = 2
     classes = instance_to_boundary_target(instances)
     classes[0:2, 0:2] = 2
+
+    predicted = split_boundary_instances(classes)
+
+    assert _instance_count(predicted) == 3
+    assert np.all(predicted[classes > 0] > 0)
+
+
+def test_diagonal_boundary_only_nucleus_is_not_absorbed_by_seeded_component() -> None:
+    instances = np.zeros((12, 20), dtype=np.int32)
+    instances[3:9, 3:10] = 1
+    instances[3:9, 10:17] = 2
+    classes = instance_to_boundary_target(instances)
+    classes[1:3, 1:3] = 2
+
+    # The boundary-only nucleus touches the seeded foreground only diagonally.
+    assert classes[2, 2] == 2
+    assert classes[3, 3] == 2
 
     predicted = split_boundary_instances(classes)
 

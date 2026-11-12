@@ -7,6 +7,7 @@ from scipy import ndimage
 from skimage.segmentation import watershed
 
 
+_CONNECTIVITY_4 = ndimage.generate_binary_structure(2, 1)
 _CONNECTIVITY_8 = np.ones((3, 3), dtype=np.uint8)
 
 
@@ -16,8 +17,11 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
     Interior components are the instance markers. Predicted boundary pixels
     remain inside the foreground mask and are partitioned into marker basins
     by watershed, so touching nuclei stay separate without discarding their
-    boundary pixels. A disconnected boundary-only component is retained as
-    one object because target erosion can leave tiny nuclei without interiors.
+    boundary pixels. Boundary-only fallback components use 4-connectivity:
+    two tiny nuclei that touch only diagonally must not be merged merely
+    because target erosion left both without interior markers. This fallback
+    is necessarily conservative because a diagonal-only single object is
+    ambiguous without an interior marker.
     """
     semantic = np.asarray(classes)
     if semantic.ndim != 2:
@@ -32,8 +36,11 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         raise ValueError("Expected semantic class values in {0, 1, 2}")
 
     foreground = semantic != 0
+    # Use 4-connectivity for fallback component identity. Interior markers and
+    # watershed retain 8-connectivity so seeded, diagonally connected regions
+    # are not fragmented by the fallback policy.
     foreground_components, foreground_count = ndimage.label(
-        foreground, structure=_CONNECTIVITY_8
+        foreground, structure=_CONNECTIVITY_4
     )
     if foreground_count == 0:
         return np.zeros(semantic.shape, dtype=np.int32)
@@ -53,9 +60,8 @@ def split_boundary_instances(classes: np.ndarray) -> np.ndarray:
         watershed_line=False,
     )
 
-    # Keep disconnected boundary-only components as single objects. There is
-    # no interior evidence with which to split them, but dropping them would
-    # silently discard valid tiny nuclei and model-predicted foreground.
+    # Keep unseeded boundary-only components as single objects. Components
+    # that touch seeded regions only diagonally remain independent.
     seeded_components = np.zeros(foreground_count + 1, dtype=bool)
     seeded_components[np.unique(foreground_components[markers > 0])] = True
     unseeded_components = np.flatnonzero(~seeded_components[1:]) + 1
