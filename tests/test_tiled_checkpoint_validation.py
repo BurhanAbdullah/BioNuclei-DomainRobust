@@ -11,6 +11,7 @@ from scripts.validate_tiled_checkpoint import (
     persist_validation_evidence,
     resolve_revision_provenance,
     sha256_file,
+    validation_revision_provenance,
 )
 
 
@@ -191,3 +192,34 @@ def test_pull_request_provenance_fails_closed_without_valid_head_and_base(payloa
 def test_revision_provenance_rejects_invalid_workflow_sha() -> None:
     with pytest.raises(ValueError, match="GITHUB_SHA"):
         resolve_revision_provenance("push", "not-a-sha")
+
+
+def test_validation_revision_provenance_reads_pull_request_event_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_sha = "e" * 40
+    base_sha = "f" * 40
+    merge_sha = "1" * 40
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps(
+            {
+                "pull_request": {
+                    "head": {"sha": source_sha},
+                    "base": {"sha": base_sha},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_SHA", merge_sha)
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+
+    assert validation_revision_provenance() == {
+        "event_name": "pull_request",
+        "head_sha": source_sha,
+        "base_sha": base_sha,
+        "tested_sha": merge_sha,
+    }

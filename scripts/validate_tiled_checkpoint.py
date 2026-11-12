@@ -54,8 +54,7 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-
-_SHA256_RE = re.compile(r"^[0-9a-f]{40}$")
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def resolve_revision_provenance(
@@ -69,7 +68,7 @@ def resolve_revision_provenance(
     commit. The event payload carries the source head and target base SHAs.
     For push/workflow_dispatch, GITHUB_SHA is both the source and tested SHA.
     """
-    if not _SHA256_RE.fullmatch(workflow_sha):
+    if not _GIT_SHA_RE.fullmatch(workflow_sha):
         raise ValueError("GITHUB_SHA must be a full lowercase 40-character commit SHA")
 
     if event_name == "pull_request":
@@ -82,9 +81,9 @@ def resolve_revision_provenance(
         base = pull_request.get("base")
         head_sha = head.get("sha") if isinstance(head, dict) else None
         base_sha = base.get("sha") if isinstance(base, dict) else None
-        if not isinstance(head_sha, str) or not _SHA256_RE.fullmatch(head_sha):
+        if not isinstance(head_sha, str) or not _GIT_SHA_RE.fullmatch(head_sha):
             raise ValueError("pull_request event payload has no valid source head SHA")
-        if not isinstance(base_sha, str) or not _SHA256_RE.fullmatch(base_sha):
+        if not isinstance(base_sha, str) or not _GIT_SHA_RE.fullmatch(base_sha):
             raise ValueError("pull_request event payload has no valid target base SHA")
         return {
             "event_name": event_name,
@@ -117,6 +116,7 @@ def validation_revision_provenance() -> dict[str, str | None]:
         if not isinstance(event_payload, dict):
             raise ValueError("pull_request event payload must be a JSON object")
     return resolve_revision_provenance(event_name, workflow_sha, event_payload)
+
 
 def persist_validation_evidence(
     evidence_dir: Path,
