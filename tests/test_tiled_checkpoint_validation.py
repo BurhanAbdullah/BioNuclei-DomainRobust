@@ -498,6 +498,16 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
     assert steps.index(memory) < steps.index(persist) < steps.index(upload)
     assert '--volume "$EVIDENCE_DIR:/evidence"' in memory["run"]
     assert "/evidence/cgroup-memory.json" in memory["run"]
+    assert 'printf "{\\"limit_bytes\\":%s,\\"peak_bytes\\":%s,\\"accounting_source\\":\\"%s\\"}\\n"' in memory["run"]
+    inner_script = memory["run"].split("sh -lc '", 1)[1].split("\n              '\n            then", 1)[0]
+    syntax = subprocess.run(
+        ["sh", "-n"],
+        input=inner_script,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
     assert 'memory_source="cgroup_v2"' in memory["run"]
     assert 'memory_source="cgroup_v1"' in memory["run"]
     assert "persist_cgroup_memory_evidence" in persist["run"]
