@@ -108,6 +108,9 @@ def test_constrained_memory_validation_uses_production_image_thread_defaults() -
     assert "python scripts/validate_tiled_checkpoint.py" in command
     for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         assert f"--env {variable}=1" not in command
+    assert "for variable in OMP_NUM_THREADS MKL_NUM_THREADS OPENBLAS_NUM_THREADS NUMEXPR_NUM_THREADS; do" in command
+    assert 'value="$(printenv "$variable" 2>/dev/null || true)"' in command
+    assert 'if [ "$value" != "1" ]; then' in command
     assert "--memory=503316480" in command
     assert '[ "$memory_peak" -le 492830720 ]' in command
 
