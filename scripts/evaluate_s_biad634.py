@@ -70,9 +70,14 @@ def predict_semantic(model,x,tile_size=512,overlap=32):
 def load_mask(path):return decode_instance_mask(np.asarray(imread(path)))
 
 
+def load_checkpoint(path: Path):
+    """Load tensor and primitive checkpoint data without executing pickle globals."""
+    return torch.load(path, map_location='cpu', weights_only=True)
+
+
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--checkpoint',type=Path,required=True); p.add_argument('--data-root',type=Path,required=True); p.add_argument('--output',type=Path,default=Path('outputs/s_biad634_zero_shot')); p.add_argument('--tile-size',type=int,default=512); p.add_argument('--overlap',type=int,default=32); a=p.parse_args()
-    checkpoint=torch.load(a.checkpoint,map_location='cpu'); cfg=checkpoint['config']; model=BoundaryUNet(in_channels=int(cfg['model']['in_channels']),out_channels=int(cfg['model']['out_channels']),base_channels=int(cfg['model']['base_channels'])); model.load_state_dict(checkpoint['model']); model.eval(); results=[]
+    checkpoint=load_checkpoint(a.checkpoint); cfg=checkpoint['config']; model=BoundaryUNet(in_channels=int(cfg['model']['in_channels']),out_channels=int(cfg['model']['out_channels']),base_channels=int(cfg['model']['base_channels'])); model.load_state_dict(checkpoint['model']); model.eval(); results=[]
     for image_path,mask_path in pair_files(a.data_root):
         raw=np.asarray(tifffile.imread(image_path)); image=to_model_grayscale(raw); target=load_mask(mask_path)
         if image.shape!=target.shape:raise ValueError(f'Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}')
