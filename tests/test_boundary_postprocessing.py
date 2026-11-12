@@ -7,6 +7,7 @@ from scipy import ndimage
 
 from bionuclei.inference import _split_instances
 from bionuclei.postprocessing import split_boundary_instances
+from bionuclei.targets import instance_to_boundary_target
 from scripts.audit_bbbc039_instances import predict_instances
 from scripts.evaluate_bbbc038 import model_predict_with_padding
 from scripts.evaluate_bbbc039 import split_instances as split_bbbc039
@@ -20,14 +21,7 @@ def _touching_boundary_map() -> np.ndarray:
     instances[1:7, 1:8] = 1
     instances[1:7, 8:15] = 2
 
-    classes = np.zeros(instances.shape, dtype=np.uint8)
-    structure = ndimage.generate_binary_structure(2, 1)
-    for instance_id in (1, 2):
-        nucleus = instances == instance_id
-        interior = ndimage.binary_erosion(nucleus, structure=structure, border_value=0)
-        classes[nucleus] = 2
-        classes[interior] = 1
-    return classes
+    return instance_to_boundary_target(instances)
 
 
 def _logits_for(classes: np.ndarray) -> torch.Tensor:
@@ -84,13 +78,7 @@ def test_unseeded_boundary_component_is_retained_alongside_seeded_nuclei() -> No
     instances = np.zeros((12, 20), dtype=np.int32)
     instances[3:9, 3:10] = 1
     instances[3:9, 10:17] = 2
-    classes = np.zeros(instances.shape, dtype=np.uint8)
-    structure = ndimage.generate_binary_structure(2, 1)
-    for instance_id in (1, 2):
-        nucleus = instances == instance_id
-        interior = ndimage.binary_erosion(nucleus, structure=structure, border_value=0)
-        classes[nucleus] = 2
-        classes[interior] = 1
+    classes = instance_to_boundary_target(instances)
     classes[0:2, 0:2] = 2
 
     predicted = split_boundary_instances(classes)
