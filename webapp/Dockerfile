@@ -2,7 +2,11 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    BIONUCLEI_CHECKPOINT=/opt/models/bionuclei.pt
+    BIONUCLEI_CHECKPOINT=/opt/models/bionuclei.pt \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
