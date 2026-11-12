@@ -10,6 +10,7 @@ on:
       - "webapp/community.py"
       - "webapp/app.py"
       - "webapp/community_app.py"
+      - "webapp/community.Dockerfile"
       - "scripts/validate_tiled_checkpoint.py"
       - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
@@ -23,6 +24,7 @@ on:
       - "webapp/community.py"
       - "webapp/app.py"
       - "webapp/community_app.py"
+      - "webapp/community.Dockerfile"
       - "scripts/validate_tiled_checkpoint.py"
       - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
@@ -114,23 +116,20 @@ jobs:
           BIONUCLEI_VALIDATION_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
         run: python scripts/validate_tiled_checkpoint.py
 
-      - name: Build isolated image for constrained-memory validation
+      - name: Build production community image for constrained-memory validation
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/Dockerfile.bionuclei-memory" <<'EOF'
-          FROM python:3.11-slim-bookworm
-          RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
-          WORKDIR /app
-          COPY . /app
-          RUN python -m pip install --no-cache-dir --upgrade pip && python -m pip install --no-cache-dir -e '.[web]'
-          EOF
-          docker build --file "$RUNNER_TEMP/Dockerfile.bionuclei-memory" --tag bionuclei-memory-gate .
+          docker build --file webapp/community.Dockerfile --tag bionuclei-memory-gate .
 
       - name: Run real checkpoint worker with a 480 MiB hard memory limit
         env:
           EXPECTED_SHA256: 7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92
         run: |
           set -euo pipefail
+          VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"
+          mkdir -p "$VALIDATOR_DIR"
+          cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"
+
           for attempt in 1 2; do
             echo "Constrained-memory validation attempt ${attempt}/2"
           docker run --rm \
@@ -141,11 +140,25 @@ jobs:
             --env BIONUCLEI_CHECKPOINT=/checkpoint.pt \
             --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
             --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
+            --volume "$VALIDATOR_DIR:/app/scripts:ro" \
             bionuclei-memory-gate \
             sh -lc '
+              env_status=0
+              for variable in OMP_NUM_THREADS MKL_NUM_THREADS OPENBLAS_NUM_THREADS NUMEXPR_NUM_THREADS; do
+                value="$(printenv "$variable" 2>/dev/null || true)"
+                echo "Production image $variable=$value"
+                if [ "$value" != "1" ]; then
+                  env_status=1
+                fi
+              done
               set +e
-              python scripts/validate_tiled_checkpoint.py
-              worker_status=$?
+              if [ "$env_status" -eq 0 ]; then
+                python scripts/validate_tiled_checkpoint.py
+                worker_status=$?
+              else
+                echo "Production image thread-pool defaults are not all set to 1" >&2
+                worker_status=1
+              fi
               set -e
               if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.peak ]; then
                 memory_limit=$(cat /sys/fs/cgroup/memory.max)
