@@ -98,11 +98,18 @@ def test_constrained_memory_validation_uses_production_image_thread_defaults() -
         assert "deploy/render-cpu-constraints.txt" in paths
 
     steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    api_build_step = next(
+        step for step in steps
+        if step.get("name") == "Build production API image and verify CPU-only PyTorch"
+    )
+    assert "docker build --file webapp/Dockerfile" in api_build_step["run"]
+
     build_step = next(
         step for step in steps
         if step.get("name") == "Build production community image for constrained-memory validation"
     )
     assert "--file webapp/community.Dockerfile" in build_step["run"]
+    assert steps.index(api_build_step) < steps.index(build_step)
 
     memory_step = next(
         step for step in steps
