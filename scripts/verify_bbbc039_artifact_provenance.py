@@ -84,6 +84,32 @@ def build_s_biad634_dataset_provenance(manifest_path: Path) -> dict[str, Any]:
             f"raw={raw_count}, groundtruth={groundtruth_count}"
         )
 
+    raw_by_stem = {Path(path).stem: path for path in inventories["raw_image_files"]}
+    groundtruth_by_stem = {Path(path).stem: path for path in inventories["groundtruth_files"]}
+    if len(raw_by_stem) != raw_count:
+        raise ValueError("S-BIAD634 raw-image inventory contains duplicate image stems")
+    if len(groundtruth_by_stem) != groundtruth_count:
+        raise ValueError("S-BIAD634 ground-truth inventory contains duplicate mask stems")
+    if set(raw_by_stem) != set(groundtruth_by_stem):
+        missing_masks = sorted(set(raw_by_stem) - set(groundtruth_by_stem))
+        orphan_masks = sorted(set(groundtruth_by_stem) - set(raw_by_stem))
+        raise ValueError(
+            "S-BIAD634 image and ground-truth inventories do not form one-to-one stem pairs: "
+            f"missing_masks={missing_masks[:10]}, orphan_masks={orphan_masks[:10]}"
+        )
+
+    pairing = [
+        {
+            "stem": stem,
+            "raw_image": raw_by_stem[stem],
+            "groundtruth": groundtruth_by_stem[stem],
+        }
+        for stem in sorted(raw_by_stem)
+    ]
+    pairing_sha256 = hashlib.sha256(
+        json.dumps(pairing, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
     return {
         "dataset": _S_BIAD634_DATASET,
         "source_url": _S_BIAD634_SOURCE_URL,
@@ -93,6 +119,8 @@ def build_s_biad634_dataset_provenance(manifest_path: Path) -> dict[str, Any]:
         "file_count": len(files),
         "raw_image_count": raw_count,
         "groundtruth_count": groundtruth_count,
+        "paired_image_count": len(pairing),
+        "pairing_sha256": pairing_sha256,
         "metadata_candidate_count": len(inventories["metadata_candidates"]),
     }
 
