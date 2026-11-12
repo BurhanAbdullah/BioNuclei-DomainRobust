@@ -178,15 +178,15 @@ def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
     counter = tmp_path / "docker-calls.txt"
     docker = fake_bin / "docker"
     docker.write_text(
-        "#!/usr/bin/env python3\\n"
-        "import os\\n"
-        "import sys\\n"
-        "from pathlib import Path\\n"
-        "counter = Path(os.environ['DOCKER_CALL_COUNTER'])\\n"
-        "calls = int(counter.read_text()) + 1 if counter.exists() else 1\\n"
-        "counter.write_text(str(calls))\\n"
-        "codes = [int(value) for value in os.environ['DOCKER_EXIT_CODES'].split(',')]\\n"
-        "sys.exit(codes[min(calls - 1, len(codes) - 1)])\\n",
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "counter = Path(os.environ['DOCKER_CALL_COUNTER'])\n"
+        "calls = int(counter.read_text()) + 1 if counter.exists() else 1\n"
+        "counter.write_text(str(calls))\n"
+        "codes = [int(value) for value in os.environ['DOCKER_EXIT_CODES'].split(',')]\n"
+        "sys.exit(codes[min(calls - 1, len(codes) - 1)])\n",
         encoding="utf-8",
     )
     docker.chmod(0o755)
