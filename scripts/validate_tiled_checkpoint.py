@@ -185,45 +185,92 @@ def persist_cgroup_memory_evidence(
     memory_limit_bytes: object,
     memory_peak_bytes: object,
     accounting_source: object,
+    *,
+    gate_passed: bool = True,
+    failure_reason: str | None = None,
 ) -> dict[str, object]:
-    """Bind the constrained Docker worker's measured cgroup peak to its evidence manifest."""
+    """Bind a passed, failed, or unavailable cgroup observation to runner evidence.
+
+    A failed memory gate must remain a failed workflow result, but its scientific
+    outputs and measured peak are still valuable diagnostics. This manifest field
+    records the gate outcome without ever promoting a failed run to a pass.
+    """
     output_dir = evidence_dir.expanduser().resolve()
     manifest_path = output_dir / "manifest.json"
     memory_path = output_dir / "cgroup-memory.json"
     require(manifest_path.is_file(), "Checkpoint evidence manifest is missing before memory binding")
     require(memory_path.is_file(), "Constrained-memory cgroup evidence file is missing")
-
-    require(
-        isinstance(memory_limit_bytes, int) and not isinstance(memory_limit_bytes, bool),
-        "Cgroup memory limit must be an integer",
-    )
-    require(
-        isinstance(memory_peak_bytes, int) and not isinstance(memory_peak_bytes, bool),
-        "Cgroup memory peak must be an integer",
-    )
-    require(
-        memory_limit_bytes == 503316480,
-        "Cgroup memory limit must be the enforced 480 MiB limit",
-    )
-    require(
-        0 < memory_peak_bytes <= 492830720,
-        "Cgroup memory peak must remain at or below the 470 MiB safety target",
-    )
-    require(
-        isinstance(accounting_source, str) and accounting_source in {"cgroup_v1", "cgroup_v2"},
-        "Cgroup memory accounting source must identify cgroup v1 or v2",
-    )
+    require(isinstance(gate_passed, bool), "Cgroup memory gate outcome must be boolean")
 
     memory_payload = json.loads(memory_path.read_text(encoding="utf-8"))
     require(isinstance(memory_payload, dict), "Cgroup memory evidence must be a JSON object")
-    require(
-        memory_payload == {
+
+    has_metrics = any(value is not None for value in (
+        memory_limit_bytes,
+        memory_peak_bytes,
+        accounting_source,
+    ))
+    gate_status = "passed" if gate_passed else "unverified"
+    memory_fields: dict[str, object] = {}
+
+    if gate_passed or has_metrics:
+        require(
+            isinstance(memory_limit_bytes, int) and not isinstance(memory_limit_bytes, bool),
+            "Cgroup memory limit must be an integer",
+        )
+        require(
+            isinstance(memory_peak_bytes, int) and not isinstance(memory_peak_bytes, bool),
+            "Cgroup memory peak must be an integer",
+        )
+        require(
+            memory_limit_bytes == 503316480,
+            "Cgroup memory limit must be the enforced 480 MiB limit",
+        )
+        require(
+            0 < memory_peak_bytes <= memory_limit_bytes,
+            "Cgroup memory peak must be positive and within the hard memory limit",
+        )
+        require(
+            isinstance(accounting_source, str) and accounting_source in {"cgroup_v1", "cgroup_v2"},
+            "Cgroup memory accounting source must identify cgroup v1 or v2",
+        )
+        expected_payload = {
             "limit_bytes": memory_limit_bytes,
             "peak_bytes": memory_peak_bytes,
             "accounting_source": accounting_source,
-        },
-        "Cgroup memory evidence file does not match the validated measurements",
-    )
+        }
+        require(
+            memory_payload == expected_payload,
+            "Cgroup memory evidence file does not match the observed measurements",
+        )
+        if gate_passed:
+            require(
+                memory_peak_bytes <= 492830720,
+                "Cgroup memory peak must remain at or below the 470 MiB safety target",
+            )
+            gate_status = "passed"
+        else:
+            require(
+                isinstance(failure_reason, str) and failure_reason.strip(),
+                "A failed cgroup memory gate requires a failure reason",
+            )
+            gate_status = "failed"
+        memory_fields = {
+            "cgroup_memory_limit_bytes": memory_limit_bytes,
+            "cgroup_memory_peak_bytes": memory_peak_bytes,
+            "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
+            "cgroup_memory_safety_target_bytes": 492830720,
+            "cgroup_memory_accounting_source": accounting_source,
+        }
+    else:
+        require(
+            not gate_passed and isinstance(failure_reason, str) and failure_reason.strip(),
+            "Unavailable cgroup accounting requires a failed or skipped gate reason",
+        )
+        require(
+            memory_payload == {"status": "unverified", "reason": failure_reason},
+            "Unavailable cgroup evidence must be explicitly marked unverified",
+        )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     require(isinstance(manifest, dict), "Checkpoint evidence manifest must be a JSON object")
@@ -242,16 +289,10 @@ def persist_cgroup_memory_evidence(
         "sha256": sha256_file(memory_path),
         "size_bytes": memory_path.stat().st_size,
     }
-    manifest.update(
-        {
-            "cgroup_memory_limit_bytes": memory_limit_bytes,
-            "cgroup_memory_peak_bytes": memory_peak_bytes,
-            "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
-            "cgroup_memory_safety_target_bytes": 492830720,
-            "cgroup_memory_accounting_source": accounting_source,
-            "cgroup_memory_gate": "passed",
-        }
-    )
+    manifest.update(memory_fields)
+    manifest["cgroup_memory_gate"] = gate_status
+    if gate_status != "passed":
+        manifest["cgroup_memory_failure_reason"] = failure_reason
 
     temporary_manifest = manifest_path.with_name("manifest.json.tmp")
     temporary_manifest.write_text(
@@ -259,12 +300,12 @@ def persist_cgroup_memory_evidence(
         encoding="utf-8",
     )
     temporary_manifest.replace(manifest_path)
-    return {
+    result: dict[str, object] = {
         "manifest_sha256": sha256_file(manifest_path),
-        "cgroup_memory_limit_bytes": memory_limit_bytes,
-        "cgroup_memory_peak_bytes": memory_peak_bytes,
-        "cgroup_memory_headroom_bytes": memory_limit_bytes - memory_peak_bytes,
+        "cgroup_memory_gate": gate_status,
     }
+    result.update(memory_fields)
+    return result
 
 def main() -> None:
     checkpoint_raw = os.environ.get("BIONUCLEI_CHECKPOINT", "")
