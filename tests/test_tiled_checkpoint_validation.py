@@ -567,11 +567,11 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
     )
     persist = next(
         step for step in steps
-        if step.get("name") == "Persist constrained-memory evidence in the runner manifest"
+        if step.get("name") == "Persist constrained-memory outcome in the runner manifest"
     )
     upload = next(
         step for step in steps
-        if step.get("name") == "Upload verified runner-only checkpoint evidence"
+        if step.get("name") == "Upload runner-only checkpoint evidence (including failed memory gates)"
     )
 
     assert memory.get("id") == "memory_validation"
