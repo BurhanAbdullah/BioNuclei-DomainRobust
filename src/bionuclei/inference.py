@@ -171,7 +171,7 @@ def _predict_logits(
     y_starts = _axis_tile_starts(height, tile_size, overlap)
     x_starts = _axis_tile_starts(width, tile_size, overlap)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         if len(y_starts) == 1 and len(x_starts) == 1:
             return model(x)[..., :original_height, :original_width]
 
@@ -217,7 +217,7 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
             # tiles reduce peak activation memory; retain 64 px context on each
             # side of internal seams. GPU inference keeps the faster default.
             tile_size, overlap = (160, 128) if device == "cpu" else (256, 128)
-            with torch.no_grad():
+            with torch.inference_mode():
                 instances = _split_instances(
                     _predict_logits(model, x, tile_size=tile_size, overlap=overlap)
                 )

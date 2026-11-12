@@ -218,3 +218,21 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
     assert (output_path / "segmentation_mask.tif").is_file()
     assert tile_settings == {"tile_size": 160, "overlap": 128}
     assert events[-2:] == ["gc", "trim"]
+
+def test_predict_runs_model_in_inference_mode(monkeypatch, tmp_path):
+    input_path = tmp_path / "input.tif"
+    tifffile.imwrite(input_path, np.arange(64, dtype=np.uint16).reshape(8, 8))
+
+    class InferenceModeModel(torch.nn.Module):
+        def forward(self, x):
+            assert torch.is_inference_mode_enabled()
+            assert not torch.is_grad_enabled()
+            return torch.cat((torch.zeros_like(x), torch.ones_like(x), torch.zeros_like(x)), dim=1)
+
+    monkeypatch.setattr(inference, "_load_model", lambda *_args, **_kwargs: InferenceModeModel())
+    monkeypatch.setattr(inference, "_write_provenance", lambda *_args, **_kwargs: None)
+
+    result = inference.predict(input_path, tmp_path / "checkpoint.pt", tmp_path / "results")
+
+    assert result["n_instances"] == 1
+    assert (tmp_path / "results" / "segmentation_mask.tif").is_file()
