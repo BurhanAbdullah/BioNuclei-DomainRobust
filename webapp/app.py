@@ -64,10 +64,10 @@ MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1
 
 RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
-# The release checkpoint is approximately 3 GB. Cache its digest only for the
-# exact filesystem identity that was hashed; every health/inference check still
-# opens the path and compares descriptor + path metadata to detect replacement
-# or in-place modification without rereading unchanged checkpoint bytes.
+# Cache the digest only for the exact filesystem identity that was hashed.
+# Every health/inference check still opens the path and compares descriptor +
+# path metadata to detect replacement or in-place modification without
+# rereading unchanged checkpoint bytes.
 _CHECKPOINT_CACHE_LOCK = threading.Lock()
 _CHECKPOINT_CACHE: tuple[str, tuple[int, int, int, int, int], str] | None = None
 
