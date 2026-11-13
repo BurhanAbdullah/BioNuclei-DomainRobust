@@ -165,3 +165,45 @@ def test_analyze_releases_worker_slot_when_upload_is_empty(
     assert response.status_code == 400, response.text
     reservation = community_app.community_service.reserve_job_slot()
     reservation.release()
+
+
+def test_analyze_returns_structured_job_creation_cleanup_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "api-upload-write-failure"
+    error = community_app.community_service.JobCreationError(
+        job_id,
+        "upload_persistence",
+        "verified",
+        "Could not persist the uploaded image; cleanup status is verified.",
+    )
+    monkeypatch.setattr(community_app.community_service, "_checkpoint", lambda: None)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id="owner-a", email=None, guest=True),
+    )
+
+    def fail_create(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(community_app, "create_job", fail_create)
+    with TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            files={"image": ("sample.tif", b"synthetic", "image/tiff")},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": (
+            "Could not persist the uploaded image; cleanup status is verified. "
+            "(job api-upload-write-failure; stage upload_persistence; cleanup status verified)"
+        ),
+        "error": "job_creation_failed",
+        "job_id": job_id,
+        "stage": "upload_persistence",
+        "cleanup_status": "verified",
+    }
+    reservation = community_app.community_service.reserve_job_slot()
+    reservation.release()
