@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import threading
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
-from webapp import community
+from webapp import community, community_app
 
 
 @pytest.fixture
@@ -446,4 +449,216 @@ def test_create_job_journals_incomplete_pre_queue_cleanup_for_retry(
     assert row["expires_at"] == original_expiry
     assert not module._job_dir(job_id).exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
+def test_delete_active_job_returns_conflict_without_removing_transient_data(
+    isolated_jobs, monkeypatch: pytest.MonkeyPatch
+):
+    module = isolated_jobs
+    job_id = "delete-active-job"
+    user_id = "owner-active"
+    now = module._now()
+    root = module._job_dir(job_id)
+    root.mkdir(parents=True)
+    source = root / "input.tif"
+    source.write_bytes(b"private source bytes")
+    archive = module.JOB_ROOT / f"{job_id}.zip"
+    archive.write_bytes(b"existing archive")
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id, "running", now.isoformat(), now.isoformat(),
+                (now + timedelta(hours=1)).isoformat(), user_id, "input.tif",
+                0, 0, "auto", "intensity,nuclei",
+            ),
+        )
+        conn.commit()
+
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS", {})
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS_LOCK", threading.Lock())
+    with module.ACTIVE_JOB_THREADS_LOCK:
+        module.ACTIVE_JOB_THREADS[job_id] = SimpleNamespace(is_alive=lambda: True)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id=user_id, email=None, guest=True),
+    )
+    try:
+        with TestClient(community_app.app) as client:
+            response = client.delete(f"/jobs/{job_id}")
+        assert response.status_code == 409
+        assert "deletion was not performed" in response.json()["detail"]
+        row = module._get_job(job_id, user_id)
+        assert row is not None and row["status"] == "running"
+        assert source.read_bytes() == b"private source bytes"
+        assert archive.read_bytes() == b"existing archive"
+    finally:
+        with module.ACTIVE_JOB_THREADS_LOCK:
+            module.ACTIVE_JOB_THREADS.pop(job_id, None)
+
+
+def test_delete_cannot_race_worker_start(isolated_jobs, monkeypatch: pytest.MonkeyPatch):
+    module = isolated_jobs
+    real_thread = threading.Thread
+    start_entered = threading.Event()
+    allow_start = threading.Event()
+    delete_lookup_done = threading.Event()
+    delete_done = threading.Event()
+    outcome: dict[str, object] = {}
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS", {})
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS_LOCK", threading.Lock())
+    monkeypatch.setattr(module, "_ACTIVE_JOB_SLOTS", threading.BoundedSemaphore(1))
+    reservation = module.reserve_job_slot()
+
+    class PausedWorker:
+        def __init__(self, *args, **kwargs):
+            self.started = False
+
+        def start(self):
+            start_entered.set()
+            if not allow_start.wait(timeout=5):
+                raise RuntimeError("test worker start was not released")
+            self.started = True
+
+        def is_alive(self):
+            return self.started
+
+    monkeypatch.setattr(module.threading, "Thread", PausedWorker)
+    creator = real_thread(
+        target=lambda: outcome.update(
+            job_id=module.create_job(
+                b"fixture", "race.tif", "owner-race", False, "auto",
+                reservation=reservation,
+            )
+        )
+    )
+    creator.start()
+    assert start_entered.wait(timeout=5)
+
+    with module.DB_LOCK, module._db() as conn:
+        row = conn.execute("SELECT id FROM jobs WHERE user_id = ?", ("owner-race",)).fetchone()
+    assert row is not None
+    job_id = str(row["id"])
+
+    original_get_job = module._get_job
+
+    def observe_lookup(lookup_id, user_id=None):
+        result = original_get_job(lookup_id, user_id)
+        if lookup_id == job_id:
+            delete_lookup_done.set()
+        return result
+
+    monkeypatch.setattr(module, "_get_job", observe_lookup)
+
+    def delete_attempt():
+        try:
+            module.delete_job(job_id, "owner-race")
+        except Exception as exc:
+            outcome["delete_error"] = exc
+        else:
+            outcome["deleted"] = True
+        finally:
+            delete_done.set()
+
+    deleter = real_thread(target=delete_attempt)
+    deleter.start()
+    assert delete_lookup_done.wait(timeout=5)
+    assert not delete_done.wait(timeout=0.1)
+
+    allow_start.set()
+    creator.join(timeout=5)
+    deleter.join(timeout=5)
+    assert not creator.is_alive()
+    assert not deleter.is_alive()
+    assert outcome.get("job_id") == job_id
+    assert isinstance(outcome.get("delete_error"), module.ActiveJobDeletionError)
+
+    with module.ACTIVE_JOB_THREADS_LOCK:
+        worker = module.ACTIVE_JOB_THREADS.pop(job_id)
+        worker.started = False
+    reservation.release()
+    module._set_job(job_id, status="failed")
+    assert module.delete_job(job_id, "owner-race") is True
+
+
+def test_expired_terminal_job_cleanup_waits_for_active_worker(isolated_jobs, monkeypatch):
+    module = isolated_jobs
+    job_id = "expired-active-worker"
+    user_id = "owner-a"
+    root, archive = _seed_expired_terminal_job(
+        module, job_id, user_id, status="completed"
+    )
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS", {})
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS_LOCK", threading.Lock())
+    with module.ACTIVE_JOB_THREADS_LOCK:
+        module.ACTIVE_JOB_THREADS[job_id] = SimpleNamespace(is_alive=lambda: True)
+
+    try:
+        assert module.get_job(job_id, user_id) is None
+        assert module._get_job(job_id, user_id) is not None
+        assert root.exists()
+        assert archive.exists()
+        assert module.purge_expired() == 0
+        assert module._get_job(job_id, user_id) is not None
+    finally:
+        with module.ACTIVE_JOB_THREADS_LOCK:
+            module.ACTIVE_JOB_THREADS.pop(job_id, None)
+
+    assert module.get_job(job_id, user_id) is None
+    assert module._get_job(job_id, user_id) is None
+    assert not root.exists()
+    assert not archive.exists()
+
+
+def test_recovery_uses_registry_before_database_lock(isolated_jobs, monkeypatch: pytest.MonkeyPatch):
+    module = isolated_jobs
+    job_id = "stale-recovery-lock-order"
+    user_id = "owner-recovery"
+    now = module._now()
+    stale = (now - timedelta(hours=1)).isoformat()
+    with module.DB_LOCK, module._db() as conn:
+        conn.execute(
+            "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,"
+            "retained_copy,research_consent,algorithm_profile,analysis_modules) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id, "queued", stale, stale, (now + timedelta(hours=1)).isoformat(),
+                user_id, "stale.tif", 0, 0, "auto", "nuclei",
+            ),
+        )
+        conn.commit()
+
+    class LockOrderGuard:
+        state = threading.local()
+
+        def __init__(self, name: str):
+            self.name = name
+            self.lock = threading.Lock()
+
+        def __enter__(self):
+            held = list(getattr(self.state, "held", []))
+            if self.name == "active" and "db" in held:
+                raise AssertionError("lock inversion: registry lock acquired while DB lock held")
+            self.lock.acquire()
+            held.append(self.name)
+            self.state.held = held
+            return self
+
+        def __exit__(self, *_):
+            held = list(getattr(self.state, "held", []))
+            assert held and held[-1] == self.name
+            held.pop()
+            self.state.held = held
+            self.lock.release()
+
+    monkeypatch.setattr(module, "DB_LOCK", LockOrderGuard("db"))
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS_LOCK", LockOrderGuard("active"))
+    monkeypatch.setattr(module, "ACTIVE_JOB_THREADS", {})
+    monkeypatch.setattr(module, "_cleanup_failed_job", lambda *_args, **_kwargs: None)
+
+    assert module.recover_interrupted_jobs(
+        now=now, stale_after=timedelta(minutes=1)
+    ) == 1
+    row = module._get_job(job_id, user_id)
+    assert row is not None and row["status"] == "failed"
 

@@ -763,60 +763,60 @@ def create_job(
         input_path = root / f"input{suffix}"
         expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
 
-        stage = "upload_persistence"
-        root.mkdir(parents=True, exist_ok=True)
-        input_path.write_bytes(data)
-
-        # Keep the upload write before the queued row until active-job deletion
-        # locking is integrated; all partial-write and insert failures below
-        # still pass through the same artifact cleanup path.
-        stage = "database_insert"
-        with DB_LOCK, _db() as conn:
-            conn.execute(
-                "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    job_id,
-                    "queued",
-                    _now().isoformat(),
-                    _now().isoformat(),
-                    expires.isoformat(),
-                    user_id,
-                    original_name,
-                    0,
-                    0,
-                    algorithm_profile,
-                    ",".join(sorted(modules)),
-                ),
-            )
-            conn.commit()
-
-        stage = "worker_construction"
-        worker = threading.Thread(
-            target=_run,
-            args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
-            kwargs={
-                "channel": channel,
-                "time": time,
-                "z": z,
-                "field": field,
-                "reservation": slot,
-            },
-            name=f"bionuclei-job-{job_id[:8]}",
-            daemon=True,
-        )
-        stage = "worker_registration"
+        # Publish the owner-scoped row, persist the upload, and register/start
+        # the worker under one registry lease. This prevents DELETE or expiry
+        # recovery from observing a queued row before its worker is registered.
+        # The lock order is always ACTIVE_JOB_THREADS_LOCK -> DB_LOCK.
         with ACTIVE_JOB_THREADS_LOCK:
+            stage = "database_insert"
+            with DB_LOCK, _db() as conn:
+                conn.execute(
+                    "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        job_id,
+                        "queued",
+                        _now().isoformat(),
+                        _now().isoformat(),
+                        expires.isoformat(),
+                        user_id,
+                        original_name,
+                        0,
+                        0,
+                        algorithm_profile,
+                        ",".join(sorted(modules)),
+                    ),
+                )
+                conn.commit()
+
+            stage = "upload_persistence"
+            root.mkdir(parents=True, exist_ok=True)
+            input_path.write_bytes(data)
+
+            stage = "worker_construction"
+            worker = threading.Thread(
+                target=_run,
+                args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
+                kwargs={
+                    "channel": channel,
+                    "time": time,
+                    "z": z,
+                    "field": field,
+                    "reservation": slot,
+                },
+                name=f"bionuclei-job-{job_id[:8]}",
+                daemon=True,
+            )
+            stage = "worker_registration"
             ACTIVE_JOB_THREADS[job_id] = worker
 
-        stage = "worker_start"
-        try:
-            worker.start()
-        except Exception as exc:
-            with ACTIVE_JOB_THREADS_LOCK:
+            stage = "worker_start"
+            try:
+                worker.start()
+            except Exception as exc:
                 ACTIVE_JOB_THREADS.pop(job_id, None)
-            raise RuntimeError("Could not start the analysis worker.") from exc
+                raise RuntimeError("Could not start the analysis worker.") from exc
 
-        worker_started = True
+            worker_started = True
         return job_id
     except Exception as exc:
         if not worker_started:
@@ -851,6 +851,7 @@ def create_job(
             raise JobCreationError(job_id, stage, cleanup_status, message) from exc
         raise
 
+
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
     return {"job_id":row["id"],"status":row["status"],"created_at":row["created_at"],"updated_at":row["updated_at"],"expires_at":row["expires_at"],"input_name":row["input_name"],"input_sha256":row["input_sha256"],"research_consent":False,"retained_copy":False,"algorithm_profile":row["algorithm_profile"],"analysis_modules":row["analysis_modules"].split(",") if row["analysis_modules"] else [],"result":result,"error":row["error"],"downloads":{"zip":f"/jobs/{row['id']}/download","results":f"/jobs/{row['id']}/files/results.json"} if row["status"] == "completed" else {}}
@@ -874,69 +875,72 @@ def _terminal_job_is_expired(row: sqlite3.Row | None) -> bool:
 
 
 def _remove_expired_job(job_id: str, user_id: str | None = None) -> bool:
-    """Remove expired terminal artifacts before deleting their metadata.
-
-    If physical cleanup fails, leave the row for retry but never return the
-    expired job or its artifacts to a caller.
-    """
-    with DB_LOCK, _db() as conn:
-        if user_id is None:
-            row = conn.execute(
-                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
-                (job_id,),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
-                (job_id, user_id),
-            ).fetchone()
-    if row is None:
-        return True
-    if not _terminal_job_is_expired(row):
-        return False
-
-    root = _job_dir(job_id)
-    archive = JOB_ROOT / f"{job_id}.zip"
-    try:
-        if _path_entry_exists(root):
-            shutil.rmtree(root)
-        archive.unlink(missing_ok=True)
-        if _path_entry_exists(root) or _path_entry_exists(archive):
-            raise OSError("expired job artifacts remain after cleanup")
-    except OSError as exc:
-        print(
-            f"bionuclei: expiry cleanup deferred for job {job_id} ({type(exc).__name__})",
-            flush=True,
-        )
-        return False
-
-    with DB_LOCK, _db() as conn:
-        if user_id is None:
-            current = conn.execute(
-                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
-                (job_id,),
-            ).fetchone()
-        else:
-            current = conn.execute(
-                "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
-                (job_id, user_id),
-            ).fetchone()
-        if current is None:
-            return True
-        if not _terminal_job_is_expired(current):
+    """Remove expired terminal artifacts without racing a live worker."""
+    # Keep the registry lock until both filesystem and metadata cleanup finish.
+    # A worker can publish terminal status just before its final cleanup steps.
+    with ACTIVE_JOB_THREADS_LOCK:
+        worker = ACTIVE_JOB_THREADS.get(job_id)
+        if worker is not None and worker.is_alive():
             return False
-        if user_id is None:
-            deleted = conn.execute(
-                "DELETE FROM jobs WHERE id = ? AND status IN ('completed', 'failed')",
-                (job_id,),
+
+        with DB_LOCK, _db() as conn:
+            if user_id is None:
+                row = conn.execute(
+                    "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
+                    (job_id, user_id),
+                ).fetchone()
+        if row is None:
+            return True
+        if not _terminal_job_is_expired(row):
+            return False
+
+        root = _job_dir(job_id)
+        archive = JOB_ROOT / f"{job_id}.zip"
+        try:
+            if _path_entry_exists(root):
+                shutil.rmtree(root)
+            archive.unlink(missing_ok=True)
+            if _path_entry_exists(root) or _path_entry_exists(archive):
+                raise OSError("expired job artifacts remain after cleanup")
+        except OSError as exc:
+            print(
+                f"bionuclei: expiry cleanup deferred for job {job_id} ({type(exc).__name__})",
+                flush=True,
             )
-        else:
-            deleted = conn.execute(
-                "DELETE FROM jobs WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed')",
-                (job_id, user_id),
-            )
-        conn.commit()
-        return deleted.rowcount == 1
+            return False
+
+        with DB_LOCK, _db() as conn:
+            if user_id is None:
+                current = conn.execute(
+                    "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+            else:
+                current = conn.execute(
+                    "SELECT id, user_id, status, expires_at FROM jobs WHERE id = ? AND user_id = ?",
+                    (job_id, user_id),
+                ).fetchone()
+            if current is None:
+                return True
+            if not _terminal_job_is_expired(current):
+                return False
+            if user_id is None:
+                deleted = conn.execute(
+                    "DELETE FROM jobs WHERE id = ? AND status IN ('completed', 'failed')",
+                    (job_id,),
+                )
+            else:
+                deleted = conn.execute(
+                    "DELETE FROM jobs WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed')",
+                    (job_id, user_id),
+                )
+            conn.commit()
+            return deleted.rowcount == 1
 
 
 def _live_owned_row(job_id: str, user_id: str) -> sqlite3.Row | None:
@@ -987,36 +991,58 @@ def get_archive(job_id: str, user_id: str) -> Path:
     return _archive(job_id)
 
 
+class ActiveJobDeletionError(RuntimeError):
+    """Raised when a worker or non-terminal setup may still own job files."""
+
+
 def delete_job(job_id: str, user_id: str) -> bool:
-    """Delete an owner's job only after transient artifacts are physically removed."""
+    """Delete an owner's terminal job only after workers and files are gone."""
     row = _get_job(job_id, user_id)
     if row is None:
         raise FileNotFoundError(job_id)
 
-    root = _job_dir(job_id)
-    archive = JOB_ROOT / f"{job_id}.zip"
-    try:
-        if _path_entry_exists(root):
-            shutil.rmtree(root)
-        archive.unlink(missing_ok=True)
-        if _path_entry_exists(root) or _path_entry_exists(archive):
-            raise OSError("job artifacts remain after cleanup")
-    except OSError as exc:
-        # Keep the owner-scoped row so the owner can retry deletion. Never report
-        # success or erase metadata while source/result bytes may still exist.
-        raise OSError(
-            "Could not remove all transient job artifacts; job metadata was retained for retry"
-        ) from exc
+    # Recheck under the registry lock. create_job holds this same lock from
+    # queued-row insertion through worker.start(), closing the unregistered
+    # queued-row window. Keep it until physical and metadata deletion complete.
+    with ACTIVE_JOB_THREADS_LOCK:
+        current = _get_job(job_id, user_id)
+        if current is None:
+            raise FileNotFoundError(job_id)
 
-    with DB_LOCK, _db() as conn:
-        deleted = conn.execute(
-            "DELETE FROM jobs WHERE id = ? AND user_id = ?",
-            (job_id, user_id),
-        )
-        conn.commit()
-    if deleted.rowcount != 1:
-        raise FileNotFoundError(job_id)
-    return True
+        worker = ACTIVE_JOB_THREADS.get(job_id)
+        if worker is not None and worker.is_alive():
+            raise ActiveJobDeletionError(
+                "Analysis is still running; deletion was not performed. "
+                "Wait for the worker to finish and retry."
+            )
+        if current["status"] not in {"completed", "failed"}:
+            raise ActiveJobDeletionError(
+                "Analysis has not reached a terminal state; deletion was not performed. "
+                "Wait for completion or failure recovery and retry."
+            )
+
+        root = _job_dir(job_id)
+        archive = JOB_ROOT / f"{job_id}.zip"
+        try:
+            if _path_entry_exists(root):
+                shutil.rmtree(root)
+            archive.unlink(missing_ok=True)
+            if _path_entry_exists(root) or _path_entry_exists(archive):
+                raise OSError("job artifacts remain after cleanup")
+        except OSError as exc:
+            raise OSError(
+                "Could not remove all transient job artifacts; job metadata was retained for retry"
+            ) from exc
+
+        with DB_LOCK, _db() as conn:
+            deleted = conn.execute(
+                "DELETE FROM jobs WHERE id = ? AND user_id = ? AND status IN ('completed', 'failed')",
+                (job_id, user_id),
+            )
+            conn.commit()
+        if deleted.rowcount != 1:
+            raise FileNotFoundError(job_id)
+        return True
 
 
 def delete_research_copy(job_id: str, user_id: str) -> bool:
@@ -1085,26 +1111,29 @@ def recover_interrupted_jobs(
     interrupted: list[str] = []
     active_statuses = ("queued", "planning", "running", "measuring", "expert_review", "packaging")
     placeholders = ",".join("?" for _ in active_statuses)
-    with DB_LOCK, _db() as conn:
-        rows = conn.execute(
-            f"SELECT id FROM jobs WHERE status IN ({placeholders}) AND updated_at < ?",
-            (*active_statuses, cutoff),
-        ).fetchall()
-        for row in rows:
-            job_id = str(row["id"])
-            with ACTIVE_JOB_THREADS_LOCK:
+    # Use the same registry -> database lock order as create_job and delete_job.
+    # The reverse order can deadlock with a creator that is publishing a queued
+    # row and registering its worker under ACTIVE_JOB_THREADS_LOCK.
+    with ACTIVE_JOB_THREADS_LOCK:
+        with DB_LOCK, _db() as conn:
+            rows = conn.execute(
+                f"SELECT id FROM jobs WHERE status IN ({placeholders}) AND updated_at < ?",
+                (*active_statuses, cutoff),
+            ).fetchall()
+            for row in rows:
+                job_id = str(row["id"])
                 worker = ACTIVE_JOB_THREADS.get(job_id)
                 if worker is not None and worker.is_alive():
                     continue
-            expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
-            result = conn.execute(
-                f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
-                f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
-                (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
-            )
-            if result.rowcount:
-                interrupted.append(job_id)
-        conn.commit()
+                expires_at = (current_time + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
+                result = conn.execute(
+                    f"UPDATE jobs SET status = 'failed', error = ?, updated_at = ?, expires_at = ? "
+                    f"WHERE id = ? AND status IN ({placeholders}) AND updated_at < ?",
+                    (message, current_time.isoformat(), expires_at, job_id, *active_statuses, cutoff),
+                )
+                if result.rowcount:
+                    interrupted.append(job_id)
+            conn.commit()
 
     for job_id in interrupted:
         _cleanup_failed_job(
