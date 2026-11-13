@@ -426,17 +426,54 @@ def _cleanup_failed_job(
     root: Path,
     *,
     failure_message: str = _FAILED_JOB_ERROR,
+    owner_id: str | None = None,
+    input_name: str | None = None,
+    algorithm_profile: str = "auto",
+    analysis_modules: list[str] | None = None,
 ) -> bool:
-    """Persist a truthful failed record and whether transient cleanup was verified."""
+    """Persist failure and journal incomplete pre-queue cleanup for background retry."""
     cleanup_ok = _remove_job_artifacts(job_id, root)
     failed_at = _now()
     expires_at = (failed_at + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)).isoformat()
     error = failure_message if cleanup_ok else failure_message + _FAILED_JOB_CLEANUP_SUFFIX
     with DB_LOCK, _db() as conn:
-        conn.execute(
-            "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
-            ("failed", error, failed_at.isoformat(), expires_at, job_id),
-        )
+        if owner_id is None:
+            updated = conn.execute(
+                "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? WHERE id = ?",
+                ("failed", error, failed_at.isoformat(), expires_at, job_id),
+            )
+        else:
+            updated = conn.execute(
+                "UPDATE jobs SET status = ?, error = ?, updated_at = ?, expires_at = ? "
+                "WHERE id = ? AND user_id = ?",
+                ("failed", error, failed_at.isoformat(), expires_at, job_id, owner_id),
+            )
+
+        # A setup failure can happen after the upload directory is created but
+        # before the queued row is committed. If physical cleanup also fails,
+        # persist an owner-scoped failed row so the existing cleanup loop can
+        # retry it. Never overwrite a row belonging to a different owner.
+        if updated.rowcount == 0 and not cleanup_ok and owner_id is not None:
+            conn.execute(
+                "INSERT OR IGNORE INTO jobs("
+                "id,status,created_at,updated_at,expires_at,user_id,input_name,"
+                "retained_copy,research_consent,algorithm_profile,analysis_modules,error"
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id,
+                    "failed",
+                    failed_at.isoformat(),
+                    failed_at.isoformat(),
+                    expires_at,
+                    owner_id,
+                    input_name,
+                    0,
+                    0,
+                    algorithm_profile,
+                    ",".join(sorted(analysis_modules or ["nuclei"])),
+                    error,
+                ),
+            )
         conn.commit()
     return cleanup_ok
 
@@ -786,7 +823,14 @@ def create_job(
             cleanup_status = "verified" if root is None else "unknown"
             if root is not None:
                 try:
-                    cleanup_ok = _cleanup_failed_job(job_id, root)
+                    cleanup_ok = _cleanup_failed_job(
+                        job_id,
+                        root,
+                        owner_id=user_id,
+                        input_name=original_name,
+                        algorithm_profile=algorithm_profile,
+                        analysis_modules=sorted(modules),
+                    )
                     cleanup_status = "verified" if cleanup_ok else "incomplete"
                 except Exception as cleanup_exc:
                     cleanup_status = "unknown"
