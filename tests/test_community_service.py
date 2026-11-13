@@ -16,6 +16,47 @@ def isolated_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return community
 
 
+def test_job_slot_reservation_is_bounded_and_idempotent(isolated_jobs, monkeypatch):
+    slots = isolated_jobs.threading.BoundedSemaphore(1)
+    monkeypatch.setattr(isolated_jobs, "_ACTIVE_JOB_SLOTS", slots)
+
+    reservation = isolated_jobs.reserve_job_slot()
+    with pytest.raises(isolated_jobs.JobCapacityError, match="at capacity"):
+        isolated_jobs.reserve_job_slot()
+
+    reservation.release()
+    reservation.release()
+    replacement = isolated_jobs.reserve_job_slot()
+    replacement.release()
+
+
+def test_create_job_rejects_when_worker_capacity_is_reserved(isolated_jobs, monkeypatch):
+    slots = isolated_jobs.threading.BoundedSemaphore(1)
+    monkeypatch.setattr(isolated_jobs, "_ACTIVE_JOB_SLOTS", slots)
+    reservation = isolated_jobs.reserve_job_slot()
+
+    with pytest.raises(isolated_jobs.JobCapacityError, match="at capacity"):
+        isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "auto")
+
+    assert list(isolated_jobs.JOB_ROOT.iterdir()) == []
+    reservation.release()
+
+
+def test_create_job_releases_slot_when_worker_start_fails(isolated_jobs, monkeypatch):
+    slots = isolated_jobs.threading.BoundedSemaphore(1)
+    monkeypatch.setattr(isolated_jobs, "_ACTIVE_JOB_SLOTS", slots)
+
+    def fail_start(_thread):
+        raise RuntimeError("thread start failed")
+
+    monkeypatch.setattr(isolated_jobs.threading.Thread, "start", fail_start)
+    with pytest.raises(RuntimeError, match="Could not start the analysis worker"):
+        isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "auto")
+
+    replacement = isolated_jobs.reserve_job_slot()
+    replacement.release()
+
+
 def test_create_job_rejects_unknown_algorithm(isolated_jobs):
     with pytest.raises(ValueError, match="Unsupported analysis profile"):
         isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "unknown")
