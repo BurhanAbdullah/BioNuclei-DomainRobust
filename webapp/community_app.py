@@ -1,6 +1,8 @@
 """Standalone public BioNuclei Community Analyzer service."""
 from __future__ import annotations
 
+import asyncio
+
 import base64
 import json
 import os
@@ -43,22 +45,45 @@ allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
 # function runs. Admission must therefore happen at the ASGI boundary, not in
 # the route, or concurrent rejected uploads can still exhaust temporary disk.
 MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+MAX_UPLOAD_BODY_TIMEOUT_SECONDS = int(
+    os.getenv("BIONUCLEI_UPLOAD_BODY_TIMEOUT_SECONDS", "120")
+)
+if not 1 <= MAX_UPLOAD_BODY_TIMEOUT_SECONDS <= 600:
+    raise RuntimeError(
+        "BIONUCLEI_UPLOAD_BODY_TIMEOUT_SECONDS must be between 1 and 600"
+    )
 
 
 class _RequestBodyTooLarge(Exception):
     """Abort multipart parsing after the bounded request body is exceeded."""
 
 
+class _RequestBodyTimedOut(Exception):
+    """Abort multipart parsing when the complete upload exceeds its deadline."""
+
+
 class AnalyzeAdmissionMiddleware:
     """Reserve analyzer capacity and cap request bytes before multipart parsing."""
 
-    def __init__(self, app, max_body_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        app,
+        max_body_bytes: int | None = None,
+        body_timeout_seconds: float | None = None,
+    ) -> None:
         self.app = app
         self.max_body_bytes = (
             max_body_bytes
             if max_body_bytes is not None
             else MAX_UPLOAD_BYTES + MAX_MULTIPART_OVERHEAD_BYTES
         )
+        self.body_timeout_seconds = (
+            body_timeout_seconds
+            if body_timeout_seconds is not None
+            else MAX_UPLOAD_BODY_TIMEOUT_SECONDS
+        )
+        if self.body_timeout_seconds <= 0:
+            raise ValueError("body_timeout_seconds must be positive")
 
     async def __call__(self, scope, receive, send) -> None:
         if (
@@ -136,9 +161,36 @@ class AnalyzeAdmissionMiddleware:
             )
             await response(scope, receive, send)
 
+        async def reject_timed_out_body() -> None:
+            nonlocal response_sent
+            if response_sent:
+                return
+            response_sent = True
+            response = JSONResponse(
+                status_code=408,
+                content={
+                    "detail": (
+                        "Analysis upload did not complete within "
+                        f"{self.body_timeout_seconds:g} seconds"
+                    )
+                },
+            )
+            await response(scope, receive, send)
+
+        loop = asyncio.get_running_loop()
+        body_deadline = loop.time() + self.body_timeout_seconds
+
         async def limited_receive():
             nonlocal received_bytes
-            message = await receive()
+            remaining = body_deadline - loop.time()
+            if remaining <= 0:
+                await reject_timed_out_body()
+                raise _RequestBodyTimedOut
+            try:
+                message = await asyncio.wait_for(receive(), timeout=remaining)
+            except asyncio.TimeoutError:
+                await reject_timed_out_body()
+                raise _RequestBodyTimedOut
             if message.get("type") == "http.request":
                 received_bytes += len(message.get("body", b""))
                 if received_bytes > self.max_body_bytes:
@@ -155,6 +207,9 @@ class AnalyzeAdmissionMiddleware:
         except _RequestBodyTooLarge:
             # The 413 response was sent before aborting the parser. Suppress any
             # secondary response from the interrupted multipart request.
+            return
+        except _RequestBodyTimedOut:
+            # The 408 response was sent before cancelling the stalled body read.
             return
         finally:
             if not state.get("bionuclei_job_slot_transferred"):
