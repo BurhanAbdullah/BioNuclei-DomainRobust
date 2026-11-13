@@ -58,7 +58,11 @@ Builds the human-readable report from deterministic outputs: analyzed images, in
 
 ## Current scientific model
 
-The documented baseline is a Boundary U-Net trained on BBBC039v1 with one input channel and three semantic classes: background, nuclear interior and boundary. The baseline configuration records seed 42, 100 epochs, batch size 8, AdamW, learning rate 3e-4, weight decay 1e-5, boundary loss weight 2.0 and Dice loss weight 1.0, with horizontal/vertical flips and 90-degree rotation augmentation.
+The documented source-domain baseline is a Boundary U-Net trained on BBBC039v1 with one input channel and three semantic classes: background, nuclear interior and boundary. Its committed release recipe uses seed 42, 100 epochs, batch size 8, AdamW, learning rate 3e-4, weight decay 1e-5, boundary loss weight 2.0 and Dice loss weight 1.0.
+
+**Training-recipe clarification:** the trainer currently performs no geometric augmentation, mixed precision or early stopping. Earlier YAML fields advertised horizontal/vertical flips, 90-degree rotations, AMP and an early-stopping patience value, but the training code did not consume or implement those settings. They have been removed from the executable baseline configuration rather than being recorded as if they ran. In particular, 90-degree rotation needs a shape-preserving paired image/mask policy for the non-square 520 × 696 source images before it can be enabled safely. No augmentation is claimed for the retained baseline until that implementation is separately specified, tested and evaluated.
+
+The canonical baseline workflow now uses the committed configuration as the single source of truth for epochs and seed; manual workflow inputs cannot silently change the release recipe. The 20-epoch setting in `docs/METHOD_FREEZE_2026-09-04.md` applies to the separately frozen downstream domain-robust experiments, not this 100-epoch BBBC039 source baseline.
 
 ## Future model registry
 

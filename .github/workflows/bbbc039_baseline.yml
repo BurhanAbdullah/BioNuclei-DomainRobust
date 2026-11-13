@@ -10,22 +10,25 @@ on:
       - 'scripts/build_bbbc039_split.py'
       - 'scripts/download_bbbc039.py'
       - 'scripts/verify_bbbc039.py'
+      # Keep the transfer evaluator and provenance guards on the exact same main SHA
+      # as the canonical baseline consumed by the workflow_run gate.
+      - 'scripts/download_s_biad634.py'
+      - 'scripts/evaluate_s_biad634.py'
+      - 'scripts/metrics_instance.py'
+      - 'scripts/verify_bbbc039_baseline_run.py'
+      - 'scripts/verify_bbbc039_checkpoint.py'
+      - 'scripts/verify_bbbc039_artifact_provenance.py'
+      - '.github/workflows/s_biad634_zero_shot.yml'
       - 'configs/bbbc039_baseline.yaml'
       - 'pyproject.toml'
       - '.github/workflows/bbbc039_baseline.yml'
+  # Canonical release baseline: exploratory epoch/seed overrides belong in a separate workflow.
   workflow_dispatch:
-    inputs:
-      epochs:
-        description: 'Training epochs for the reproducible run'
-        required: false
-        default: '20'
-      seed:
-        description: 'Random seed'
-        required: false
-        default: '42'
 
 jobs:
   train-evaluate:
+    # The 350-minute training job must never run from a pull-request branch.
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -48,20 +51,19 @@ jobs:
         run: python scripts/download_bbbc039.py --data-root data/raw/BBBC039
       - name: Verify dataset and build official manifest
         run: |
-          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py \
+            --data-root data/raw/BBBC039 \
+            --output data/raw/BBBC039/verification_report.json
           python scripts/build_bbbc039_split.py \
             --metadata-root data/raw/BBBC039/metadata \
             --output data/manifests/bbbc039_official_split.json
       - name: Train boundary-aware U-Net baseline
-        env:
-          EPOCHS: ${{ inputs.epochs || '20' }}
         run: |
           python scripts/train_bbbc039.py \
             --config configs/bbbc039_baseline.yaml \
             --manifest data/manifests/bbbc039_official_split.json \
             --data-root data/raw/BBBC039 \
-            --output outputs/bbbc039_baseline \
-            --epochs "$EPOCHS"
+            --output outputs/bbbc039_baseline
       - name: Evaluate held-out test set
         run: |
           python scripts/evaluate_bbbc039.py \

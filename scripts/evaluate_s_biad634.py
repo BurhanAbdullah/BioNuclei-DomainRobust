@@ -28,18 +28,43 @@ def discover(root,directory,suffixes):
 
 
 def pair_files(root):
-    images=discover(root,'rawimages',('.tif','.tiff','.png')); masks=discover(root,'groundtruth',('.tif','.tiff','.png'))
-    if not images:raise RuntimeError('No S-BIAD634 raw images found')
-    stems={p.stem for p in images}; candidates={}
+    images = discover(root, "rawimages", (".tif", ".tiff", ".png"))
+    masks = discover(root, "groundtruth", (".tif", ".tiff", ".png"))
+    if not images:
+        raise RuntimeError("No S-BIAD634 raw images found")
+
+    image_stems = [image.stem for image in images]
+    duplicate_image_stems = sorted(
+        stem for stem in set(image_stems) if image_stems.count(stem) > 1
+    )
+    if duplicate_image_stems:
+        raise RuntimeError(
+            "S-BIAD634 raw-image stems are not unique; refusing to reuse a ground-truth mask: "
+            f"{duplicate_image_stems[:10]}"
+        )
+
+    candidates = {}
     for mask in masks:
-        if mask.stem in stems:candidates.setdefault(mask.stem,[]).append(mask)
-    pairs=[]; missing=[]; ambiguous=[]
+        candidates.setdefault(mask.stem, []).append(mask)
+
+    pairs = []
+    missing = []
+    ambiguous = []
     for image in images:
-        matches=candidates.get(image.stem,[])
-        if len(matches)==1:pairs.append((image,matches[0]))
-        elif not matches:missing.append(image.stem)
-        else:ambiguous.append(image.stem)
-    if missing or ambiguous or len(pairs)!=len(images):raise RuntimeError(f'Could not deterministically pair S-BIAD634 files: images={len(images)}, groundtruth_tif_files={len(masks)}, pairs={len(pairs)}, missing={missing[:10]}, ambiguous={ambiguous[:10]}')
+        matches = candidates.get(image.stem, [])
+        if len(matches) == 1:
+            pairs.append((image, matches[0]))
+        elif not matches:
+            missing.append(image.stem)
+        else:
+            ambiguous.append(image.stem)
+
+    if missing or ambiguous or len(pairs) != len(images):
+        raise RuntimeError(
+            "Could not establish a one-to-one S-BIAD634 image/ground-truth pairing: "
+            f"images={len(images)}, groundtruth_files={len(masks)}, pairs={len(pairs)}, "
+            f"missing={missing[:10]}, ambiguous={ambiguous[:10]}"
+        )
     return pairs
 
 
@@ -70,9 +95,14 @@ def predict_semantic(model,x,tile_size=512,overlap=32):
 def load_mask(path):return decode_instance_mask(np.asarray(imread(path)))
 
 
+def load_checkpoint(path: Path):
+    """Load tensor and primitive checkpoint data without executing pickle globals."""
+    return torch.load(path, map_location='cpu', weights_only=True)
+
+
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--checkpoint',type=Path,required=True); p.add_argument('--data-root',type=Path,required=True); p.add_argument('--output',type=Path,default=Path('outputs/s_biad634_zero_shot')); p.add_argument('--tile-size',type=int,default=512); p.add_argument('--overlap',type=int,default=32); a=p.parse_args()
-    checkpoint=torch.load(a.checkpoint,map_location='cpu'); cfg=checkpoint['config']; model=BoundaryUNet(in_channels=int(cfg['model']['in_channels']),out_channels=int(cfg['model']['out_channels']),base_channels=int(cfg['model']['base_channels'])); model.load_state_dict(checkpoint['model']); model.eval(); results=[]
+    checkpoint=load_checkpoint(a.checkpoint); cfg=checkpoint['config']; model=BoundaryUNet(in_channels=int(cfg['model']['in_channels']),out_channels=int(cfg['model']['out_channels']),base_channels=int(cfg['model']['base_channels'])); model.load_state_dict(checkpoint['model']); model.eval(); results=[]
     for image_path,mask_path in pair_files(a.data_root):
         raw=np.asarray(tifffile.imread(image_path)); image=to_model_grayscale(raw); target=load_mask(mask_path)
         if image.shape!=target.shape:raise ValueError(f'Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}')

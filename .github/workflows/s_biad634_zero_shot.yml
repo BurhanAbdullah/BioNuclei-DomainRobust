@@ -5,24 +5,24 @@ name: S-BIAD634 zero-shot transfer
 # Manual release-gate trigger requested 2026-08-18 after P/R/F1 integration.
 
 on:
-  push:
-    paths:
-      - 'scripts/evaluate_s_biad634.py'
-      - 'scripts/metrics_instance.py'
-      - 'scripts/download_s_biad634.py'
-      - '.github/workflows/s_biad634_zero_shot.yml'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       baseline_run_id:
-        description: 'Completed BBBC039 baseline workflow run ID (optional; latest successful run is used when omitted)'
+        description: 'Successful BBBC039 baseline run on main at this exact commit (optional; selected automatically when omitted)'
         required: false
 
 jobs:
   zero-shot:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_sha == github.sha)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -54,12 +54,18 @@ jobs:
           else
             RUN_ID=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?status=success&per_page=20" \
-              | python -c 'import json,sys; d=json.load(sys.stdin); print(next((r["id"] for r in d["workflow_runs"] if r["conclusion"]=="success"), ""))')
+              "https://api.github.com/repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?branch=main&head_sha=$GITHUB_SHA&status=completed&per_page=100" \
+              | python -c 'import json,os,sys; d=json.load(sys.stdin); sha=os.environ["GITHUB_SHA"]; runs=[r for r in d.get("workflow_runs",[]) if r.get("name")=="BBBC039 baseline experiment" and r.get("head_branch")=="main" and r.get("head_sha")==sha and r.get("status")=="completed" and r.get("conclusion")=="success"]; print(max(runs,key=lambda r:r.get("created_at", ""))["id"] if runs else "")')
           fi
-          test -n "$RUN_ID"
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using baseline run $RUN_ID"
+          test -n "$RUN_ID" || { echo "No successful BBBC039 baseline exists on main at ${GITHUB_SHA}." >&2; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID" \
+            > "$RUNNER_TEMP/baseline-run.json"
+          python scripts/verify_bbbc039_baseline_run.py \
+            --metadata "$RUNNER_TEMP/baseline-run.json" \
+            --expected-sha "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
       - name: Download baseline artifact
         uses: actions/download-artifact@v4
         with:
@@ -68,27 +74,59 @@ jobs:
           name: bbbc039-baseline-${{ steps.run.outputs.run_id }}
           path: baseline_artifact
       - name: Locate checkpoint
+        id: checkpoint
         run: |
           test -f baseline_artifact/outputs/bbbc039_baseline/last.pt
           cp baseline_artifact/outputs/bbbc039_baseline/last.pt baseline_artifact/last.pt
+          checkpoint_sha256="$(sha256sum baseline_artifact/last.pt | cut -d' ' -f1)"
+          test -n "$checkpoint_sha256"
+          echo "sha256=$checkpoint_sha256" >> "$GITHUB_OUTPUT"
+      - name: Verify baseline checkpoint training recipe
+        run: |
+          python scripts/verify_bbbc039_checkpoint.py \
+            --checkpoint baseline_artifact/last.pt \
+            --config configs/bbbc039_baseline.yaml
       - name: Record evaluation provenance
         run: |
           mkdir -p outputs/s_biad634_zero_shot
           python - <<'PY'
           import json, os
           from pathlib import Path
+          from scripts.verify_bbbc039_artifact_provenance import build_baseline_artifact_provenance
+          baseline_artifact_provenance = build_baseline_artifact_provenance(
+              Path('baseline_artifact'),
+              Path('configs/bbbc039_baseline.yaml'),
+          )
           out = {
               'repository': os.environ.get('GITHUB_REPOSITORY'),
               'commit': os.environ.get('GITHUB_SHA'),
               'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
               'baseline_run_id': os.environ.get('BASELINE_RUN_ID'),
+              'baseline_commit_sha': os.environ.get('BASELINE_COMMIT_SHA'),
+              'baseline_checkpoint_sha256': os.environ.get('BASELINE_CHECKPOINT_SHA256'),
+              'baseline_artifact_provenance': baseline_artifact_provenance,
           }
           Path('outputs/s_biad634_zero_shot/provenance.json').write_text(json.dumps(out, indent=2) + '\n')
           PY
         env:
           BASELINE_RUN_ID: ${{ steps.run.outputs.run_id }}
+          BASELINE_COMMIT_SHA: ${{ steps.run.outputs.baseline_sha }}
+          BASELINE_CHECKPOINT_SHA256: ${{ steps.checkpoint.outputs.sha256 }}
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Bind target dataset provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.verify_bbbc039_artifact_provenance import build_s_biad634_dataset_provenance
+          provenance_path = Path('outputs/s_biad634_zero_shot/provenance.json')
+          provenance = json.loads(provenance_path.read_text(encoding='utf-8'))
+          provenance['target_dataset_provenance'] = build_s_biad634_dataset_provenance(
+              Path('data/raw/S-BIAD634/download_manifest.json')
+          )
+          provenance_path.write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
+          PY
       - name: Run zero-shot transfer evaluation
         run: |
           PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \

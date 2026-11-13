@@ -20,6 +20,14 @@ from bionuclei.targets import instance_to_boundary_target
 IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
 
 
+def resolve_seed(config_seed: int, override: int | None) -> int:
+    """Honor an explicit workflow seed while preserving the committed config default."""
+    seed = int(config_seed if override is None else override)
+    if seed < 0:
+        raise ValueError("training seed must be non-negative")
+    return seed
+
+
 def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -94,10 +102,11 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("outputs/bbbc039_baseline"))
     parser.add_argument("--epochs", type=int, default=None, help="Optional override for controlled pilot runs")
+    parser.add_argument("--seed", type=int, default=None, help="Optional override for controlled reproducible runs")
     args = parser.parse_args()
 
     cfg = yaml.safe_load(args.config.read_text())
-    seed = int(cfg["seed"])
+    seed = resolve_seed(int(cfg["seed"]), args.seed)
     seed_everything(seed)
 
     manifest = json.loads(args.manifest.read_text())
