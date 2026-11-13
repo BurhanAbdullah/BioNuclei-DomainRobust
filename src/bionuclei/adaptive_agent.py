@@ -101,6 +101,26 @@ def _normalise(image: np.ndarray) -> np.ndarray:
     return np.clip(x / scale, 0.0, 1.0)
 
 
+def _cnn_pattern_status(
+    foreground_fraction: float,
+    mean_confidence: float,
+    components: int,
+) -> tuple[str, tuple[str, ...]]:
+    """Keep uncalibrated CNN density cutoffs warning-only until held-out validation."""
+    reasons: list[str] = []
+    if foreground_fraction <= 0.001:
+        reasons.append("CNN found negligible nuclear foreground support.")
+    if foreground_fraction >= 0.98:
+        reasons.append("CNN classified nearly the entire image as foreground.")
+    if mean_confidence < 0.55:
+        reasons.append("CNN class confidence is low.")
+    if components == 0:
+        reasons.append("CNN produced no connected foreground component.")
+    # These heuristic cutoffs are not calibrated on held-out BBBC039 fields.
+    # They therefore remain CAUTION signals, never hard BLOCKED decisions.
+    return ("PASS" if not reasons else "CAUTION", tuple(reasons))
+
+
 def cnn_pattern_check(path: Path) -> CNNPatternCheck:
     """Run the released CNN as an analyseability gate before full analysis.
 
@@ -111,7 +131,7 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
     try:
         # Share the lock used by full inference so simultaneous jobs cannot load
         # separate U-Nets and run competing forward passes on a small CPU worker.
-        from bionuclei.inference import _INFERENCE_LOCK, _load_model
+        from bionuclei.inference import _INFERENCE_LOCK, _load_model, _trim_cpu_allocator
         checkpoint_path = Path(os.getenv("BIONUCLEI_CHECKPOINT", ""))
         if not checkpoint_path.is_file():
             return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", ("Released checkpoint is not available for the CNN gate.",))
@@ -134,8 +154,9 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
             x = torch.nn.functional.interpolate(x, size=(target_height, target_width), mode="area")
         else:
             x = torch.from_numpy(normalised[None, None]).float()
-        # Do not retain an extra full-resolution float32 copy while the model is loaded.
+        # Do not retain either full-resolution image buffer while the model is loaded.
         del normalised
+        del image
 
         model = None
         probabilities = None
@@ -158,17 +179,12 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
                     mean_confidence = float(confidence.mean().item())
                     mean_entropy = float(entropy.mean().item())
                     components = int(ndimage.label(foreground.cpu().numpy(), structure=np.ones((3, 3), dtype=np.uint8))[1])
-                reasons: list[str] = []
-                if foreground_fraction <= 0.001:
-                    reasons.append("CNN found negligible nuclear foreground support.")
-                if foreground_fraction >= 0.98:
-                    reasons.append("CNN classified nearly the entire image as foreground.")
-                if mean_confidence < 0.55:
-                    reasons.append("CNN class confidence is low.")
-                if components == 0:
-                    reasons.append("CNN produced no connected foreground component.")
-                status = "PASS" if not reasons else "CAUTION"
-                return CNNPatternCheck(True, "Boundary U Net", foreground_fraction, mean_confidence, mean_entropy, components, status, tuple(reasons))
+                status, reasons = _cnn_pattern_status(
+                    foreground_fraction,
+                    mean_confidence,
+                    components,
+                )
+                return CNNPatternCheck(True, "Boundary U Net", foreground_fraction, mean_confidence, mean_entropy, components, status, reasons)
             finally:
                 # Release the model and all activation-sized tensors before
                 # allowing another inference/preflight to acquire the lock.
@@ -181,6 +197,8 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
                 del x
                 import gc
                 gc.collect()
+                # Return freed preflight/model heap pages before full-resolution inference.
+                _trim_cpu_allocator()
 
     except Exception as exc:
         return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", (f"CNN gate could not execute: {type(exc).__name__}.",))

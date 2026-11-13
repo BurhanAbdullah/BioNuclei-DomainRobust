@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
+import yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -190,3 +192,74 @@ def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverifie
 
     assert response.status_code == 503
     assert "does not match the expected release SHA-256" in response.json()["detail"]
+
+
+def test_root_and_health_report_configured_result_retention(monkeypatch):
+    monkeypatch.setattr(community_app.community_service, "DEFAULT_RESULT_RETENTION_HOURS", 24)
+
+    root_payload = community_app.root()
+    health_payload = community_app.health()
+
+    assert root_payload["result_retention_hours"] == 24
+    assert "expire after 24 hours" in root_payload["retention"]
+    assert health_payload["result_retention_hours"] == 24
+
+
+def test_render_config_does_not_advertise_unimplemented_research_retention():
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "render.yaml").read_text(encoding="utf-8"))
+    community = next(
+        service for service in config["services"]
+        if service.get("name") == "bionuclei-community"
+    )
+    env_vars = {
+        item["key"]: item.get("value")
+        for item in community.get("envVars", [])
+    }
+
+    assert "BIONUCLEI_RESEARCH_RETENTION_DAYS" not in env_vars
+    assert env_vars["BIONUCLEI_RESULT_RETENTION_HOURS"] == "24"
+
+
+def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retention():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load(
+        (root / ".github/workflows/community_analyzer_validation.yml").read_text(encoding="utf-8")
+    )
+    live_job = workflow["jobs"]["live"]
+    assert live_job["timeout-minutes"] >= 25
+    live_steps = live_job["steps"]
+    root_step = next(step for step in live_steps if step.get("name") == "Check service root")
+    root_probe = root_step["run"]
+    assert "--connect-timeout 10 --max-time 180" in root_probe
+    assert "--retry" not in root_probe
+
+    deploy_step = next(
+        step for step in live_steps
+        if step.get("name") == "Check deployed source revision on main pushes"
+    )
+    script = deploy_step["run"]
+
+    assert deploy_step["if"] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+    assert "checkpoint_available" in script
+    assert "checkpoint_verified" in script
+    assert "checkpoint_sha256" in script
+    assert "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92" in script
+    assert "health_retention_hours" in script
+    assert "root_retention_hours" in script
+    assert 'expected_retention_hours="24"' in script
+    assert "deadline=$((SECONDS + 540))" in script
+    assert 'while [ "$SECONDS" -lt "$deadline" ]' in script
+    assert "--max-time 15" in script
+    assert "--retry" not in script
+
+
+def test_bbbc039_baseline_training_is_main_only():
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load(
+        (root / ".github/workflows/bbbc039_baseline.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["train-evaluate"]
+    assert job["if"] == "${{ github.ref == 'refs/heads/main' }}"
+    assert job["timeout-minutes"] == 350
+

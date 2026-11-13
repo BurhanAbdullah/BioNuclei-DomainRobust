@@ -11,6 +11,7 @@ on:
       - "webapp/app.py"
       - "webapp/community_app.py"
       - "scripts/validate_tiled_checkpoint.py"
+      - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
   push:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - "webapp/app.py"
       - "webapp/community_app.py"
       - "scripts/validate_tiled_checkpoint.py"
+      - "tests/test_tiled_checkpoint_validation.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
   workflow_dispatch:
 
@@ -107,6 +109,9 @@ jobs:
           PY
 
       - name: Run real checkpoint worker and specialist evidence gate
+        id: checkpoint_validation
+        env:
+          BIONUCLEI_VALIDATION_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
         run: python scripts/validate_tiled_checkpoint.py
 
       - name: Build isolated image for constrained-memory validation
@@ -161,3 +166,12 @@ jobs:
               [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
             '
           done
+
+      - name: Upload verified runner-only checkpoint evidence
+        if: always() && steps.checkpoint_validation.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-validation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence/
+          if-no-files-found: error
+          retention-days: 7

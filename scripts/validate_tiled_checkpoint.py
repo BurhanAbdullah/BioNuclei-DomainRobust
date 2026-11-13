@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import time
 import zipfile
@@ -50,6 +51,68 @@ def build_fixture(path: Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def persist_validation_evidence(
+    evidence_dir: Path,
+    temporary_root: Path,
+    archive_path: Path,
+    result_path: Path,
+    specialist_path: Path,
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    """Persist only verified derived outputs outside disposable worker storage."""
+    output_dir = evidence_dir.expanduser().resolve()
+    temp_root = temporary_root.resolve()
+    require(
+        output_dir != temp_root and temp_root not in output_dir.parents,
+        "Validation evidence must be stored outside disposable job storage",
+    )
+    require(manifest.get("source_image_excluded") is True,
+            "Refusing to persist evidence without verified source-image exclusion")
+    require(manifest.get("checkpoint_unchanged") is True,
+            "Refusing to persist evidence without checkpoint integrity verification")
+    require(manifest.get("specialist_count") == 8,
+            "Refusing to persist evidence without all eight specialists")
+    require(manifest.get("public_inference") is False,
+            "Runner evidence must never be labeled as public inference")
+
+    if output_dir.exists():
+        require(output_dir.is_dir() and not any(output_dir.iterdir()),
+                "Validation evidence directory must be empty")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    sources = {
+        "analysis-results.zip": archive_path,
+        "results.json": result_path,
+        "expert_agents.json": specialist_path,
+    }
+    file_entries: dict[str, dict[str, object]] = {}
+    for name, source in sources.items():
+        require(source.is_file() and source.stat().st_size > 0,
+                f"Cannot persist missing or empty validation output: {name}")
+        destination = output_dir / name
+        shutil.copyfile(source, destination)
+        source_digest = sha256_file(source)
+        copied_digest = sha256_file(destination)
+        require(copied_digest == source_digest,
+                f"Persisted validation output failed SHA-256 readback: {name}")
+        file_entries[name] = {
+            "sha256": copied_digest,
+            "size_bytes": destination.stat().st_size,
+        }
+
+    payload = {**manifest, "files": file_entries}
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "manifest_sha256": sha256_file(manifest_path),
+        "files": file_entries,
+    }
 
 
 def main() -> None:
@@ -214,6 +277,48 @@ def main() -> None:
             after_sha = sha256_file(checkpoint)
             require(after_sha == before_sha,
                     f"Checkpoint bytes changed during analysis: before={before_sha}, after={after_sha}")
+
+            evidence_dir_raw = os.environ.get("BIONUCLEI_VALIDATION_EVIDENCE_DIR", "").strip()
+            if evidence_dir_raw:
+                evidence_manifest = {
+                    "schema_version": 1,
+                    "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                    "run_id": os.environ.get("GITHUB_RUN_ID"),
+                    "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+                    "head_sha": os.environ.get("GITHUB_SHA"),
+                    "fixture_sha256": fixture_sha,
+                    "checkpoint_sha256_before": before_sha,
+                    "checkpoint_sha256_after": after_sha,
+                    "image_shape": profile.get("shape"),
+                    "image_dtype": profile.get("dtype"),
+                    "raw_min": profile.get("min"),
+                    "raw_max": profile.get("max"),
+                    "raw_dynamic_range": profile.get("max") - profile.get("min"),
+                    "measured_max_nuclear_intensity": intensity.get("max_nuclear_intensity"),
+                    "specialist_count": len(agents),
+                    "specialists": [
+                        {
+                            "agent": agent.get("agent"),
+                            "status": agent.get("status"),
+                            "evidence_sha256": agent.get("evidence_sha256"),
+                        }
+                        for agent in agents
+                    ],
+                    "zip_entries": sorted(names),
+                    "source_image_excluded": True,
+                    "checkpoint_unchanged": True,
+                    "public_upload_attempted": False,
+                    "public_inference": False,
+                }
+                persisted = persist_validation_evidence(
+                    Path(evidence_dir_raw),
+                    root,
+                    archive_path,
+                    result_path,
+                    artifact_path,
+                    evidence_manifest,
+                )
+                print(json.dumps({"validation_evidence_persisted": persisted}, indent=2, sort_keys=True))
 
             print(json.dumps({
                 "status": "PASS",

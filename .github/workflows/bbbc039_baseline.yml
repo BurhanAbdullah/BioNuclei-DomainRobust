@@ -26,6 +26,8 @@ on:
 
 jobs:
   train-evaluate:
+    # The canonical 350-minute baseline is a main-only release artifact.
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:

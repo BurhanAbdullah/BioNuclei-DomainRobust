@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from bionuclei.adaptive_agent import CNNPatternCheck, build_plan, to_dict
+from bionuclei.adaptive_agent import _cnn_pattern_status, CNNPatternCheck, build_plan, to_dict
 
 
 def test_adaptive_plan_flags_flat_image(tmp_path: Path) -> None:
@@ -47,6 +47,8 @@ def test_adaptive_plan_fails_closed_when_checkpoint_is_unavailable(tmp_path: Pat
 
 
 def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path: Path, monkeypatch) -> None:
+    import gc
+    import weakref
     import torch
     import bionuclei.inference
 
@@ -54,6 +56,15 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
     image[120:392, 120:392] = 8192
     path = tmp_path / "large.tif"
     tifffile.imwrite(path, image)
+    image_refs = []
+    original_imread = tifffile.imread
+
+    def tracked_imread(image_path):
+        loaded = original_imread(image_path)
+        image_refs.append(weakref.ref(loaded))
+        return loaded
+
+    monkeypatch.setattr(tifffile, "imread", tracked_imread)
     checkpoint = tmp_path / "checkpoint.pt"
     checkpoint.write_bytes(b"test checkpoint placeholder")
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(checkpoint))
@@ -94,6 +105,8 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
 
     def fake_load_model(checkpoint_path, device):
         assert lock.held is True
+        gc.collect()
+        assert image_refs and image_refs[0]() is None
         assert checkpoint_path == checkpoint
         assert device == "cpu"
         loader_calls.append((checkpoint_path, device))
@@ -101,10 +114,53 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
         return FakeModel()
 
     monkeypatch.setattr(bionuclei.inference, "_load_model", fake_load_model)
+
+    def fake_trim_allocator():
+        assert lock.held is True
+        events.append("trim_allocator")
+        return True
+
+    monkeypatch.setattr(bionuclei.inference, "_trim_cpu_allocator", fake_trim_allocator)
     result = __import__("bionuclei.adaptive_agent", fromlist=["cnn_pattern_check"]).cnn_pattern_check(path)
     assert result.executed is True
     assert result.status == "PASS"
     assert seen_shapes == [(1, 1, 192, 192)]
     assert loader_calls == [(checkpoint, "cpu")]
-    assert events == ["acquire", "load", "model_cleanup", "release"]
+    assert events == ["acquire", "load", "model_cleanup", "trim_allocator", "release"]
     assert lock.held is False
+
+
+def test_uncalibrated_cnn_foreground_extremes_remain_caution_not_blocked() -> None:
+    cases = (
+        (0.001, "CNN found negligible nuclear foreground support."),
+        (0.98, "CNN classified nearly the entire image as foreground."),
+        (1.0, "CNN classified nearly the entire image as foreground."),
+    )
+    for fraction, expected_reason in cases:
+        status, reasons = _cnn_pattern_status(fraction, 0.9, 1)
+        assert status == "CAUTION"
+        assert expected_reason in reasons
+
+
+def test_extreme_foreground_caution_is_preserved_in_analysis_plan(tmp_path: Path, monkeypatch) -> None:
+    image = np.zeros((32, 32), dtype=np.uint16)
+    image[2:30, 2:30] = 1000
+    path = tmp_path / "dense-image.tif"
+    tifffile.imwrite(path, image)
+    monkeypatch.setattr(
+        "bionuclei.adaptive_agent.cnn_pattern_check",
+        lambda _path: CNNPatternCheck(
+            True,
+            "Boundary U Net",
+            0.99,
+            0.9,
+            0.2,
+            1,
+            "CAUTION",
+            ("CNN classified nearly the entire image as foreground.",),
+        ),
+    )
+    plan = build_plan(path, {"nuclei"})
+    assert plan.status == "CAUTION"
+    assert "CNN classified nearly the entire image as foreground." in plan.warnings
+
