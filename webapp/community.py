@@ -714,7 +714,7 @@ def create_job(
             conn.commit()
         worker = threading.Thread(
             target=_run,
-            args=(job_id, user_id, input_path, original_name, research_consent, algorithm_profile, modules),
+            args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
             kwargs={"channel": channel, "time": time, "z": z, "field": field, "reservation": slot},
             name=f"bionuclei-job-{job_id[:8]}",
             daemon=True,
