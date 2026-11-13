@@ -118,7 +118,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
         )
         self.assertEqual(
             workflow["jobs"]["public-upload-to-agent"]["if"],
-            "github.ref == 'refs/heads/main'",
+            "${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}",
         )
 
 if __name__ == "__main__":
