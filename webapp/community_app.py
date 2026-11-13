@@ -39,6 +39,122 @@ def _configured_origins(value: str | None) -> list[str]:
 allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
 app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
+
+
+# Multipart uploads are parsed and spooled by Starlette before the endpoint
+# function runs. Admission must therefore happen at the ASGI boundary, not in
+# the route, or concurrent rejected uploads can still exhaust temporary disk.
+MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+
+
+class _RequestBodyTooLarge(Exception):
+    """Abort multipart parsing after the bounded request body is exceeded."""
+
+
+class AnalyzeAdmissionMiddleware:
+    """Reserve analyzer capacity and cap request bytes before multipart parsing."""
+
+    def __init__(self, app, max_body_bytes: int | None = None) -> None:
+        self.app = app
+        self.max_body_bytes = (
+            max_body_bytes
+            if max_body_bytes is not None
+            else MAX_UPLOAD_BYTES + MAX_MULTIPART_OVERHEAD_BYTES
+        )
+
+    async def __call__(self, scope, receive, send) -> None:
+        if (
+            scope.get("type") != "http"
+            or scope.get("method") != "POST"
+            or str(scope.get("path", "")).rstrip("/") != "/analyze"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            reservation = community_service.reserve_job_slot()
+        except community_service.JobCapacityError as exc:
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": str(exc)},
+                headers={"Retry-After": "60"},
+            )
+            await response(scope, receive, send)
+            return
+
+        state = scope.setdefault("state", {})
+        state["bionuclei_job_slot_reservation"] = reservation
+        state["bionuclei_job_slot_transferred"] = False
+
+        content_length = next(
+            (
+                value
+                for key, value in scope.get("headers", [])
+                if key.lower() == b"content-length"
+            ),
+            None,
+        )
+        if content_length is not None:
+            if not content_length.isdigit():
+                reservation.release()
+                response = JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
+                await response(scope, receive, send)
+                return
+            if int(content_length) > self.max_body_bytes:
+                reservation.release()
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": "Analysis request body exceeds the configured upload limit"},
+                )
+                await response(scope, receive, send)
+                return
+
+        received_bytes = 0
+        response_sent = False
+
+        async def reject_oversized_body() -> None:
+            nonlocal response_sent
+            if response_sent:
+                return
+            response_sent = True
+            response = JSONResponse(
+                status_code=413,
+                content={"detail": "Analysis request body exceeds the configured upload limit"},
+            )
+            await response(scope, receive, send)
+
+        async def limited_receive():
+            nonlocal received_bytes
+            message = await receive()
+            if message.get("type") == "http.request":
+                received_bytes += len(message.get("body", b""))
+                if received_bytes > self.max_body_bytes:
+                    await reject_oversized_body()
+                    raise _RequestBodyTooLarge
+            return message
+
+        async def guarded_send(message) -> None:
+            if not response_sent:
+                await send(message)
+
+        try:
+            await self.app(scope, limited_receive, guarded_send)
+        except _RequestBodyTooLarge:
+            # The 413 response was sent before aborting the parser. Suppress any
+            # secondary response from the interrupted multipart request.
+            return
+        finally:
+            if not state.get("bionuclei_job_slot_transferred"):
+                reservation.release()
+
+
+# This middleware is deliberately outside the router so it runs before
+# FastAPI/Starlette consumes and spools the multipart request body.
+app.add_middleware(AnalyzeAdmissionMiddleware)
+
 @app.get("/")
 def root():
     retention_hours = community_service.DEFAULT_RESULT_RETENTION_HOURS
@@ -105,24 +221,25 @@ async def analyze(
             status_code=400,
             detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
         )
-    # Reserve capacity before copying the spooled upload into process memory
-    # or creating persistent job state.
     community_service._checkpoint()
     user = authenticate_optional(request)
-    try:
-        reservation = community_service.reserve_job_slot()
-    except community_service.JobCapacityError as exc:
+    reservation = getattr(request.state, "bionuclei_job_slot_reservation", None)
+    if reservation is None:
         raise HTTPException(
-            status_code=429,
-            detail=str(exc),
-            headers={"Retry-After": "60"},
-        ) from exc
+            status_code=503,
+            detail="Upload admission could not reserve analyzer capacity.",
+        )
 
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded image is empty")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Upload exceeds {MAX_UPLOAD_BYTES} bytes",
+        )
+    modules = [value.strip().lower() for value in analysis_modules.split(",") if value.strip()]
     try:
-        data = await image.read(MAX_UPLOAD_BYTES + 1)
-        if not data:
-            raise HTTPException(status_code=400, detail="Uploaded image is empty")
-        modules = [value.strip().lower() for value in analysis_modules.split(",") if value.strip()]
         job_id = create_job(
             data,
             image.filename or "uploaded-image.tif",
@@ -136,11 +253,9 @@ async def analyze(
             field=nd2_field,
             reservation=reservation,
         )
-        # The worker owns the reservation until its complete cleanup path exits.
-        reservation = None
+        # The worker now owns the reservation until its cleanup path exits.
+        request.state.bionuclei_job_slot_transferred = True
     except community_service.JobCreationError as exc:
-        # Keep a string detail for the browser client while exposing structured
-        # cleanup evidence to API clients and support tooling.
         return JSONResponse(
             status_code=500,
             content={
@@ -156,9 +271,6 @@ async def analyze(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    finally:
-        if reservation is not None:
-            reservation.release()
 
     return {
         "job_id": job_id,
