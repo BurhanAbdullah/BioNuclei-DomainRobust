@@ -89,7 +89,17 @@ def guest_session():
     return {"guest_token":create_guest_token(),"mode":"guest","persisted":False}
 
 @app.post("/analyze")
-async def analyze(request: Request, image: Annotated[UploadFile, File(...)], research_consent: Annotated[bool, Form()] = False, algorithm_profile: Annotated[str, Form()] = "auto", analysis_modules: Annotated[str, Form()] = "nuclei,morphology,intensity", nd2_channel: Annotated[int, Form()] = 0, nd2_time: Annotated[int, Form()] = 0, nd2_z: Annotated[int, Form()] = 0, nd2_field: Annotated[int, Form()] = 0):
+async def analyze(
+    request: Request,
+    image: Annotated[UploadFile, File(...)],
+    research_consent: Annotated[bool, Form()] = False,
+    algorithm_profile: Annotated[str, Form()] = "auto",
+    analysis_modules: Annotated[str, Form()] = "nuclei,morphology,intensity",
+    nd2_channel: Annotated[int, Form()] = 0,
+    nd2_time: Annotated[int, Form()] = 0,
+    nd2_z: Annotated[int, Form()] = 0,
+    nd2_field: Annotated[int, Form()] = 0,
+):
     if research_consent:
         raise HTTPException(
             status_code=400,
