@@ -75,6 +75,8 @@ def reserve_job_slot() -> JobSlotReservation:
             "The analyzer is at capacity; retry after the active job finishes."
         )
     return JobSlotReservation(semaphore)
+
+
 STALE_JOB_RECOVERY_MINUTES = max(1, int(os.getenv("BIONUCLEI_STALE_JOB_RECOVERY_MINUTES", "3")))
 
 
@@ -572,7 +574,21 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     return summary
 
 
-def _run(job_id: str, user_id: str, image_path: Path, original_name: str, research_consent: bool, algorithm_profile: str, analysis_modules: set[str], *, channel: int, time: int, z: int, field: int, reservation: JobSlotReservation) -> None:
+def _run(
+    job_id: str,
+    user_id: str,
+    image_path: Path,
+    original_name: str,
+    research_consent: bool,
+    algorithm_profile: str,
+    analysis_modules: set[str],
+    *,
+    channel: int,
+    time: int,
+    z: int,
+    field: int,
+    reservation: JobSlotReservation,
+) -> None:
     root = _job_dir(job_id)
     output = root / "results"
     try:
@@ -655,7 +671,20 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
                 reservation.release()
 
 
-def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0, reservation: JobSlotReservation | None = None) -> str:
+def create_job(
+    data: bytes,
+    original_name: str,
+    user_id: str,
+    research_consent: bool,
+    algorithm_profile: str,
+    analysis_modules: list[str] | None = None,
+    *,
+    channel: int = 0,
+    time: int = 0,
+    z: int = 0,
+    field: int = 0,
+    reservation: JobSlotReservation | None = None,
+) -> str:
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
     suffix = Path(original_name or "").suffix.lower()
