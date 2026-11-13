@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 WORKFLOW_FILE = "live-public-agent-e2e.yml"
 MAX_AGE_SECONDS = 75 * 60
 API_VERSION = "2022-11-28"
+EXPECTED_REPOSITORY = "BurhanAbdullah/BioNuclei-DomainRobust"
 PUBLIC_API_URL = os.environ.get(
     "BIONUCLEI_PUBLIC_API_URL",
     "https://bionuclei-community-analyzer.onrender.com",
@@ -199,6 +200,13 @@ def main() -> int:
     if not repo or "/" not in repo:
         print("GITHUB_REPOSITORY is missing or invalid", file=sys.stderr)
         return 2
+    if repo.casefold() != EXPECTED_REPOSITORY.casefold():
+        print(
+            "Public E2E watchdog: refusing to run outside upstream repository "
+            f"({repo})",
+            file=sys.stderr,
+        )
+        return 0
     if not token:
         print("GH_TOKEN is required; no dispatch attempted", file=sys.stderr)
         return 2
