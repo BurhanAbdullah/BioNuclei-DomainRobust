@@ -703,8 +703,8 @@ def create_job(
     slot = reservation or reserve_job_slot()
     worker_started = False
     job_id = uuid.uuid4().hex
-    root = _job_dir(job_id)
     try:
+        root = _job_dir(job_id)
         root.mkdir(parents=True, exist_ok=True)
         input_path = root / f"input{suffix}"
         input_path.write_bytes(data)
