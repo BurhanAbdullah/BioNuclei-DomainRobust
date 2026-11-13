@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 import json
 import os
 import unittest
@@ -6,6 +7,7 @@ from unittest.mock import patch
 
 from scripts.public_e2e_schedule_watchdog import (
     EXPECTED_CHECKPOINT_SHA256,
+    EXPECTED_REPOSITORY,
     _api_request,
     _deployed_runtime_sha,
     _github_server_time,
@@ -287,11 +289,35 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
             datetime(2026, 11, 1, 9, 14, 25, tzinfo=timezone.utc),
         )
 
+    def test_main_skips_non_upstream_repository_before_any_api_call(self):
+        with (
+            patch.dict(
+                os.environ,
+                {"GITHUB_REPOSITORY": "fork/BioNuclei-DomainRobust", "GH_TOKEN": "test-token"},
+            ),
+            patch("scripts.public_e2e_schedule_watchdog._api_request") as api_request,
+            patch("scripts.public_e2e_schedule_watchdog._deployed_runtime_sha") as deployed,
+        ):
+            self.assertEqual(main(), 0)
+        api_request.assert_not_called()
+        deployed.assert_not_called()
+
+    def test_scheduled_watchdog_job_is_restricted_to_upstream_repository(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/public-e2e-schedule-watchdog.yml"
+        ).read_text(encoding="utf-8")
+        expected = (
+            "if: ${{ github.event_name == 'schedule' "
+            "&& github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' }}"
+        )
+        self.assertIn(expected, workflow)
+
     def test_main_uses_github_server_time_for_freshness_decisions(self):
         server_now = datetime(2026, 11, 1, 9, 14, 25, tzinfo=timezone.utc)
         runs = [self.run_record(created_at="2026-11-01T07:39:00Z")]
         with (
-            patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "test-token"}),
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": EXPECTED_REPOSITORY, "GH_TOKEN": "test-token"}),
             patch(
                 "scripts.public_e2e_schedule_watchdog._api_request",
                 side_effect=[{"sha": self.main_sha}, ({"workflow_runs": runs}, server_now)],
@@ -315,7 +341,7 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
 
     def test_main_fails_closed_when_github_server_time_is_missing(self):
         with (
-            patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "test-token"}),
+            patch.dict(os.environ, {"GITHUB_REPOSITORY": EXPECTED_REPOSITORY, "GH_TOKEN": "test-token"}),
             patch(
                 "scripts.public_e2e_schedule_watchdog._api_request",
                 side_effect=[{"sha": self.main_sha}, ({"workflow_runs": []}, None)],
@@ -341,7 +367,7 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
                 with (
                     patch.dict(
                         os.environ,
-                        {"GITHUB_REPOSITORY": "owner/repo", "GH_TOKEN": "test-token"},
+                        {"GITHUB_REPOSITORY": EXPECTED_REPOSITORY, "GH_TOKEN": "test-token"},
                     ),
                     patch(
                         "scripts.public_e2e_schedule_watchdog._api_request",
