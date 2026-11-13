@@ -37,7 +37,6 @@ def _configured_origins(value: str | None) -> list[str]:
 
 
 allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
-app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 
 
@@ -154,6 +153,7 @@ class AnalyzeAdmissionMiddleware:
 # This middleware is deliberately outside the router so it runs before
 # FastAPI/Starlette consumes and spools the multipart request body.
 app.add_middleware(AnalyzeAdmissionMiddleware)
+app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 
 @app.get("/")
 def root():
