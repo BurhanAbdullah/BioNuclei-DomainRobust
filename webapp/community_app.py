@@ -105,7 +105,9 @@ class AnalyzeAdmissionMiddleware:
                 reservation.release()
                 response = JSONResponse(
                     status_code=413,
-                    content={"detail": "Analysis request body exceeds the configured upload limit"},
+                    content={
+                    "detail": "Analysis request body exceeds the configured upload limit"
+                },
                 )
                 await response(scope, receive, send)
                 return
@@ -152,7 +154,13 @@ class AnalyzeAdmissionMiddleware:
 # This middleware is deliberately outside the router so it runs before
 # FastAPI/Starlette consumes and spools the multipart request body.
 app.add_middleware(AnalyzeAdmissionMiddleware)
-app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_credentials=False,allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins or ["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def root():
@@ -237,7 +245,11 @@ async def analyze(
             status_code=413,
             detail=f"Upload exceeds {MAX_UPLOAD_BYTES} bytes",
         )
-    modules = [value.strip().lower() for value in analysis_modules.split(",") if value.strip()]
+    modules = [
+        value.strip().lower()
+        for value in analysis_modules.split(",")
+        if value.strip()
+    ]
     try:
         job_id = create_job(
             data,
