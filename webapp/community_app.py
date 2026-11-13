@@ -39,7 +39,6 @@ def _configured_origins(value: str | None) -> list[str]:
 allowed_origins = _configured_origins(os.getenv("BIONUCLEI_ALLOWED_ORIGINS"))
 
 
-
 # Multipart uploads are parsed and spooled by Starlette before the endpoint
 # function runs. Admission must therefore happen at the ASGI boundary, not in
 # the route, or concurrent rejected uploads can still exhaust temporary disk.
