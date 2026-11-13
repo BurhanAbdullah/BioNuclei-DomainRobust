@@ -29,7 +29,7 @@ def test_live_public_e2e_upload_job_is_main_only() -> None:
             encoding="utf-8"
         )
     )
-    assert workflow["jobs"]["public-upload-to-agent"]["if"] == "github.ref == 'refs/heads/main'"
+    assert workflow["jobs"]["public-upload-to-agent"]["if"] == "${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}"
 
 def test_live_public_e2e_requires_verified_pinned_checkpoint_health() -> None:
     root = Path(__file__).resolve().parents[1]
