@@ -365,9 +365,8 @@ def test_create_job_cleans_partial_upload_and_reports_verified_cleanup(
     assert exc_info.value.job_id == job_id
     assert exc_info.value.stage == "upload_persistence"
     assert exc_info.value.cleanup_status == "verified"
-    row = module._get_job(job_id, owner_id)
-    assert row is not None and row["status"] == "failed"
-    assert row["error"] == module._FAILED_JOB_ERROR
+    # No queued row is visible until the upload is fully persisted.
+    assert module._get_job(job_id, owner_id) is None
     assert not module._job_dir(job_id).exists()
     assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
 
