@@ -57,6 +57,44 @@ def test_create_job_releases_slot_when_worker_start_fails(isolated_jobs, monkeyp
     replacement.release()
 
 
+def test_run_releases_reserved_slot_after_failure_cleanup(isolated_jobs, monkeypatch):
+    slots = isolated_jobs.threading.BoundedSemaphore(1)
+    monkeypatch.setattr(isolated_jobs, "_ACTIVE_JOB_SLOTS", slots)
+    reservation = isolated_jobs.reserve_job_slot()
+    root = isolated_jobs.JOB_ROOT / "worker-failure"
+    root.mkdir(parents=True)
+    image_path = root / "input.tif"
+    image_path.write_bytes(b"synthetic")
+
+    monkeypatch.setattr(isolated_jobs, "_job_dir", lambda _job_id: root)
+
+    def fail_status_update(*_args, **_kwargs):
+        raise RuntimeError("synthetic worker failure")
+
+    monkeypatch.setattr(isolated_jobs, "_set_job", fail_status_update)
+    monkeypatch.setattr(isolated_jobs, "_cleanup_failed_job", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(isolated_jobs, "_get_job", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(isolated_jobs, "_remove_job_artifacts", lambda *_args, **_kwargs: True)
+
+    isolated_jobs._run(
+        "worker-failure",
+        "user-1",
+        image_path,
+        "input.tif",
+        False,
+        "auto",
+        {"nuclei"},
+        channel=0,
+        time=0,
+        z=0,
+        field=0,
+        reservation=reservation,
+    )
+
+    replacement = isolated_jobs.reserve_job_slot()
+    replacement.release()
+
+
 def test_create_job_rejects_unknown_algorithm(isolated_jobs):
     with pytest.raises(ValueError, match="Unsupported analysis profile"):
         isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "unknown")
