@@ -105,8 +105,8 @@ async def analyze(
             status_code=400,
             detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
         )
-    # Reject uploads before reading their bytes or creating persistent state
-    # when the immutable release checkpoint is unavailable.
+    # Reserve capacity before copying the spooled upload into process memory
+    # or creating persistent job state.
     community_service._checkpoint()
     user = authenticate_optional(request)
     try:
