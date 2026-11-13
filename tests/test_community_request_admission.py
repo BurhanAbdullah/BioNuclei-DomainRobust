@@ -165,6 +165,49 @@ def test_content_length_limit_rejects_before_reading_and_releases_slot(
     assert reservation.released is True
 
 
+def test_unreasonably_long_content_length_is_rejected_before_reserving_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reserve_called = False
+
+    def reserve():
+        nonlocal reserve_called
+        reserve_called = True
+        return _Reservation()
+
+    monkeypatch.setattr(
+        community_app.community_service,
+        "reserve_job_slot",
+        reserve,
+    )
+    app_called = False
+    receive_calls = 0
+    sent: list[dict] = []
+
+    async def app(_scope, _receive, _send):
+        nonlocal app_called
+        app_called = True
+
+    async def receive():
+        nonlocal receive_calls
+        receive_calls += 1
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(
+        community_app.AnalyzeAdmissionMiddleware(app, max_body_bytes=8)(
+            _scope([(b"content-length", b"9" * 5000)]), receive, send
+        )
+    )
+
+    assert _status(sent) in {400, 413}
+    assert receive_calls == 0
+    assert app_called is False
+    assert reserve_called is False
+
+
 def test_streaming_limit_rejects_chunked_body_and_releases_slot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -69,6 +69,44 @@ class AnalyzeAdmissionMiddleware:
             await self.app(scope, receive, send)
             return
 
+        content_length = next(
+            (
+                value
+                for key, value in scope.get("headers", [])
+                if key.lower() == b"content-length"
+            ),
+            None,
+        )
+        if content_length is not None:
+            if not content_length.isdigit():
+                response = JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
+                await response(scope, receive, send)
+                return
+            try:
+                declared_length = int(content_length)
+            except ValueError:
+                # Python limits decimal-to-int conversion length. Validate this
+                # before reserving the only worker slot so a huge numeric header
+                # cannot turn a malformed request into a permanent capacity leak.
+                response = JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
+                await response(scope, receive, send)
+                return
+            if declared_length > self.max_body_bytes:
+                response = JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": "Analysis request body exceeds the configured upload limit"
+                    },
+                )
+                await response(scope, receive, send)
+                return
+
         try:
             reservation = community_service.reserve_job_slot()
         except community_service.JobCapacityError as exc:
@@ -83,34 +121,6 @@ class AnalyzeAdmissionMiddleware:
         state = scope.setdefault("state", {})
         state["bionuclei_job_slot_reservation"] = reservation
         state["bionuclei_job_slot_transferred"] = False
-
-        content_length = next(
-            (
-                value
-                for key, value in scope.get("headers", [])
-                if key.lower() == b"content-length"
-            ),
-            None,
-        )
-        if content_length is not None:
-            if not content_length.isdigit():
-                reservation.release()
-                response = JSONResponse(
-                    status_code=400,
-                    content={"detail": "Invalid Content-Length header"},
-                )
-                await response(scope, receive, send)
-                return
-            if int(content_length) > self.max_body_bytes:
-                reservation.release()
-                response = JSONResponse(
-                    status_code=413,
-                    content={
-                    "detail": "Analysis request body exceeds the configured upload limit"
-                },
-                )
-                await response(scope, receive, send)
-                return
 
         received_bytes = 0
         response_sent = False
