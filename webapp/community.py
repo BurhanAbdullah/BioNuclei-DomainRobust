@@ -40,6 +40,41 @@ DB_LOCK = threading.Lock()
 INFERENCE_LOCK = threading.Lock()
 ACTIVE_JOB_THREADS: dict[str, threading.Thread] = {}
 ACTIVE_JOB_THREADS_LOCK = threading.Lock()
+
+# The public Render worker is memory-constrained. Keep the full job lifecycle
+# bounded until concurrent-job memory has been measured on the production image.
+MAX_ACTIVE_JOBS = 1
+_ACTIVE_JOB_SLOTS = threading.BoundedSemaphore(MAX_ACTIVE_JOBS)
+
+
+class JobCapacityError(RuntimeError):
+    """Raised when the public worker has no safe capacity for another job."""
+
+
+class JobSlotReservation:
+    """An idempotent lease for one bounded worker slot."""
+
+    def __init__(self, semaphore) -> None:
+        self._semaphore = semaphore
+        self._released = False
+        self._lock = threading.Lock()
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        self._semaphore.release()
+
+
+def reserve_job_slot() -> JobSlotReservation:
+    """Reserve capacity before reading or persisting an uploaded image."""
+    semaphore = _ACTIVE_JOB_SLOTS
+    if not semaphore.acquire(blocking=False):
+        raise JobCapacityError(
+            "The analyzer is at capacity; retry after the active job finishes."
+        )
+    return JobSlotReservation(semaphore)
 STALE_JOB_RECOVERY_MINUTES = max(1, int(os.getenv("BIONUCLEI_STALE_JOB_RECOVERY_MINUTES", "3")))
 
 
@@ -537,7 +572,7 @@ def _extended_reports(inference_input: Path, output: Path, modules: set[str]) ->
     return summary
 
 
-def _run(job_id: str, user_id: str, image_path: Path, original_name: str, research_consent: bool, algorithm_profile: str, analysis_modules: set[str], *, channel: int, time: int, z: int, field: int) -> None:
+def _run(job_id: str, user_id: str, image_path: Path, original_name: str, research_consent: bool, algorithm_profile: str, analysis_modules: set[str], *, channel: int, time: int, z: int, field: int, reservation: JobSlotReservation) -> None:
     root = _job_dir(job_id)
     output = root / "results"
     try:
@@ -601,22 +636,26 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
                 flush=True,
             )
 
-        current_row = _get_job(job_id, user_id)
-        if current_row is None:
-            if not _remove_job_artifacts(job_id, root):
-                print(
-                    f"bionuclei: orphan artifact cleanup remains incomplete for job {job_id}",
-                    flush=True,
-                )
-        elif current_row["status"] == "failed":
-            _retry_failed_job_cleanup(job_id, user_id)
+        try:
+            current_row = _get_job(job_id, user_id)
+            if current_row is None:
+                if not _remove_job_artifacts(job_id, root):
+                    print(
+                        f"bionuclei: orphan artifact cleanup remains incomplete for job {job_id}",
+                        flush=True,
+                    )
+            elif current_row["status"] == "failed":
+                _retry_failed_job_cleanup(job_id, user_id)
+        finally:
+            try:
+                with ACTIVE_JOB_THREADS_LOCK:
+                    if ACTIVE_JOB_THREADS.get(job_id) is threading.current_thread():
+                        ACTIVE_JOB_THREADS.pop(job_id, None)
+            finally:
+                reservation.release()
 
-        with ACTIVE_JOB_THREADS_LOCK:
-            if ACTIVE_JOB_THREADS.get(job_id) is threading.current_thread():
-                ACTIVE_JOB_THREADS.pop(job_id, None)
 
-
-def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
+def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0, reservation: JobSlotReservation | None = None) -> str:
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
     suffix = Path(original_name or "").suffix.lower()
@@ -631,32 +670,41 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         raise ValueError(f"Unsupported analysis modules: {', '.join(sorted(unknown))}")
     if any(value < 0 for value in (channel, time, z, field)):
         raise ValueError("ND2 indices must be non-negative")
+
+    slot = reservation or reserve_job_slot()
+    worker_started = False
     job_id = uuid.uuid4().hex
     root = _job_dir(job_id)
-    root.mkdir(parents=True, exist_ok=True)
-    input_path = root / f"input{suffix}"
-    input_path.write_bytes(data)
-    expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
-    with DB_LOCK, _db() as conn:
-        conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
-        conn.commit()
-    worker = threading.Thread(
-        target=_run,
-        args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
-        kwargs={"channel": channel, "time": time, "z": z, "field": field},
-        name=f"bionuclei-job-{job_id[:8]}",
-        daemon=True,
-    )
-    with ACTIVE_JOB_THREADS_LOCK:
-        ACTIVE_JOB_THREADS[job_id] = worker
     try:
-        worker.start()
-    except Exception as exc:
+        root.mkdir(parents=True, exist_ok=True)
+        input_path = root / f"input{suffix}"
+        input_path.write_bytes(data)
+        expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
+        with DB_LOCK, _db() as conn:
+            conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
+            conn.commit()
+        worker = threading.Thread(
+            target=_run,
+            args=(job_id, user_id, input_path, original_name, research_consent, algorithm_profile, modules),
+            kwargs={"channel": channel, "time": time, "z": z, "field": field, "reservation": slot},
+            name=f"bionuclei-job-{job_id[:8]}",
+            daemon=True,
+        )
         with ACTIVE_JOB_THREADS_LOCK:
-            ACTIVE_JOB_THREADS.pop(job_id, None)
-        _cleanup_failed_job(job_id, root)
-        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
-    return job_id
+            ACTIVE_JOB_THREADS[job_id] = worker
+        try:
+            worker.start()
+        except Exception as exc:
+            with ACTIVE_JOB_THREADS_LOCK:
+                ACTIVE_JOB_THREADS.pop(job_id, None)
+            _cleanup_failed_job(job_id, root)
+            raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
+        worker_started = True
+        return job_id
+    except Exception:
+        if not worker_started:
+            slot.release()
+        raise
 
 
 def serialize(row: sqlite3.Row) -> dict[str, object]:
