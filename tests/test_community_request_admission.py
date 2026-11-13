@@ -72,7 +72,9 @@ def test_full_capacity_rejects_before_consuming_multipart_body(
     )
 
     assert _status(sent) == 429
-    response_headers = dict(next(m for m in sent if m["type"] == "http.response.start")["headers"])
+    response_headers = dict(
+        next(m for m in sent if m["type"] == "http.response.start")["headers"]
+    )
     assert response_headers[b"retry-after"] == b"60"
     assert receive_calls == 0
     assert app_called is False
@@ -99,7 +101,10 @@ def test_fastapi_admission_runs_before_multipart_parsing(
 
     assert response.status_code == 429, response.text
     assert response.headers["Retry-After"] == "60"
-    assert response.headers["Access-Control-Allow-Origin"] == community_app.PUBLIC_SITE_ORIGIN
+    assert (
+        response.headers["Access-Control-Allow-Origin"]
+        == community_app.PUBLIC_SITE_ORIGIN
+    )
 
 
 def test_content_length_limit_rejects_before_reading_and_releases_slot(
