@@ -587,7 +587,7 @@ def _run(
     time: int,
     z: int,
     field: int,
-    reservation: JobSlotReservation,
+    reservation: JobSlotReservation | None = None,
 ) -> None:
     root = _job_dir(job_id)
     output = root / "results"
@@ -668,7 +668,8 @@ def _run(
                     if ACTIVE_JOB_THREADS.get(job_id) is threading.current_thread():
                         ACTIVE_JOB_THREADS.pop(job_id, None)
             finally:
-                reservation.release()
+                if reservation is not None:
+                    reservation.release()
 
 
 def create_job(
