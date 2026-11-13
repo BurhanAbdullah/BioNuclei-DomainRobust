@@ -128,14 +128,21 @@ def test_cors_wraps_preparse_admission_rejections(
         < middleware_classes.index(community_app.AnalyzeAdmissionMiddleware)
     )
 
-def test_content_length_limit_rejects_before_reading_and_releases_slot(
+def test_content_length_limit_rejects_before_reserving_slot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reservation = _Reservation()
+    reserve_called = False
+
+    def reserve():
+        nonlocal reserve_called
+        reserve_called = True
+        return reservation
+
     monkeypatch.setattr(
         community_app.community_service,
         "reserve_job_slot",
-        lambda: reservation,
+        reserve,
     )
     app_called = False
     receive_calls = 0
@@ -162,7 +169,8 @@ def test_content_length_limit_rejects_before_reading_and_releases_slot(
     assert _status(sent) == 413
     assert receive_calls == 0
     assert app_called is False
-    assert reservation.released is True
+    assert reserve_called is False
+    assert reservation.released is False
 
 
 def test_unreasonably_long_content_length_is_rejected_before_reserving_slot(
