@@ -35,7 +35,10 @@ def test_browser_dependency_failure_is_recorded_before_public_harness() -> None:
         Loader=yaml.BaseLoader,
     )
     job = workflow["jobs"]["public-upload-to-agent"]
-    assert job.get("if") == "github.ref == 'refs/heads/main'"
+    assert job.get("if") == (
+        "${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' "
+        "&& github.ref == 'refs/heads/main' }}"
+    )
     steps = job["steps"]
     install_index = next(
         index for index, step in enumerate(steps)
