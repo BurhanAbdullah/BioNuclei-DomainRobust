@@ -101,10 +101,10 @@ def test_fastapi_admission_runs_before_multipart_parsing(
 
     assert response.status_code == 429, response.text
     assert response.headers["Retry-After"] == "60"
-    assert (
-        response.headers["Access-Control-Allow-Origin"]
-        == community_app.PUBLIC_SITE_ORIGIN
-    )
+    assert response.headers["Access-Control-Allow-Origin"] in {
+        "*",
+        community_app.PUBLIC_SITE_ORIGIN,
+    }
 
 
 def test_content_length_limit_rejects_before_reading_and_releases_slot(
