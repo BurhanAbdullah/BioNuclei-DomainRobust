@@ -602,3 +602,39 @@ def test_constrained_memory_peak_is_persisted_before_artifact_upload() -> None:
     assert "steps.checkpoint_validation.outcome == 'success'" in upload["if"]
     assert "steps.persist_memory_evidence.outcome == 'success'" in upload["if"]
     assert "steps.memory_validation.outcome == 'success'" not in upload["if"]
+
+def test_production_community_image_health_verifies_checkpoint_and_retention() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (root / ".github" / "workflows" / "tiled-checkpoint-validation.yml").read_text(
+            encoding="utf-8"
+        ),
+        Loader=yaml.BaseLoader,
+    )
+    steps = workflow["jobs"]["released-checkpoint"]["steps"]
+    build_step = next(
+        step for step in steps
+        if step.get("name") == "Build production community image for constrained-memory validation"
+    )
+    health_step = next(
+        step for step in steps
+        if step.get("name") == "Verify production community image health and retention with pinned checkpoint"
+    )
+    memory_step = next(
+        step for step in steps
+        if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit"
+    )
+
+    assert steps.index(build_step) < steps.index(health_step) < steps.index(memory_step)
+    command = health_step["run"]
+    assert "bionuclei-memory-gate" in command
+    assert "--env BIONUCLEI_CHECKPOINT_SHA256=" in command
+    assert "--env BIONUCLEI_RESULT_RETENTION_HOURS=24" in command
+    assert "--volume \"$BIONUCLEI_CHECKPOINT:/opt/models/bionuclei.pt:ro\"" in command
+    assert "http://127.0.0.1:18001/health" in command
+    assert "http://127.0.0.1:18001/" in command
+    assert 'health.get("checkpoint_verified") is not True' in command
+    assert 'health.get("checkpoint_sha256") != expected' in command
+    assert 'health.get("result_retention_hours") != 24' in command
+    assert 'root.get("result_retention_hours") != 24' in command
+    assert '"24 hours" not in str(root.get("retention", ""))' in command
