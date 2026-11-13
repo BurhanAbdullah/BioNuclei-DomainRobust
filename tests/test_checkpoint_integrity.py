@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
+
+import yaml
 
 import pytest
 from fastapi import HTTPException
@@ -190,3 +193,30 @@ def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverifie
 
     assert response.status_code == 503
     assert "does not match the expected release SHA-256" in response.json()["detail"]
+
+
+def test_root_and_health_report_configured_result_retention(monkeypatch):
+    monkeypatch.setattr(community_app.community_service, "DEFAULT_RESULT_RETENTION_HOURS", 24)
+
+    root_payload = community_app.root()
+    health_payload = community_app.health()
+
+    assert root_payload["result_retention_hours"] == 24
+    assert "expire after 24 hours" in root_payload["retention"]
+    assert health_payload["result_retention_hours"] == 24
+
+
+def test_render_config_does_not_advertise_unimplemented_research_retention():
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "render.yaml").read_text(encoding="utf-8"))
+    community = next(
+        service for service in config["services"]
+        if service.get("name") == "bionuclei-community"
+    )
+    env_vars = {
+        item["key"]: item.get("value")
+        for item in community.get("envVars", [])
+    }
+
+    assert "BIONUCLEI_RESEARCH_RETENTION_DAYS" not in env_vars
+    assert env_vars["BIONUCLEI_RESULT_RETENTION_HOURS"] == "24"

@@ -36,5 +36,3 @@ services:
         value: "67108864"
       - key: BIONUCLEI_RESULT_RETENTION_HOURS
         value: "24"
-      - key: BIONUCLEI_RESEARCH_RETENTION_DAYS
-        value: "90"
