@@ -102,7 +102,9 @@ def test_cors_wraps_preparse_admission_rejections(
 
     @probe_app.post("/analyze")
     async def unexpected_route():
-        pytest.fail("capacity rejection must happen before the request reaches FastAPI")
+        pytest.fail(
+            "capacity rejection must happen before the request reaches FastAPI"
+        )
 
     with TestClient(probe_app) as client:
         response = client.post(
@@ -121,8 +123,9 @@ def test_cors_wraps_preparse_admission_rejections(
         community_app.PUBLIC_SITE_ORIGIN,
     }
     middleware_classes = [item.cls for item in community_app.app.user_middleware]
-    assert middleware_classes.index(community_app.CORSMiddleware) < middleware_classes.index(
-        community_app.AnalyzeAdmissionMiddleware
+    assert (
+        middleware_classes.index(community_app.CORSMiddleware)
+        < middleware_classes.index(community_app.AnalyzeAdmissionMiddleware)
     )
 
 def test_content_length_limit_rejects_before_reading_and_releases_slot(
