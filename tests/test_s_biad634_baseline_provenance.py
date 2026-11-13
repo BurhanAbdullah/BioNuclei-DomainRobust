@@ -731,3 +731,23 @@ def test_zero_shot_evaluator_loads_checkpoint_with_weights_only(monkeypatch, tmp
         "map_location": "cpu",
         "weights_only": True,
     }
+
+
+def test_baseline_workflow_retrains_for_zero_shot_revision_changes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    paths = set(workflow["on"]["push"]["paths"])
+    # The transfer workflow accepts only a baseline from the exact evaluation
+    # SHA. Keep every transfer evaluator and provenance input in the baseline
+    # trigger so evaluator-only changes cannot leave the baseline unschedulable.
+    required_paths = {
+        "scripts/download_s_biad634.py",
+        "scripts/evaluate_s_biad634.py",
+        "scripts/metrics_instance.py",
+        "scripts/verify_bbbc039_baseline_run.py",
+        "scripts/verify_bbbc039_checkpoint.py",
+        "scripts/verify_bbbc039_artifact_provenance.py",
+        ".github/workflows/s_biad634_zero_shot.yml",
+    }
+    assert required_paths <= paths
