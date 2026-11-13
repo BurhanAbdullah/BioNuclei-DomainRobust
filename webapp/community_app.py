@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .app import _checkpoint_identity, _checkpoint_lifespan, _png_data_url
 from .auth import authenticate_optional, create_guest_token
@@ -89,21 +89,87 @@ def guest_session():
     return {"guest_token":create_guest_token(),"mode":"guest","persisted":False}
 
 @app.post("/analyze")
-async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research_consent:Annotated[bool,Form()]=False,algorithm_profile:Annotated[str,Form()]="auto",analysis_modules:Annotated[str,Form()]="nuclei,morphology,intensity",nd2_channel:Annotated[int,Form()]=0,nd2_time:Annotated[int,Form()]=0,nd2_z:Annotated[int,Form()]=0,nd2_field:Annotated[int,Form()]=0):
+async def analyze(
+    request: Request,
+    image: Annotated[UploadFile, File(...)],
+    research_consent: Annotated[bool, Form()] = False,
+    algorithm_profile: Annotated[str, Form()] = "auto",
+    analysis_modules: Annotated[str, Form()] = "nuclei,morphology,intensity",
+    nd2_channel: Annotated[int, Form()] = 0,
+    nd2_time: Annotated[int, Form()] = 0,
+    nd2_z: Annotated[int, Form()] = 0,
+    nd2_field: Annotated[int, Form()] = 0,
+):
     if research_consent:
         raise HTTPException(
             status_code=400,
             detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
         )
-    # Reject uploads before authentication, job creation, or persistent storage
-    # when the configured model is not the immutable release checkpoint.
+    # Reserve capacity before copying the spooled upload into process memory
+    # or creating persistent job state.
     community_service._checkpoint()
-    user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
-    if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
-    modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
-    try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,False,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
-    except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
-    return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","progress":f"/jobs/{job_id}/progress","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
+    user = authenticate_optional(request)
+    try:
+        reservation = community_service.reserve_job_slot()
+    except community_service.JobCapacityError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": "60"},
+        ) from exc
+
+    try:
+        data = await image.read(MAX_UPLOAD_BYTES + 1)
+        if not data:
+            raise HTTPException(status_code=400, detail="Uploaded image is empty")
+        modules = [value.strip().lower() for value in analysis_modules.split(",") if value.strip()]
+        job_id = create_job(
+            data,
+            image.filename or "uploaded-image.tif",
+            user.id,
+            False,
+            algorithm_profile,
+            modules,
+            channel=nd2_channel,
+            time=nd2_time,
+            z=nd2_z,
+            field=nd2_field,
+            reservation=reservation,
+        )
+        # The worker owns the reservation until its complete cleanup path exits.
+        reservation = None
+    except community_service.JobCreationError as exc:
+        # Keep a string detail for the browser client while exposing structured
+        # cleanup evidence to API clients and support tooling.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": (
+                    f"{exc} (job {exc.job_id}; stage {exc.stage}; "
+                    f"cleanup status {exc.cleanup_status})"
+                ),
+                "error": "job_creation_failed",
+                "job_id": exc.job_id,
+                "stage": exc.stage,
+                "cleanup_status": exc.cleanup_status,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if reservation is not None:
+            reservation.release()
+
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "poll": f"/jobs/{job_id}",
+        "progress": f"/jobs/{job_id}/progress",
+        "account": user.email or ("guest" if user.guest else user.id),
+        "guest": user.guest,
+        "research_consent": False,
+        "analysis_modules": modules,
+    }
 
 @app.get("/jobs")
 def jobs(request:Request):

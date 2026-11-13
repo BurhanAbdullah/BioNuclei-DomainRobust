@@ -236,11 +236,16 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
 
     deploy_step = next(
         step for step in live_steps
-        if step.get("name") == "Check deployed source revision on main pushes"
+        if step.get("name") == "Check deployed source revision on authorized main dispatch"
     )
     script = deploy_step["run"]
 
-    assert deploy_step["if"] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+    expected_authorization = "${{ github.event_name == 'workflow_dispatch' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}"
+    assert live_job["if"] == expected_authorization
+    assert deploy_step["if"] == expected_authorization
+    workflow_text = (root / ".github/workflows/community_analyzer_validation.yml").read_text(encoding="utf-8")
+    assert "allow_live_render:" in workflow_text
+    assert "default: false" in workflow_text
     assert "checkpoint_available" in script
     assert "checkpoint_verified" in script
     assert "checkpoint_sha256" in script

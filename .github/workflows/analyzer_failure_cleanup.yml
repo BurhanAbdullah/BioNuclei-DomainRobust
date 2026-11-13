@@ -28,6 +28,17 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -e '.[test,web]'
+          python -m pip install --constraint deploy/render-cpu-constraints.txt -e '.[test,web]'
+      - name: Verify CPU-only PyTorch
+        run: |
+          python - <<'PY'
+          import torch
+
+          if torch.version.cuda is not None:
+              raise SystemExit(
+                  f"Cleanup tests must use CPU-only PyTorch, found CUDA runtime {torch.version.cuda!r}"
+              )
+          print(f"CPU-only PyTorch: {torch.__version__}")
+          PY
       - name: Run deterministic failure cleanup tests
         run: pytest -q tests/test_community_failure_cleanup.py

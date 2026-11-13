@@ -111,3 +111,99 @@ def test_completed_progress_only_reports_ready_with_completed_status(
     payload = response.json()
     assert payload["cleanup_status"] == "verified"
     assert payload["report_ready"] is True
+
+
+
+def test_analyze_returns_429_before_creating_a_job_when_capacity_is_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(community_app.community_service, "_checkpoint", lambda: None)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id="owner-a", email=None, guest=True),
+    )
+
+    def reject_admission():
+        raise community_app.community_service.JobCapacityError("Analyzer is at capacity.")
+
+    def unexpected_job_creation(*_args, **_kwargs):
+        pytest.fail("A full worker must reject the upload before creating a job.")
+
+    monkeypatch.setattr(community_app.community_service, "reserve_job_slot", reject_admission)
+    monkeypatch.setattr(community_app, "create_job", unexpected_job_creation)
+
+    with TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            files={"image": ("sample.tif", b"not-read-when-full", "image/tiff")},
+        )
+
+    assert response.status_code == 429, response.text
+    assert response.headers["Retry-After"] == "60"
+    assert "at capacity" in response.json()["detail"].lower()
+
+
+def test_analyze_releases_worker_slot_when_upload_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slots = community_app.community_service.threading.BoundedSemaphore(1)
+    monkeypatch.setattr(community_app.community_service, "_ACTIVE_JOB_SLOTS", slots)
+    monkeypatch.setattr(community_app.community_service, "_checkpoint", lambda: None)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id="owner-a", email=None, guest=True),
+    )
+
+    with TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            files={"image": ("empty.tif", b"", "image/tiff")},
+        )
+
+    assert response.status_code == 400, response.text
+    reservation = community_app.community_service.reserve_job_slot()
+    reservation.release()
+
+
+def test_analyze_returns_structured_job_creation_cleanup_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = "api-upload-write-failure"
+    error = community_app.community_service.JobCreationError(
+        job_id,
+        "upload_persistence",
+        "verified",
+        "Could not persist the uploaded image; cleanup status is verified.",
+    )
+    monkeypatch.setattr(community_app.community_service, "_checkpoint", lambda: None)
+    monkeypatch.setattr(
+        community_app,
+        "authenticate_optional",
+        lambda _request: SimpleNamespace(id="owner-a", email=None, guest=True),
+    )
+
+    def fail_create(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(community_app, "create_job", fail_create)
+    with TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            files={"image": ("sample.tif", b"synthetic", "image/tiff")},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": (
+            "Could not persist the uploaded image; cleanup status is verified. "
+            "(job api-upload-write-failure; stage upload_persistence; cleanup status verified)"
+        ),
+        "error": "job_creation_failed",
+        "job_id": job_id,
+        "stage": "upload_persistence",
+        "cleanup_status": "verified",
+    }
+    reservation = community_app.community_service.reserve_job_slot()
+    reservation.release()
