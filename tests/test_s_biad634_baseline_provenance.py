@@ -683,17 +683,23 @@ def test_target_provenance_records_unmatched_auxiliary_groundtruth_files(tmp_pat
 
 
 
-def test_baseline_retrains_when_zero_shot_evaluator_or_provenance_changes():
+def test_baseline_workflow_retriggers_for_all_baseline_and_transfer_inputs() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     paths = set(workflow["on"]["push"]["paths"])
 
-    # The zero-shot run accepts only a baseline built at the exact same main SHA.
-    # Changes to any evaluator or provenance input must therefore trigger a new
-    # canonical baseline before the workflow_run evaluation can proceed.
+    # The zero-shot workflow accepts only a baseline from the exact evaluation
+    # SHA. Every baseline-training, transfer-evaluation and provenance input
+    # must therefore retrigger the canonical baseline on main.
     required_paths = {
         "src/**",
+        "scripts/train_bbbc039.py",
+        "scripts/evaluate_bbbc039.py",
+        "scripts/bootstrap_metrics.py",
+        "scripts/build_bbbc039_split.py",
+        "scripts/download_bbbc039.py",
+        "scripts/verify_bbbc039.py",
         "scripts/download_s_biad634.py",
         "scripts/evaluate_s_biad634.py",
         "scripts/metrics_instance.py",
@@ -701,9 +707,11 @@ def test_baseline_retrains_when_zero_shot_evaluator_or_provenance_changes():
         "scripts/verify_bbbc039_checkpoint.py",
         "scripts/verify_bbbc039_artifact_provenance.py",
         ".github/workflows/s_biad634_zero_shot.yml",
+        "configs/bbbc039_baseline.yaml",
+        "pyproject.toml",
+        ".github/workflows/bbbc039_baseline.yml",
     }
     assert required_paths <= paths
-
 
 
 def test_zero_shot_evaluator_loads_checkpoint_with_weights_only(monkeypatch, tmp_path):
@@ -731,23 +739,3 @@ def test_zero_shot_evaluator_loads_checkpoint_with_weights_only(monkeypatch, tmp
         "map_location": "cpu",
         "weights_only": True,
     }
-
-
-def test_baseline_workflow_retrains_for_zero_shot_revision_changes() -> None:
-    root = Path(__file__).resolve().parents[1]
-    workflow_path = root / ".github" / "workflows" / "bbbc039_baseline.yml"
-    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
-    paths = set(workflow["on"]["push"]["paths"])
-    # The transfer workflow accepts only a baseline from the exact evaluation
-    # SHA. Keep every transfer evaluator and provenance input in the baseline
-    # trigger so evaluator-only changes cannot leave the baseline unschedulable.
-    required_paths = {
-        "scripts/download_s_biad634.py",
-        "scripts/evaluate_s_biad634.py",
-        "scripts/metrics_instance.py",
-        "scripts/verify_bbbc039_baseline_run.py",
-        "scripts/verify_bbbc039_checkpoint.py",
-        "scripts/verify_bbbc039_artifact_provenance.py",
-        ".github/workflows/s_biad634_zero_shot.yml",
-    }
-    assert required_paths <= paths
