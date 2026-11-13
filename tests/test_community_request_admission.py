@@ -71,9 +71,30 @@ def test_full_capacity_rejects_before_consuming_multipart_body(
     )
 
     assert _status(sent) == 429
+    response_headers = dict(next(m for m in sent if m["type"] == "http.response.start")["headers"])
+    assert response_headers[b"retry-after"] == b"60"
     assert receive_calls == 0
     assert app_called is False
-    assert next(m for m in sent if m["type"] == "http.response.start")["headers"]
+
+
+def test_fastapi_admission_runs_before_multipart_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject():
+        raise community_app.community_service.JobCapacityError(
+            "The analyzer is at capacity."
+        )
+
+    monkeypatch.setattr(community_app.community_service, "reserve_job_slot", reject)
+    with community_app.TestClient(community_app.app) as client:
+        response = client.post(
+            "/analyze",
+            content=b"not a valid multipart body",
+            headers={"Content-Type": "multipart/form-data; boundary=missing"},
+        )
+
+    assert response.status_code == 429, response.text
+    assert response.headers["Retry-After"] == "60"
 
 
 def test_content_length_limit_rejects_before_reading_and_releases_slot(
