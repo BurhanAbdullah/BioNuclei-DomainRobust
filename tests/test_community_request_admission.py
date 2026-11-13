@@ -80,7 +80,7 @@ def test_full_capacity_rejects_before_consuming_multipart_body(
     assert app_called is False
 
 
-def test_fastapi_admission_runs_before_multipart_parsing(
+def test_cors_wraps_preparse_admission_rejections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def reject():
@@ -89,7 +89,19 @@ def test_fastapi_admission_runs_before_multipart_parsing(
         )
 
     monkeypatch.setattr(community_app.community_service, "reserve_job_slot", reject)
-    with TestClient(community_app.app) as client:
+
+    async def inner(_scope, _receive, _send):
+        pytest.fail("capacity rejection must happen before the request reaches FastAPI")
+
+    admission = community_app.AnalyzeAdmissionMiddleware(inner)
+    cors = community_app.CORSMiddleware(
+        admission,
+        allow_origins=community_app.allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["*"],
+    )
+    with TestClient(cors) as client:
         response = client.post(
             "/analyze",
             content=b"not a valid multipart body",
@@ -105,7 +117,10 @@ def test_fastapi_admission_runs_before_multipart_parsing(
         "*",
         community_app.PUBLIC_SITE_ORIGIN,
     }
-
+    middleware_classes = [item.cls for item in community_app.app.user_middleware]
+    assert middleware_classes.index(community_app.CORSMiddleware) < middleware_classes.index(
+        community_app.AnalyzeAdmissionMiddleware
+    )
 
 def test_content_length_limit_rejects_before_reading_and_releases_slot(
     monkeypatch: pytest.MonkeyPatch,
