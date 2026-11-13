@@ -214,7 +214,7 @@ jobs:
           grep -q 'morphology' /tmp/algorithms.json
           grep -q 'intensity' /tmp/algorithms.json
           echo 'Render algorithms: PASS'
-      - name: Check deployed source revision on main pushes
+      - name: Check deployed source revision on authorized main dispatch
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
