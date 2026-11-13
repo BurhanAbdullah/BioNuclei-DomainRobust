@@ -391,12 +391,6 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
                     )
                 )
 
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_deployed_runtime_sha_retries_cold_start_timeouts_then_verifies_pin(self):
         responses = [OSError("timed out") for _ in range(4)]
         responses.append(_HealthResponse(self._healthy_runtime()))
@@ -427,3 +421,7 @@ if __name__ == "__main__":
 
         self.assertEqual(health_request.call_count, 8)
         self.assertEqual(sleep.call_count, 7)
+
+
+if __name__ == "__main__":
+    unittest.main()
