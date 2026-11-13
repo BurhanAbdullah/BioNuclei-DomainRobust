@@ -338,3 +338,63 @@ def test_expired_timestamp_does_not_hide_active_job(isolated_jobs):
     assert payload is not None and payload["status"] == "running"
     assert root.exists()
 
+
+
+def test_create_job_cleans_partial_upload_and_reports_verified_cleanup(
+    isolated_jobs, monkeypatch: pytest.MonkeyPatch
+):
+    from types import SimpleNamespace
+
+    module = isolated_jobs
+    job_id = "queue-upload-write-failure"
+    owner_id = "owner-write-failure"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+    input_path = module._job_dir(job_id) / "input.tif"
+    original_write_bytes = Path.write_bytes
+
+    def fail_after_partial_write(path: Path, data: bytes) -> int:
+        if path == input_path:
+            original_write_bytes(path, data[:5])
+            raise OSError("synthetic disk-full failure")
+        return original_write_bytes(path, data)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_after_partial_write)
+    with pytest.raises(module.JobCreationError, match="cleanup status is verified") as exc_info:
+        module.create_job(b"private upload bytes", "input.tif", owner_id, False, "auto")
+
+    assert exc_info.value.job_id == job_id
+    assert exc_info.value.stage == "upload_persistence"
+    assert exc_info.value.cleanup_status == "verified"
+    row = module._get_job(job_id, owner_id)
+    assert row is not None and row["status"] == "failed"
+    assert row["error"] == module._FAILED_JOB_ERROR
+    assert not module._job_dir(job_id).exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
+    replacement = module.reserve_job_slot()
+    replacement.release()
+
+
+def test_create_job_reports_unknown_cleanup_when_database_is_unavailable(
+    isolated_jobs, monkeypatch: pytest.MonkeyPatch
+):
+    from types import SimpleNamespace
+
+    module = isolated_jobs
+    job_id = "queue-database-failure"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+
+    def fail_database():
+        raise RuntimeError("synthetic database unavailable")
+
+    monkeypatch.setattr(module, "_db", fail_database)
+    with pytest.raises(module.JobCreationError, match="cleanup status is unknown") as exc_info:
+        module.create_job(b"private upload bytes", "input.tif", "owner-db-failure", False, "auto")
+
+    assert exc_info.value.job_id == job_id
+    assert exc_info.value.stage == "database_insert"
+    assert exc_info.value.cleanup_status == "unknown"
+    assert not module._job_dir(job_id).exists()
+
+    replacement = module.reserve_job_slot()
+    replacement.release()
