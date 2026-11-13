@@ -91,11 +91,15 @@ def test_fastapi_admission_runs_before_multipart_parsing(
         response = client.post(
             "/analyze",
             content=b"not a valid multipart body",
-            headers={"Content-Type": "multipart/form-data; boundary=missing"},
+            headers={
+                "Content-Type": "multipart/form-data; boundary=missing",
+                "Origin": community_app.PUBLIC_SITE_ORIGIN,
+            },
         )
 
     assert response.status_code == 429, response.text
     assert response.headers["Retry-After"] == "60"
+    assert response.headers["Access-Control-Allow-Origin"] == community_app.PUBLIC_SITE_ORIGIN
 
 
 def test_content_length_limit_rejects_before_reading_and_releases_slot(
