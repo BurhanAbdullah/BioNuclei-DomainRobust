@@ -267,6 +267,85 @@ def test_streaming_limit_rejects_chunked_body_and_releases_slot(
     )
 
 
+def test_slow_upload_body_times_out_and_releases_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reservation = _Reservation()
+    monkeypatch.setattr(
+        community_app.community_service,
+        "reserve_job_slot",
+        lambda: reservation,
+    )
+    sent: list[dict] = []
+    receive_started = False
+
+    async def receive():
+        nonlocal receive_started
+        receive_started = True
+        await asyncio.sleep(0.25)
+        return {"type": "http.request", "body": b"late", "more_body": False}
+
+    async def app(_scope, inner_receive, _send):
+        await inner_receive()
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(
+        community_app.AnalyzeAdmissionMiddleware(
+            app,
+            max_body_bytes=8,
+            body_timeout_seconds=0.1,
+        )(_scope(), receive, send)
+    )
+
+    assert receive_started is True
+    assert _status(sent) == 408
+    assert reservation.released is True
+
+
+def test_total_upload_deadline_is_not_reset_between_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reservation = _Reservation()
+    monkeypatch.setattr(
+        community_app.community_service,
+        "reserve_job_slot",
+        lambda: reservation,
+    )
+    chunks = [
+        {"type": "http.request", "body": b"first", "more_body": True},
+        {"type": "http.request", "body": b"second", "more_body": False},
+    ]
+    consumed: list[bytes] = []
+    sent: list[dict] = []
+
+    async def receive():
+        if len(chunks) == 1:
+            await asyncio.sleep(0.25)
+        return chunks.pop(0)
+
+    async def app(_scope, inner_receive, _send):
+        first = await inner_receive()
+        consumed.append(first.get("body", b""))
+        await inner_receive()
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(
+        community_app.AnalyzeAdmissionMiddleware(
+            app,
+            max_body_bytes=16,
+            body_timeout_seconds=0.1,
+        )(_scope(), receive, send)
+    )
+
+    assert consumed == [b"first"]
+    assert _status(sent) == 408
+    assert reservation.released is True
+
+
 def test_worker_ownership_transfers_reservation_past_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
