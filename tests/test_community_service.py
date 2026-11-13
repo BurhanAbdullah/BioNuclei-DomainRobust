@@ -397,3 +397,53 @@ def test_create_job_reports_unknown_cleanup_when_database_is_unavailable(
 
     replacement = module.reserve_job_slot()
     replacement.release()
+
+def test_create_job_journals_incomplete_pre_queue_cleanup_for_retry(
+    isolated_jobs, monkeypatch: pytest.MonkeyPatch
+):
+    from types import SimpleNamespace
+
+    module = isolated_jobs
+    job_id = "queue-upload-cleanup-retry"
+    owner_id = "owner-cleanup-retry"
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=job_id))
+    input_path = module._job_dir(job_id) / "input.tif"
+    original_write_bytes = Path.write_bytes
+    original_rmtree = module.shutil.rmtree
+
+    def fail_after_partial_write(path: Path, data: bytes) -> int:
+        if path == input_path:
+            original_write_bytes(path, data[:5])
+            raise OSError("synthetic disk-full failure")
+        return original_write_bytes(path, data)
+
+    def fail_job_directory_removal(path: Path, *args, **kwargs):
+        if path == module._job_dir(job_id):
+            raise PermissionError("synthetic cleanup denial")
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_after_partial_write)
+    monkeypatch.setattr(module.shutil, "rmtree", fail_job_directory_removal)
+    with pytest.raises(module.JobCreationError, match="cleanup status is incomplete") as exc_info:
+        module.create_job(b"private upload bytes", "input.tif", owner_id, False, "auto")
+
+    assert exc_info.value.job_id == job_id
+    assert exc_info.value.stage == "upload_persistence"
+    assert exc_info.value.cleanup_status == "incomplete"
+    row = module._get_job(job_id, owner_id)
+    assert row is not None and row["status"] == "failed"
+    assert row["error"].endswith(module._FAILED_JOB_CLEANUP_SUFFIX)
+    assert module._job_dir(job_id).exists()
+
+    # The normal background retry path must remove the orphaned upload and
+    # clear the cleanup warning without extending the original expiry.
+    monkeypatch.setattr(module.shutil, "rmtree", original_rmtree)
+    original_expiry = row["expires_at"]
+    assert module._retry_failed_cleanups() == 1
+    row = module._get_job(job_id, owner_id)
+    assert row is not None and row["status"] == "failed"
+    assert not row["error"].endswith(module._FAILED_JOB_CLEANUP_SUFFIX)
+    assert row["expires_at"] == original_expiry
+    assert not module._job_dir(job_id).exists()
+    assert not (module.JOB_ROOT / f"{job_id}.zip").exists()
+
