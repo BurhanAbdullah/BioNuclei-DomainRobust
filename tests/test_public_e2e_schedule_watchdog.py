@@ -395,3 +395,35 @@ class PublicE2EScheduleWatchdogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_deployed_runtime_sha_retries_cold_start_timeouts_then_verifies_pin(self):
+        responses = [OSError("timed out") for _ in range(4)]
+        responses.append(_HealthResponse(self._healthy_runtime()))
+        with (
+            patch(
+                "scripts.public_e2e_schedule_watchdog.urlopen",
+                side_effect=responses,
+            ) as health_request,
+            patch("scripts.public_e2e_schedule_watchdog.time.sleep") as sleep,
+        ):
+            self.assertEqual(_deployed_runtime_sha(), self.main_sha)
+
+        self.assertEqual(health_request.call_count, 5)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [1, 2, 4, 8],
+        )
+
+    def test_deployed_runtime_sha_fails_closed_after_bounded_timeouts(self):
+        with (
+            patch(
+                "scripts.public_e2e_schedule_watchdog.urlopen",
+                side_effect=OSError("timed out"),
+            ) as health_request,
+            patch("scripts.public_e2e_schedule_watchdog.time.sleep") as sleep,
+        ):
+            self.assertIsNone(_deployed_runtime_sha())
+
+        self.assertEqual(health_request.call_count, 8)
+        self.assertEqual(sleep.call_count, 7)
