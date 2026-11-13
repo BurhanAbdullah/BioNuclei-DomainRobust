@@ -33,6 +33,12 @@ on:
       - "docs/assets/bionuclei-ui-guard.js"
       - ".github/workflows/community_analyzer_validation.yml"
   workflow_dispatch:
+    inputs:
+      allow_live_render:
+        description: "Explicitly authorize read-only checks against the production Render service"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -152,6 +158,9 @@ jobs:
           PY
 
   live:
+    # PR/push validation must never probe the production Render service.
+    # Live checks require an explicit manual opt-in on upstream main.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' && inputs.allow_live_render == true }}
     name: Live Render endpoint
     runs-on: ubuntu-latest
     timeout-minutes: 12
