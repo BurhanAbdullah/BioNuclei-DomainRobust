@@ -19,8 +19,12 @@ from pathlib import Path
 
 try:
     from .github_api_auth import github_api_headers
+    from .e2e_health_state import clear_recovered_health_errors
+    from .render_runtime_parity import is_non_runtime_path
 except ImportError:  # Running this file directly from the scripts directory.
     from github_api_auth import github_api_headers
+    from e2e_health_state import clear_recovered_health_errors
+    from render_runtime_parity import is_non_runtime_path
 
 import numpy as np
 import requests
@@ -65,6 +69,40 @@ def build_uint16_fixture(path: Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def resolve_expected_main_commit(state: dict[str, object]) -> str:
+    """Reuse the authenticated runtime-preflight SHA instead of making a second lookup."""
+    preflight_sha = os.environ.get("BIONUCLEI_EXPECTED_MAIN_SHA", "").strip()
+    if preflight_sha:
+        require(bool(re.fullmatch(r"[0-9a-f]{40}", preflight_sha)),
+                "Runtime preflight supplied an invalid current-main SHA")
+        workflow_sha = os.environ.get("GITHUB_SHA")
+        if workflow_sha:
+            require(preflight_sha == workflow_sha,
+                    "Runtime-preflight SHA does not match the workflow revision")
+        state["latest_main_commit_http_status"] = 200
+        state["expected_main_commit_source"] = "authenticated_runtime_preflight"
+        return preflight_sha
+
+    require(os.environ.get("GITHUB_ACTIONS") != "true",
+            "GitHub Actions public E2E is missing the authenticated runtime-preflight SHA")
+    main_commit_response = requests.get(
+        "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/commits/main",
+        headers=github_api_headers(
+            os.environ.get("GITHUB_TOKEN"),
+            user_agent="bionuclei-live-public-agent-e2e",
+        ),
+        timeout=20,
+    )
+    state["latest_main_commit_http_status"] = main_commit_response.status_code
+    require(main_commit_response.status_code == 200,
+            f"Could not resolve current main commit: HTTP {main_commit_response.status_code}")
+    expected_main_commit = str(main_commit_response.json().get("sha") or "")
+    require(bool(re.fullmatch(r"[0-9a-f]{40}", expected_main_commit)),
+            f"GitHub returned an invalid current main commit: {expected_main_commit!r}")
+    state["expected_main_commit_source"] = "direct_authenticated_github_api"
+    return expected_main_commit
 
 
 def audit_browser_upload_storage(page, state: dict[str, object], phase: str) -> None:
@@ -135,18 +173,7 @@ def resolve_result_reference(payload: dict[str, object], reference: str) -> tupl
     return True, value
 
 
-NON_RUNTIME_PATHS = {
-    "scripts/live_public_agent_e2e.py",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-}
-NON_RUNTIME_PREFIXES = (".github/workflows/", "tests/", "docs/")
 
-
-def is_non_runtime_path(path: str) -> bool:
-    """Return true only for explicit test/documentation paths that do not ship to Render."""
-    return path in NON_RUNTIME_PATHS or path.startswith(NON_RUNTIME_PREFIXES)
 
 
 def read_zip_json(archive, member: str) -> dict[str, object]:
@@ -240,6 +267,7 @@ def main() -> None:
                     attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
                     state["api_health_http_status"] = health_response.status_code
                     if health_response.status_code == 200:
+                        clear_recovered_health_errors(state)
                         attempt_record["result"] = "http_200"
                         health_attempts.append(attempt_record)
                         state["api_health_attempts"] = health_attempts
@@ -275,20 +303,7 @@ def main() -> None:
             # Compare against the current default-branch head, not a fixed historical
             # commit. A healthy Render instance can still be stale after a merge;
             # it must not be used to validate a code revision it does not contain.
-            main_commit_response = requests.get(
-                "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/commits/main",
-                headers=github_api_headers(
-                    os.environ.get("GITHUB_TOKEN"),
-                    user_agent="bionuclei-live-public-agent-e2e",
-                ),
-                timeout=20,
-            )
-            state["latest_main_commit_http_status"] = main_commit_response.status_code
-            require(main_commit_response.status_code == 200,
-                    f"Could not resolve current main commit: HTTP {main_commit_response.status_code}")
-            expected_main_commit = str(main_commit_response.json().get("sha") or "")
-            require(bool(re.fullmatch(r"[0-9a-f]{40}", expected_main_commit)),
-                    f"GitHub returned an invalid current main commit: {expected_main_commit!r}")
+            expected_main_commit = resolve_expected_main_commit(state)
             state["expected_main_commit"] = expected_main_commit
             # Compare deployed -> main and inspect every changed path. A test-only
             # commit must not make a healthy, runtime-identical Render deployment
