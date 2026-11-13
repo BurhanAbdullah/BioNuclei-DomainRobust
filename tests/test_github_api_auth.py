@@ -82,7 +82,7 @@ def test_public_e2e_workflow_preflights_runtime_before_browser_dependencies() ->
     assert preflight_step["env"]["GITHUB_TOKEN"] == "$" + "{{ github.token }}"
 
     assert workflow["permissions"]["contents"] == "read"
-    assert workflow["jobs"]["public-upload-to-agent"]["if"] == "github.ref == 'refs/heads/main'"
+    assert workflow["jobs"]["public-upload-to-agent"]["if"] == "${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}"
     assert workflow["jobs"]["validate-harness"]["if"] == "github.event_name == 'pull_request'"
     e2e_step = next(
         step for step in steps
