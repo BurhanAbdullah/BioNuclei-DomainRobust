@@ -175,18 +175,18 @@ def test_both_production_images_pin_cpu_only_pytorch() -> None:
 
 
 @pytest.mark.parametrize(
-    ("exit_codes", "expected_status", "expected_calls"),
+    ("exit_codes", "expected_status"),
     [
-        ("0", 0, 1),
-        ("17,0", 0, 2),
-        ("17,23", 23, 2),
+        ("0", 0),
+        # A later successful attempt must never overwrite an earlier measured
+        # memory failure and turn the gate into a pass.
+        ("17,0", 17),
     ],
 )
-def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
+def test_constrained_memory_gate_preserves_the_first_failed_attempt(
     tmp_path: Path,
     exit_codes: str,
     expected_status: int,
-    expected_calls: int,
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.load(
@@ -201,7 +201,8 @@ def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
     )
     command = memory_step["run"]
     assert "if docker run --rm" in command
-    assert 'exit "$last_status"' in command
+    assert 'exit "$status"' in command
+    assert "for attempt in 1 2" not in command
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -247,12 +248,9 @@ def test_constrained_memory_gate_retries_only_after_a_failed_docker_run(
     )
 
     assert completed.returncode == expected_status, completed.stdout + completed.stderr
-    assert int(counter.read_text(encoding="utf-8")) == expected_calls
-    assert "Constrained-memory validation attempt 1/2" in completed.stdout
-    if expected_calls == 2:
-        assert "Constrained-memory validation attempt 2/2" in completed.stdout
-    else:
-        assert "Constrained-memory validation attempt 2/2" not in completed.stdout
+    assert int(counter.read_text(encoding="utf-8")) == 1
+    assert "Constrained-memory validation attempt 1/1" in completed.stdout
+    assert "Constrained-memory validation attempt 2/2" not in completed.stdout
 
 
 def test_production_api_image_runs_health_with_the_pinned_checkpoint() -> None:
