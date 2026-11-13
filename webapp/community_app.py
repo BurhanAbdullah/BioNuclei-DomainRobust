@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .app import _checkpoint_identity, _checkpoint_lifespan, _png_data_url
 from .auth import authenticate_optional, create_guest_token
@@ -138,6 +138,22 @@ async def analyze(
         )
         # The worker owns the reservation until its complete cleanup path exits.
         reservation = None
+    except community_service.JobCreationError as exc:
+        # Keep a string detail for the browser client while exposing structured
+        # cleanup evidence to API clients and support tooling.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": (
+                    f"{exc} (job {exc.job_id}; stage {exc.stage}; "
+                    f"cleanup status {exc.cleanup_status})"
+                ),
+                "error": "job_creation_failed",
+                "job_id": exc.job_id,
+                "stage": exc.stage,
+                "cleanup_status": exc.cleanup_status,
+            },
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
