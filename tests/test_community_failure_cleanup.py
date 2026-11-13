@@ -641,6 +641,9 @@ def test_delete_job_preserves_metadata_when_physical_cleanup_fails(community, mo
     user_id = "owner-delete"
     root = module._job_dir(job_id)
     _seed_job(module, job_id, user_id, root)
+    # Explicit deletion is limited to terminal jobs; this test exercises the
+    # physical-cleanup failure path after the job has reached a failed state.
+    module._set_job(job_id, status="failed")
     archive = module.JOB_ROOT / f"{job_id}.zip"
     archive.write_bytes(b"owner-scoped transient archive")
     original_rmtree = module.shutil.rmtree

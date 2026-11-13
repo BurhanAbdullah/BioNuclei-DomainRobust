@@ -158,7 +158,7 @@ jobs:
           PY
 
   live:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}
     name: Live Render endpoint
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -215,7 +215,7 @@ jobs:
           grep -q 'intensity' /tmp/algorithms.json
           echo 'Render algorithms: PASS'
       - name: Check deployed source revision on authorized main dispatch
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           expected="${GITHUB_SHA}"
