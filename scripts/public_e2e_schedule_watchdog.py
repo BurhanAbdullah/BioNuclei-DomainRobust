@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
@@ -22,6 +23,9 @@ PUBLIC_API_URL = os.environ.get(
     "https://bionuclei-community-analyzer.onrender.com",
 ).rstrip("/")
 EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+HEALTH_MAX_ATTEMPTS = 8
+HEALTH_TIMEOUT_SECONDS = 10
+HEALTH_RETRY_DELAYS_SECONDS = (1, 2, 4, 8, 8, 8, 8)
 
 
 def _timestamp(value: str) -> datetime:
@@ -159,40 +163,70 @@ def _api_request(
 
 
 def _deployed_runtime_sha() -> str | None:
-    """Return Render's main SHA only when the release checkpoint is verified."""
-    request = Request(
-        f"{PUBLIC_API_URL}/health",
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "bionuclei-public-e2e-schedule-watchdog",
-        },
+    """Return Render's main SHA only after a bounded cold-start retry and pin check."""
+    last_error = "health endpoint did not return a response"
+    for attempt in range(1, HEALTH_MAX_ATTEMPTS + 1):
+        request = Request(
+            f"{PUBLIC_API_URL}/health",
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "bionuclei-public-e2e-schedule-watchdog",
+            },
+        )
+        try:
+            with urlopen(request, timeout=HEALTH_TIMEOUT_SECONDS) as response:
+                status = getattr(response, "status", None)
+                if status != 200:
+                    last_error = f"health endpoint returned HTTP {status}"
+                else:
+                    raw = response.read(16_384)
+        except (URLError, OSError) as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+        else:
+            if status == 200:
+                try:
+                    payload = json.loads(raw.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    last_error = f"health endpoint returned invalid JSON: {type(exc).__name__}"
+                else:
+                    if not isinstance(payload, dict):
+                        print("Render health preflight: refusing non-object health payload")
+                        return None
+                    if payload.get("render_git_branch") != "main":
+                        print("Render health preflight: refusing non-main runtime branch")
+                        return None
+                    if (
+                        payload.get("status") != "ok"
+                        or payload.get("checkpoint_available") is not True
+                        or payload.get("checkpoint_verified") is not True
+                        or payload.get("checkpoint_sha256") != EXPECTED_CHECKPOINT_SHA256
+                    ):
+                        print(
+                            "Render health preflight: refusing unhealthy or unpinned checkpoint "
+                            "identity"
+                        )
+                        return None
+                    sha = str(payload.get("render_git_commit") or "")
+                    if len(sha) != 40 or any(
+                        char not in "0123456789abcdef" for char in sha
+                    ):
+                        print("Render health preflight: refusing invalid Render commit SHA")
+                        return None
+                    return sha
+
+        if attempt < HEALTH_MAX_ATTEMPTS:
+            delay = HEALTH_RETRY_DELAYS_SECONDS[attempt - 1]
+            print(
+                f"Render health preflight attempt {attempt}/{HEALTH_MAX_ATTEMPTS} "
+                f"did not complete ({last_error}); retrying in {delay}s"
+            )
+            time.sleep(delay)
+
+    print(
+        f"Render health preflight failed after {HEALTH_MAX_ATTEMPTS} attempts "
+        f"({last_error}); refusing dispatch"
     )
-    try:
-        with urlopen(request, timeout=8) as response:
-            if response.status != 200:
-                return None
-            raw = response.read(16_384)
-    except (URLError, OSError):
-        return None
-
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict) or payload.get("render_git_branch") != "main":
-        return None
-    if (
-        payload.get("status") != "ok"
-        or payload.get("checkpoint_available") is not True
-        or payload.get("checkpoint_verified") is not True
-        or payload.get("checkpoint_sha256") != EXPECTED_CHECKPOINT_SHA256
-    ):
-        return None
-    sha = str(payload.get("render_git_commit") or "")
-    if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
-        return None
-    return sha
-
+    return None
 
 def main() -> int:
     repo = os.environ.get("GITHUB_REPOSITORY", "")
