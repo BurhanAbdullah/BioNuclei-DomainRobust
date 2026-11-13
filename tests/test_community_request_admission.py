@@ -282,7 +282,7 @@ def test_slow_upload_body_times_out_and_releases_slot(
     async def receive():
         nonlocal receive_started
         receive_started = True
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.25)
         return {"type": "http.request", "body": b"late", "more_body": False}
 
     async def app(_scope, inner_receive, _send):
@@ -295,7 +295,7 @@ def test_slow_upload_body_times_out_and_releases_slot(
         community_app.AnalyzeAdmissionMiddleware(
             app,
             max_body_bytes=8,
-            body_timeout_seconds=0.01,
+            body_timeout_seconds=0.1,
         )(_scope(), receive, send)
     )
 
@@ -322,7 +322,7 @@ def test_total_upload_deadline_is_not_reset_between_chunks(
 
     async def receive():
         if len(chunks) == 1:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.25)
         return chunks.pop(0)
 
     async def app(_scope, inner_receive, _send):
@@ -337,7 +337,7 @@ def test_total_upload_deadline_is_not_reset_between_chunks(
         community_app.AnalyzeAdmissionMiddleware(
             app,
             max_body_bytes=16,
-            body_timeout_seconds=0.02,
+            body_timeout_seconds=0.1,
         )(_scope(), receive, send)
     )
 
