@@ -240,7 +240,7 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
     )
     script = deploy_step["run"]
 
-    expected_authorization = "${{ github.event_name == 'workflow_dispatch' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}"
+    expected_authorization = "${{ github.event_name == 'workflow_dispatch' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && inputs.allow_live_render == true && github.ref == 'refs/heads/main' }}"
     assert live_job["if"] == expected_authorization
     assert deploy_step["if"] == expected_authorization
     workflow_text = (root / ".github/workflows/community_analyzer_validation.yml").read_text(encoding="utf-8")
