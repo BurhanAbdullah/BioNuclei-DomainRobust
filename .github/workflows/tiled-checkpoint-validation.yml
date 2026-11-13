@@ -213,10 +213,8 @@ jobs:
           mkdir -p "$EVIDENCE_DIR" "$VALIDATOR_DIR"
           cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"
 
-          last_status=1
-          for attempt in 1 2; do
-            echo "Constrained-memory validation attempt ${attempt}/2"
-            if docker run --rm \
+          echo "Constrained-memory validation attempt 1/1"
+          if docker run --rm \
               --memory=503316480 \
               --memory-swap=503316480 \
               --cpus=1 \
@@ -267,14 +265,12 @@ jobs:
                 [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
               '
             then
-              echo "Constrained-memory validation attempt ${attempt}/2 passed"
-              exit 0
+              echo "Constrained-memory validation attempt 1/1 passed"
             else
-              last_status=$?
-              echo "Constrained-memory validation attempt ${attempt}/2 failed with exit status ${last_status}" >&2
+              status=$?
+              echo "Constrained-memory validation attempt 1/1 failed with exit status ${status}" >&2
+              exit "$status"
             fi
-          done
-          exit "$last_status"
 
       - name: Persist constrained-memory outcome in the runner manifest
         id: persist_memory_evidence
