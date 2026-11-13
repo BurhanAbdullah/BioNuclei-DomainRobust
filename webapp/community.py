@@ -726,8 +726,13 @@ def create_job(
         input_path = root / f"input{suffix}"
         expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
 
-        # Persist the owner-scoped row before writing upload bytes. If the
-        # database is unavailable, no image is written to the job directory.
+        stage = "upload_persistence"
+        root.mkdir(parents=True, exist_ok=True)
+        input_path.write_bytes(data)
+
+        # Keep the upload write before the queued row until active-job deletion
+        # locking is integrated; all partial-write and insert failures below
+        # still pass through the same artifact cleanup path.
         stage = "database_insert"
         with DB_LOCK, _db() as conn:
             conn.execute(
@@ -747,10 +752,6 @@ def create_job(
                 ),
             )
             conn.commit()
-
-        stage = "upload_persistence"
-        root.mkdir(parents=True, exist_ok=True)
-        input_path.write_bytes(data)
 
         stage = "worker_construction"
         worker = threading.Thread(
