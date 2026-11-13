@@ -29,9 +29,9 @@ concurrency:
 
 jobs:
   public-upload-to-agent:
-    # Public uploads are release evidence only from the default branch. PRs
-    # validate the harness through unit tests and must never touch the live API.
-    if: github.ref == 'refs/heads/main'
+    # A fork's own main branch is not the production release branch. Only the
+    # upstream repository's main may contact the public Render analyzer.
+    if: ${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
