@@ -236,7 +236,7 @@ def test_main_deployment_gate_requires_pinned_checkpoint_and_configured_retentio
 
     deploy_step = next(
         step for step in live_steps
-        if step.get("name") == "Check deployed source revision on main pushes"
+        if step.get("name") == "Check deployed source revision on authorized main dispatch"
     )
     script = deploy_step["run"]
 
