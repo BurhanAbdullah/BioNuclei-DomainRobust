@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from fastapi.testclient import TestClient
 
 from webapp import community_app
 
@@ -86,7 +87,7 @@ def test_fastapi_admission_runs_before_multipart_parsing(
         )
 
     monkeypatch.setattr(community_app.community_service, "reserve_job_slot", reject)
-    with community_app.TestClient(community_app.app) as client:
+    with TestClient(community_app.app) as client:
         response = client.post(
             "/analyze",
             content=b"not a valid multipart body",
