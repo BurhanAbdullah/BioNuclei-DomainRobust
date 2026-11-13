@@ -337,6 +337,16 @@ def _archive(job_id: str) -> Path:
     return archive
 
 
+class JobCreationError(RuntimeError):
+    """Job setup failed; expose the owner-scoped job and truthful cleanup outcome."""
+
+    def __init__(self, job_id: str, stage: str, cleanup_status: str, message: str) -> None:
+        super().__init__(message)
+        self.job_id = job_id
+        self.stage = stage
+        self.cleanup_status = cleanup_status
+
+
 _FAILED_JOB_ERROR = (
     "Analysis worker failed before producing a complete result. Please retry the analysis."
 )
@@ -702,40 +712,99 @@ def create_job(
         raise ValueError("ND2 indices must be non-negative")
 
     slot = reservation or reserve_job_slot()
+    try:
+        job_id = uuid.uuid4().hex
+    except Exception:
+        slot.release()
+        raise
+
+    root: Path | None = None
+    stage = "job_directory"
     worker_started = False
-    job_id = uuid.uuid4().hex
     try:
         root = _job_dir(job_id)
-        root.mkdir(parents=True, exist_ok=True)
         input_path = root / f"input{suffix}"
-        input_path.write_bytes(data)
         expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
+
+        # Persist the owner-scoped row before writing upload bytes. If the
+        # database is unavailable, no image is written to the job directory.
+        stage = "database_insert"
         with DB_LOCK, _db() as conn:
-            conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
+            conn.execute(
+                "INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    job_id,
+                    "queued",
+                    _now().isoformat(),
+                    _now().isoformat(),
+                    expires.isoformat(),
+                    user_id,
+                    original_name,
+                    0,
+                    0,
+                    algorithm_profile,
+                    ",".join(sorted(modules)),
+                ),
+            )
             conn.commit()
+
+        stage = "upload_persistence"
+        root.mkdir(parents=True, exist_ok=True)
+        input_path.write_bytes(data)
+
+        stage = "worker_construction"
         worker = threading.Thread(
             target=_run,
             args=(job_id, user_id, input_path, original_name, False, algorithm_profile, modules),
-            kwargs={"channel": channel, "time": time, "z": z, "field": field, "reservation": slot},
+            kwargs={
+                "channel": channel,
+                "time": time,
+                "z": z,
+                "field": field,
+                "reservation": slot,
+            },
             name=f"bionuclei-job-{job_id[:8]}",
             daemon=True,
         )
+        stage = "worker_registration"
         with ACTIVE_JOB_THREADS_LOCK:
             ACTIVE_JOB_THREADS[job_id] = worker
+
+        stage = "worker_start"
         try:
             worker.start()
         except Exception as exc:
             with ACTIVE_JOB_THREADS_LOCK:
                 ACTIVE_JOB_THREADS.pop(job_id, None)
-            _cleanup_failed_job(job_id, root)
-            raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
+            raise RuntimeError("Could not start the analysis worker.") from exc
+
         worker_started = True
         return job_id
-    except Exception:
+    except Exception as exc:
         if not worker_started:
-            slot.release()
-        raise
+            cleanup_status = "verified" if root is None else "unknown"
+            if root is not None:
+                try:
+                    cleanup_ok = _cleanup_failed_job(job_id, root)
+                    cleanup_status = "verified" if cleanup_ok else "incomplete"
+                except Exception as cleanup_exc:
+                    cleanup_status = "unknown"
+                    print(
+                        f"bionuclei: job setup cleanup status could not be recorded for "
+                        f"{job_id} ({type(cleanup_exc).__name__}: {cleanup_exc})",
+                        flush=True,
+                    )
 
+            slot.release()
+            if stage == "worker_start":
+                message = f"Could not start the analysis worker; cleanup status is {cleanup_status}."
+            else:
+                message = (
+                    f"Could not create the analysis job during {stage}; "
+                    f"cleanup status is {cleanup_status}."
+                )
+            raise JobCreationError(job_id, stage, cleanup_status, message) from exc
+        raise
 
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
