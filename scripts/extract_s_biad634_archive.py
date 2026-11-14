@@ -25,8 +25,6 @@ def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def _safe_member(info: zipfile.ZipInfo) -> str | None:
-    if info.is_dir():
-        return None
     name = info.filename
     posix = PurePosixPath(name)
     windows = PureWindowsPath(name)
@@ -42,6 +40,8 @@ def _safe_member(info: zipfile.ZipInfo) -> str | None:
         or stat.S_ISLNK(info.external_attr >> 16)
     ):
         raise ValueError(f"Unsafe target-dataset ZIP member: {name!r}")
+    if info.is_dir():
+        return None
     return name
 
 
@@ -55,6 +55,8 @@ def extract_verified_dataset(data_root: Path) -> dict[str, object]:
         raise FileNotFoundError(f"Shared target-dataset manifest is missing: {manifest_path}")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("Target-dataset manifest must be a JSON object")
     if manifest.get("dataset") != DATASET:
         raise ValueError("Target-dataset manifest identifies an unexpected dataset")
     if manifest.get("source_url") != SOURCE_URL:
