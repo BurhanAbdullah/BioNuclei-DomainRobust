@@ -91,6 +91,7 @@ def test_download_does_not_retry_permanent_http_error(tmp_path: Path, monkeypatc
     destination.write_bytes(b"previous complete archive")
     delays: list[float] = []
     calls = 0
+    response_body = io.BytesIO(b"missing dataset")
 
     def fake_urlopen(_url: str, *, timeout: int):
         nonlocal calls
@@ -101,7 +102,7 @@ def test_download_does_not_retry_permanent_http_error(tmp_path: Path, monkeypatc
             404,
             "Not Found",
             {},
-            io.BytesIO(b"missing dataset"),
+            response_body,
         )
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
@@ -111,6 +112,7 @@ def test_download_does_not_retry_permanent_http_error(tmp_path: Path, monkeypatc
         downloader.download("https://example.test/dataset.zip", destination)
 
     assert exc_info.value.code == 404
+    assert response_body.closed
     assert calls == 1
     assert delays == []
     assert destination.read_bytes() == b"previous complete archive"
