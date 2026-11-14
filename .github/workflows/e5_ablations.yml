@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Download and inventory target dataset once
-        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive
+        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive --skip-extract
       - name: Publish shared target dataset artifact
         uses: actions/upload-artifact@v4
         with:
