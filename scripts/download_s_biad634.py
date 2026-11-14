@@ -69,6 +69,7 @@ def download(url: str, destination: Path) -> None:
         except urllib.error.HTTPError as exc:
             retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
             if not retryable or attempt == MAX_DOWNLOAD_ATTEMPTS:
+                exc.close()
                 raise
             exc.close()
             delay = _retry_delay(attempt)
