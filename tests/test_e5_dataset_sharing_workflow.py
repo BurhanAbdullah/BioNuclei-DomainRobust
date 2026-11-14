@@ -28,7 +28,7 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
         if "run" in step and "scripts/download_s_biad634.py" in step["run"]
     ]
     assert download_commands == [
-        "python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive"
+        "python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive --skip-extract"
     ]
 
     publish = next(
