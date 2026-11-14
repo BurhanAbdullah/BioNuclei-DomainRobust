@@ -19,6 +19,9 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert "scripts/extract_s_biad634_archive.py" in push["paths"]
     assert "scripts/download_s_biad634.py" in push["paths"]
     assert "workflow_dispatch" in triggers
+    dispatch_inputs = triggers["workflow_dispatch"]["inputs"]
+    assert dispatch_inputs["prepare_only"]["type"] == "boolean"
+    assert dispatch_inputs["prepare_only"]["default"] == "false"
 
     jobs = workflow["jobs"]
     prepare = jobs["prepare_target_dataset"]
@@ -39,9 +42,19 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert publish["with"]["retention-days"] == "1"
     assert publish["with"]["compression-level"] == "0"
 
+    inventory = next(
+        step for step in prepare["steps"]
+        if step.get("name") == "Record target archive size and digest"
+    )
+    assert "archive_bytes" in inventory["run"]
+    assert "archive_sha256" in inventory["run"]
+    assert "manifest_sha256" in inventory["run"]
+
     variant = jobs["e5_variant"]
+    assert variant["if"] == "${{ inputs.prepare_only != true }}"
     assert variant["needs"] == "prepare_target_dataset"
     gate = jobs["e5_gate"]
+    assert gate["if"] == "${{ inputs.prepare_only != true }}"
     assert set(gate["needs"]) == {"e5_variant", "prepare_target_dataset"}
 
     for job, expected_path in (
