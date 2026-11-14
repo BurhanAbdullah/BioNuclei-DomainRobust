@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from scripts import download_s_biad634 as downloader
+from scripts import extract_s_biad634_archive as extractor
 
 
 class _DisconnectAfterFirstRead(io.BytesIO):
@@ -322,7 +323,7 @@ def test_skip_extract_validates_expansion_limits_before_crc_scan(
         },
     )
     root = tmp_path / "target"
-    monkeypatch.setattr(downloader, "MAX_MEMBER_UNCOMPRESSED_BYTES", 4)
+    monkeypatch.setattr(extractor, "MAX_MEMBER_UNCOMPRESSED_BYTES", 4)
     monkeypatch.setattr(downloader, "download", _stub_download(source))
     monkeypatch.setattr(
         zipfile.ZipFile,
