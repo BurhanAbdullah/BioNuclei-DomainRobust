@@ -171,16 +171,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: e5-target-dataset-${{ github.run_id }}
-          path: data/raw/S-BIAD634
+          path: data/shared-target/S-BIAD634
       - name: Verify and extract shared target dataset
-        run: python scripts/extract_s_biad634_archive.py --data-root data/raw/S-BIAD634
+        run: python scripts/extract_s_biad634_archive.py --data-root data/shared-target/S-BIAD634
       - name: Verify all preregistered variants and provenance
         run: |
           python - <<'PY'
-          import json
+          import hashlib, json
           from pathlib import Path
           from scripts.e5_run_ablation import verify_metrics_digest
           root=Path('outputs/e5')
+          target_manifest_sha256=hashlib.sha256(Path('data/shared-target/S-BIAD634/download_manifest.json').read_bytes()).hexdigest()
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
           assert required <= {p.name for p in root.iterdir() if p.is_dir()}
           for name in required:
@@ -191,6 +192,7 @@ jobs:
               p=json.loads((v/'provenance.json').read_text())
               assert p['target_data_used_for_training'] is False
               assert p['n_target_images']==79
+              assert p['target_manifest_sha256']==target_manifest_sha256
               for k in ('target_manifest_sha256','source_split_manifest_sha256','config_sha256','checkpoint_sha256'):
                   assert p.get(k)
               verify_metrics_digest(p, root=Path.cwd())
@@ -225,7 +227,7 @@ jobs:
           PY
           PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
             --checkpoint "$CKPT" \
-            --data-root data/raw/S-BIAD634 \
+            --data-root data/shared-target/S-BIAD634 \
             --output outputs/strong_baseline_target
           python - <<'PY'
           import hashlib, json
@@ -248,7 +250,7 @@ jobs:
             'checkpoint_sha256':sha256(ckpt),
             'config_sha256':sha256(Path('configs/bbbc039_baseline.yaml')),
             'source_split_manifest_sha256':sha256(Path('data/manifests/bbbc039_official_split.json')),
-            'target_manifest_sha256':sha256(Path('data/raw/S-BIAD634/download_manifest.json')),
+            'target_manifest_sha256':sha256(Path('data/shared-target/S-BIAD634/download_manifest.json')),
             'decoder':'bionuclei.masks.decode_instance_mask',
             'evaluator':'scripts/evaluate_s_biad634.py',
             'target_data_used_for_training':False,
@@ -296,6 +298,6 @@ jobs:
             configs/domain_robust.yaml
             configs/bbbc039_baseline.yaml
             data/manifests/bbbc039_official_split.json
-            data/raw/S-BIAD634/download_manifest.json
+            data/shared-target/S-BIAD634/download_manifest.json
             docs/E5_PREREGISTRATION.md
           retention-days: 30
