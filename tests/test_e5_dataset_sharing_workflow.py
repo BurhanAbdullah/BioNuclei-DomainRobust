@@ -43,18 +43,27 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     gate = jobs["e5_gate"]
     assert set(gate["needs"]) == {"e5_variant", "prepare_target_dataset"}
 
-    for job in (variant, gate):
+    for job, expected_path in (
+        (variant, "data/raw/S-BIAD634"),
+        (gate, "data/shared-target/S-BIAD634"),
+    ):
         download = next(
             step for step in job["steps"]
             if step.get("name") == "Download shared target dataset artifact"
         )
         assert download["uses"] == "actions/download-artifact@v4"
         assert download["with"]["name"] == "e5-target-dataset-${{ github.run_id }}"
+        assert download["with"]["path"] == expected_path
         extract = next(
             step for step in job["steps"]
             if step.get("name") == "Verify and extract shared target dataset"
         )
         assert "scripts/extract_s_biad634_archive.py" in extract["run"]
+    gate_verification = next(
+        step for step in gate["steps"]
+        if step.get("name") == "Verify all preregistered variants and provenance"
+    )
+    assert "target_manifest_sha256" in gate_verification["run"]
 
     all_downloads = [
         step["run"]
