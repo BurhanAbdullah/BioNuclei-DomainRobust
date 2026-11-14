@@ -287,3 +287,62 @@ def test_custom_source_url_is_bound_and_safely_extracted(
     assert manifest["source_url"] == source_url
     assert (root / "extracted/dataset/rawimages/image_001.tif").read_bytes() == b"raw"
 
+
+
+
+def test_download_rejects_oversized_archive_without_replacing_existing_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    monkeypatch.setattr(downloader, "MAX_ARCHIVE_BYTES", 4)
+    monkeypatch.setattr(
+        downloader.urllib.request,
+        "urlopen",
+        lambda _url, *, timeout: io.BytesIO(b"12345"),
+    )
+
+    with pytest.raises(ValueError, match="compressed-size limit"):
+        downloader.download("https://example.test/dataset.zip", destination)
+
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
+
+
+def test_skip_extract_validates_expansion_limits_before_crc_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.zip"
+    _write_archive(
+        source,
+        {
+            "dataset/rawimages/image_001.tif": b"raw-image-too-large",
+            "dataset/groundtruth/mask_001.tif": b"mask",
+            "dataset/readme.txt": b"CC0",
+        },
+    )
+    root = tmp_path / "target"
+    monkeypatch.setattr(downloader, "MAX_MEMBER_UNCOMPRESSED_BYTES", 4)
+    monkeypatch.setattr(downloader, "download", _stub_download(source))
+    monkeypatch.setattr(
+        zipfile.ZipFile,
+        "testzip",
+        lambda _self: pytest.fail("inventory-only mode must validate limits before CRC scan"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "download_s_biad634.py",
+            "--data-root",
+            str(root),
+            "--keep-archive",
+            "--skip-extract",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="per-file limit"):
+        downloader.main()
+
+    assert not (root / "download_manifest.json").exists()
+    assert not (root / "extracted").exists()
