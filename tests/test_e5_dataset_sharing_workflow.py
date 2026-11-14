@@ -17,6 +17,7 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert push["branches"] == ["main"]
     assert ".github/workflows/e5_ablations.yml" in push["paths"]
     assert "scripts/extract_s_biad634_archive.py" in push["paths"]
+    assert "scripts/download_s_biad634.py" in push["paths"]
     assert "workflow_dispatch" in triggers
 
     jobs = workflow["jobs"]
