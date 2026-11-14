@@ -12,6 +12,7 @@ on:
     paths:
       - '.github/workflows/e5_ablations.yml'
       - 'scripts/extract_s_biad634_archive.py'
+      - 'scripts/download_s_biad634.py'
       - 'scripts/train_domain_robust.py'
       - 'scripts/evaluate_s_biad634.py'
       - 'scripts/metrics_instance.py'
