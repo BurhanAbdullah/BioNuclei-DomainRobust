@@ -188,6 +188,7 @@ jobs:
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
+          from scripts.e5_run_ablation import bind_metrics_digest
           def sha256(p):
               h=hashlib.sha256(); h.update(p.read_bytes()); return h.hexdigest()
           m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
@@ -211,6 +212,7 @@ jobs:
             'target_data_used_for_training':False,
             'n_target_images':79,
           }
+          prov=bind_metrics_digest(prov, Path('outputs/strong_baseline_target/metrics.json'))
           Path('outputs/strong_baseline_target/provenance.json').write_text(json.dumps(prov,indent=2)+'\n')
           PY
       - name: Verify strong-baseline eligibility
@@ -218,10 +220,12 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from scripts.e5_run_ablation import verify_metrics_digest
           p=json.loads(Path('outputs/strong_baseline_target/provenance.json').read_text())
           required=['source_run_id','source_artifact_id_at_publication','source_artifact_digest_at_publication','source_release_tag','source_release_asset','source_release_asset_digest','checkpoint_sha256','config_sha256','source_split_manifest_sha256','target_manifest_sha256','decoder','evaluator']
           assert all(p.get(k) for k in required)
           assert p['target_data_used_for_training'] is False
+          verify_metrics_digest(p, root=Path.cwd())
           m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
           assert m['n_images']==79 and len(m['per_image'])==79
           PY
