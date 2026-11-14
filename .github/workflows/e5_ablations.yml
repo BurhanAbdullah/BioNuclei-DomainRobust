@@ -31,6 +31,11 @@ on:
         description: 'Matched E5 source-training epochs'
         required: false
         default: '20'
+      prepare_only:
+        description: 'Only download, validate and publish the target dataset; skip model training'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   prepare_target_dataset:
@@ -46,6 +51,37 @@ jobs:
           python-version: '3.11'
       - name: Download and inventory target dataset once
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive --skip-extract
+      - name: Record target archive size and digest
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          archive = Path("data/raw/S-BIAD634/dataset.zip")
+          manifest_path = Path("data/raw/S-BIAD634/download_manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          archive_digest = sha256(archive)
+          if archive_digest != manifest.get("archive_sha256"):
+              raise SystemExit("Downloaded archive digest does not match its manifest")
+
+          print(json.dumps({
+              "archive_bytes": archive.stat().st_size,
+              "archive_sha256": archive_digest,
+              "manifest_sha256": sha256(manifest_path),
+              "zip_entry_count": len(manifest.get("files", [])),
+              "raw_image_count": len(manifest.get("raw_image_files", [])),
+              "groundtruth_count": len(manifest.get("groundtruth_files", [])),
+          }, indent=2))
+          PY
       - name: Publish shared target dataset artifact
         uses: actions/upload-artifact@v4
         with:
@@ -58,6 +94,7 @@ jobs:
           compression-level: 0
 
   e5_variant:
+    if: ${{ inputs.prepare_only != true }}
     needs: prepare_target_dataset
     name: E5 ${{ matrix.variant }}
     runs-on: ubuntu-latest
@@ -142,6 +179,7 @@ jobs:
           retention-days: 30
 
   e5_gate:
+    if: ${{ inputs.prepare_only != true }}
     name: E5 completeness and comparator gate
     needs:
       - e5_variant
