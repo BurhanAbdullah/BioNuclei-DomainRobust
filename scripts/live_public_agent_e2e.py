@@ -323,7 +323,7 @@ def main() -> None:
             if last_http_status is not None:
                 state["api_health_http_status"] = last_http_status
             if health_request_error is None:
-                # A later successful response supersedes earlier timeout diagnostics.
+                # A later HTTP response supersedes earlier request-error diagnostics.
                 state.pop("api_health_request_error", None)
             else:
                 state["api_health_request_error"] = health_request_error
