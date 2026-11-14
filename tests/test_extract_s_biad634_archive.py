@@ -86,9 +86,12 @@ def test_rejects_manifest_file_inventory_mismatch(tmp_path: Path) -> None:
     assert not (root / "extracted").exists()
 
 
-def test_rejects_zip_path_traversal_without_writing_outside_root(tmp_path: Path) -> None:
+@pytest.mark.parametrize("member", ["../escape.txt", "../"])
+def test_rejects_zip_path_traversal_without_writing_outside_root(
+    tmp_path: Path, member: str
+) -> None:
     root = tmp_path / "S-BIAD634"
-    _write_dataset(root, members={"../escape.txt": b"outside"})
+    _write_dataset(root, members={member: b"outside"})
     outside = tmp_path / "escape.txt"
 
     with pytest.raises(ValueError, match="Unsafe target-dataset ZIP member"):
