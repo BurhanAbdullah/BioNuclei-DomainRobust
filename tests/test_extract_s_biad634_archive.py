@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import extract_s_biad634_archive as extractor
 from scripts.extract_s_biad634_archive import (
     DATASET,
     SOURCE_URL,
@@ -98,4 +99,86 @@ def test_rejects_zip_path_traversal_without_writing_outside_root(
         extract_verified_dataset(root)
 
     assert not outside.exists()
+    assert not (root / "extracted").exists()
+
+
+
+def test_rejects_too_many_zip_entries_before_crc_scan(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "S-BIAD634"
+    _write_dataset(root)
+    monkeypatch.setattr(extractor, "MAX_ARCHIVE_ENTRIES", 2)
+    monkeypatch.setattr(
+        zipfile.ZipFile,
+        "testzip",
+        lambda _self: pytest.fail("CRC scan must not run before entry-count validation"),
+    )
+
+    with pytest.raises(ValueError, match="entries; maximum"):
+        extract_verified_dataset(root)
+
+    assert not (root / "extracted").exists()
+
+
+def test_rejects_oversized_member_before_crc_scan(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "S-BIAD634"
+    _write_dataset(root)
+    monkeypatch.setattr(extractor, "MAX_MEMBER_UNCOMPRESSED_BYTES", 4)
+    monkeypatch.setattr(
+        zipfile.ZipFile,
+        "testzip",
+        lambda _self: pytest.fail("CRC scan must not run before member-size validation"),
+    )
+
+    with pytest.raises(ValueError, match="per-file limit"):
+        extract_verified_dataset(root)
+
+    assert not (root / "extracted").exists()
+
+
+def test_rejects_excessive_total_expansion_before_crc_scan(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "S-BIAD634"
+    _write_dataset(root)
+    monkeypatch.setattr(extractor, "MAX_TOTAL_UNCOMPRESSED_BYTES", 12)
+    monkeypatch.setattr(
+        zipfile.ZipFile,
+        "testzip",
+        lambda _self: pytest.fail("CRC scan must not run before total-size validation"),
+    )
+
+    with pytest.raises(ValueError, match="total uncompressed-size limit"):
+        extract_verified_dataset(root)
+
+    assert not (root / "extracted").exists()
+
+
+def test_rejects_oversized_compressed_archive_before_hashing(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "S-BIAD634"
+    _write_dataset(root)
+    monkeypatch.setattr(extractor, "MAX_ARCHIVE_BYTES", 1)
+
+    with pytest.raises(ValueError, match="compressed archive limit"):
+        extract_verified_dataset(root)
+
+    assert not (root / "extracted").exists()
+
+
+def test_rejects_noncanonical_member_paths_before_crc_scan(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "S-BIAD634"
+    _write_dataset(
+        root,
+        members={
+            "dataset//rawimages/image_001.tif": b"raw",
+            "dataset/groundtruth/mask_001.tif": b"mask",
+            "dataset/readme.txt": b"CC0",
+        },
+    )
+    monkeypatch.setattr(
+        zipfile.ZipFile,
+        "testzip",
+        lambda _self: pytest.fail("CRC scan must not run before path validation"),
+    )
+
+    with pytest.raises(ValueError, match="Non-canonical"):
+        extract_verified_dataset(root)
+
     assert not (root / "extracted").exists()
