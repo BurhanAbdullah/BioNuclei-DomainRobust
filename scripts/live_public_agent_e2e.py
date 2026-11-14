@@ -415,7 +415,7 @@ def main() -> None:
                 # mocks an API response; it clones real responses so the E2E harness
                 # can record the ephemeral guest token/job ID even if Playwright's
                 # response event body is unavailable on a specific browser build.
-                page.add_init_script("""
+                page.add_init_script(r"""
                 (() => {
                   const nativeFetch = window.fetch.bind(window);
                   window.__BIONUCLEI_E2E_TRACE = [];
