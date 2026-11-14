@@ -19,6 +19,14 @@ def _instance_ids(mask: np.ndarray) -> list[int]:
     return [int(x) for x in np.unique(mask) if x > 0]
 
 
+def instance_count(mask: np.ndarray) -> int:
+    """Count distinct positive instance labels, independent of label numbering."""
+    array = np.asarray(mask)
+    if array.ndim != 2:
+        raise ValueError(f"Expected a 2-D instance mask; got shape {array.shape}")
+    return len(_instance_ids(array))
+
+
 def _match_instances(pred: np.ndarray, target: np.ndarray, iou_threshold: float = 0.5) -> tuple[int, int, int]:
     """Greedily match instances at a fixed IoU threshold, deterministically."""
     if not 0.0 <= iou_threshold <= 1.0:
