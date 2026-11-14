@@ -15,9 +15,9 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 DATASET = "S-BIAD634 / S-BSST265"
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
 
-# The BioImage Archive record documents 468 files and a 472.2 MiB study.
-# These limits leave room for metadata/ZIP overhead without permitting an
-# unbounded archive expansion or an unexpectedly large individual member.
+# S-BSST265 documents 79 fluorescence images; the archive also carries
+# annotations and metadata. Keep explicit operational ceilings so ZIP metadata
+# cannot trigger unbounded decompression before the manifest is checked.
 MAX_ARCHIVE_BYTES = 600 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 512
 MAX_MEMBER_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
