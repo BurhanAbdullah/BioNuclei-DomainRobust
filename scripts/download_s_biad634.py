@@ -9,13 +9,23 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import shutil
+import sys
+import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
+DOWNLOAD_TIMEOUT_SECONDS = 120
+MAX_DOWNLOAD_ATTEMPTS = 4
+RETRY_BASE_SECONDS = 2
+RETRY_MAX_SECONDS = 30
+RETRYABLE_HTTP_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -26,10 +36,58 @@ def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def _retry_delay(attempt: int) -> float:
+    return min(RETRY_BASE_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_SECONDS)
+
+
 def download(url: str, destination: Path) -> None:
+    """Download atomically, retrying only transient transport/server failures.
+
+    A failed or interrupted transfer must never leave a partial ZIP at the
+    destination path: the evaluator opens that path immediately after download.
+    """
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=120) as response, destination.open("wb") as out:
-        shutil.copyfileobj(response, out)
+
+    for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+        temporary_path: Path | None = None
+        try:
+            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    prefix=f".{destination.name}.",
+                    suffix=".part",
+                    dir=destination.parent,
+                    delete=False,
+                ) as out:
+                    temporary_path = Path(out.name)
+                    shutil.copyfileobj(response, out, length=1024 * 1024)
+                    out.flush()
+
+            temporary_path.replace(destination)
+            temporary_path = None
+            return
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
+            if not retryable or attempt == MAX_DOWNLOAD_ATTEMPTS:
+                raise
+            exc.close()
+            delay = _retry_delay(attempt)
+            reason = f"HTTP {exc.code}"
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException) as exc:
+            if attempt == MAX_DOWNLOAD_ATTEMPTS:
+                raise
+            delay = _retry_delay(attempt)
+            reason = type(exc).__name__
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+        print(
+            f"Transient BioStudies download failure ({reason}); "
+            f"retrying in {delay:g}s (attempt {attempt}/{MAX_DOWNLOAD_ATTEMPTS}).",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
 
 
 def main() -> None:
