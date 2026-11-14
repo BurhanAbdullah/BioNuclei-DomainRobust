@@ -9,7 +9,8 @@ from skimage.io import imread
 from bionuclei.data import decode_instance_mask
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
-from scripts.metrics_instance import instance_prf
+from bionuclei.postprocessing import split_boundary_instances
+from scripts.metrics_instance import instance_count, instance_prf
 
 
 def boundary_band(mask):
@@ -67,6 +68,9 @@ def predict_semantic(model,x,tile_size=512,overlap=32):
     return np.argmax(logits_sum/np.maximum(weights[None],1),axis=0)
 
 
+def split_instances(classes):return split_boundary_instances(classes)
+
+
 def load_mask(path):return decode_instance_mask(np.asarray(imread(path)))
 
 
@@ -76,9 +80,9 @@ def main():
     for image_path,mask_path in pair_files(a.data_root):
         raw=np.asarray(tifffile.imread(image_path)); image=to_model_grayscale(raw); target=load_mask(mask_path)
         if image.shape!=target.shape:raise ValueError(f'Shape mismatch: {image_path.name}: {image.shape} vs {mask_path.name}: {target.shape}')
-        x=image.astype(np.float32); scale=np.percentile(x,99.5); x=np.clip(x/max(float(scale),1.0),0,1); classes=predict_semantic(model,x,a.tile_size,a.overlap); pred,_=ndimage.label(classes!=0,structure=np.ones((3,3),dtype=np.uint8)); pred=pred.astype(np.int32)
+        x=image.astype(np.float32); scale=np.percentile(x,99.5); x=np.clip(x/max(float(scale),1.0),0,1); classes=predict_semantic(model,x,a.tile_size,a.overlap); pred=split_instances(classes)
         prf=instance_prf(pred,target,iou_threshold=0.5)
-        results.append({'image':image_path.name,'dice':dice_coefficient(pred>0,target>0),'iou':iou_score(pred>0,target>0),'precision':prf['precision'],'recall':prf['recall'],'f1_score':prf['f1_score'],'aji':aji_score(pred,target),'boundary_f1':boundary_f1(boundary_band(pred),boundary_band(target)),'height':int(image.shape[0]),'width':int(image.shape[1]),'n_target_instances':int(np.max(target)),'n_pred_instances':int(np.max(pred)),'tp':prf['tp'],'fp':prf['fp'],'fn':prf['fn']})
+        results.append({'image':image_path.name,'dice':dice_coefficient(pred>0,target>0),'iou':iou_score(pred>0,target>0),'precision':prf['precision'],'recall':prf['recall'],'f1_score':prf['f1_score'],'aji':aji_score(pred,target),'boundary_f1':boundary_f1(boundary_band(pred),boundary_band(target)),'height':int(image.shape[0]),'width':int(image.shape[1]),'n_target_instances':instance_count(target),'n_pred_instances':instance_count(pred),'tp':prf['tp'],'fp':prf['fp'],'fn':prf['fn']})
     metrics=('dice','iou','precision','recall','f1_score','aji','boundary_f1')
     summary={'experiment':'zero_shot_bbbc039_to_s_biad634','n_images':len(results),'mean':{m:float(np.mean([r[m] for r in results])) for m in metrics},'median':{m:float(np.median([r[m] for r in results])) for m in metrics},'per_image':results,'checkpoint_seed':checkpoint.get('seed'),'tile_size':a.tile_size,'overlap':a.overlap,'instance_iou_threshold':0.5}
     a.output.mkdir(parents=True,exist_ok=True); (a.output/'metrics.json').write_text(json.dumps(summary,indent=2)+'\n'); print(json.dumps(summary['mean'],indent=2))

@@ -15,6 +15,7 @@ from skimage.io import imread
 from bionuclei.data import decode_instance_mask, read_fluorescence_image
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
+from bionuclei.postprocessing import split_boundary_instances
 
 IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
 MASK_EXTENSIONS = (".png", ".tif", ".tiff")
@@ -43,8 +44,7 @@ def resolve(root: Path, image_name: str, kind: str) -> Path:
 
 def split_instances(logits: torch.Tensor) -> np.ndarray:
     classes = logits.argmax(dim=1).cpu().numpy()[0]
-    instances, _ = ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))
-    return instances.astype(np.int32)
+    return split_boundary_instances(classes)
 
 
 def boundary_band(mask: np.ndarray) -> np.ndarray:

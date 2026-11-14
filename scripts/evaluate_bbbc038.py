@@ -21,6 +21,7 @@ from skimage.io import imread
 
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
+from bionuclei.postprocessing import split_boundary_instances
 
 IMAGE_EXTENSIONS = {".png", ".tif", ".tiff"}
 MODEL_DIVISIBILITY = 8
@@ -89,7 +90,7 @@ def model_predict_with_padding(model: BoundaryUNet, image: np.ndarray) -> tuple[
     classes = logits.argmax(dim=1).cpu().numpy()[0]
     if (top, bottom, left, right) != (0, 0, 0, 0):
         classes = classes[top:top + h, left:left + w]
-    instances, _ = ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))
+    instances = split_boundary_instances(classes)
     return instances.astype(np.int32), (top, bottom, left, right)
 
 

@@ -19,6 +19,7 @@ import tifffile
 
 from bionuclei.data import decode_instance_mask
 from bionuclei.models import BoundaryUNet
+from bionuclei.postprocessing import split_boundary_instances
 
 
 def resolve_image_path(root: Path, image_name: str) -> Path:
@@ -47,7 +48,7 @@ def predict_instances(model: BoundaryUNet, image: np.ndarray) -> np.ndarray:
     with torch.inference_mode():
         logits = model(torch.from_numpy(x[None, None]).float())
     classes = logits.argmax(dim=1).cpu().numpy()[0]
-    instances, _ = ndimage.label(classes != 0, structure=np.ones((3, 3), dtype=np.uint8))
+    instances = split_boundary_instances(classes)
     return instances.astype(np.int32)
 
 
