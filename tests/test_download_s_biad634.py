@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import http.client
 import io
+import json
+import sys
 import urllib.error
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -143,3 +146,144 @@ def test_download_stops_after_bounded_transient_failures_without_partial_archive
     assert delays == [2, 4, 8]
     assert destination.read_bytes() == b"previous complete archive"
     assert _part_files(destination) == []
+
+def _write_archive(path: Path, members: dict[str, bytes]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in members.items():
+            archive.writestr(name, content)
+
+
+def _stub_download(source: Path):
+    def copy_archive(_url: str, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read_bytes())
+    return copy_archive
+
+
+def test_skip_extract_inventories_zip_without_writing_archive_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.zip"
+    _write_archive(
+        source,
+        {
+            "dataset/rawimages/image_001.tif": b"raw",
+            "dataset/groundtruth/mask_001.tif": b"mask",
+            "dataset/readme.txt": b"CC0",
+        },
+    )
+    root = tmp_path / "target"
+    monkeypatch.setattr(downloader, "download", _stub_download(source))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "download_s_biad634.py",
+            "--data-root",
+            str(root),
+            "--keep-archive",
+            "--skip-extract",
+        ],
+    )
+
+    downloader.main()
+
+    manifest = json.loads((root / "download_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["files"] == [
+        "dataset/groundtruth/mask_001.tif",
+        "dataset/rawimages/image_001.tif",
+        "dataset/readme.txt",
+    ]
+    assert (root / "dataset.zip").is_file()
+    assert not (root / "extracted").exists()
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_default_download_uses_manifest_verified_safe_extractor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.zip"
+    _write_archive(
+        source,
+        {
+            "dataset/rawimages/image_001.tif": b"raw",
+            "dataset/groundtruth/mask_001.tif": b"mask",
+            "dataset/readme.txt": b"CC0",
+        },
+    )
+    root = tmp_path / "target"
+    monkeypatch.setattr(downloader, "download", _stub_download(source))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["download_s_biad634.py", "--data-root", str(root), "--keep-archive"],
+    )
+
+    downloader.main()
+
+    assert (root / "extracted/dataset/rawimages/image_001.tif").read_bytes() == b"raw"
+    assert (root / "extracted/dataset/groundtruth/mask_001.tif").read_bytes() == b"mask"
+
+
+def test_default_download_rejects_zip_path_traversal_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.zip"
+    _write_archive(
+        source,
+        {
+            "dataset/rawimages/image_001.tif": b"raw",
+            "dataset/groundtruth/mask_001.tif": b"mask",
+            "../escape.txt": b"must not be written",
+        },
+    )
+    root = tmp_path / "target"
+    monkeypatch.setattr(downloader, "download", _stub_download(source))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["download_s_biad634.py", "--data-root", str(root), "--keep-archive"],
+    )
+
+    with pytest.raises(ValueError, match="Unsafe target-dataset ZIP member"):
+        downloader.main()
+
+    assert not (tmp_path / "escape.txt").exists()
+    assert not (root / "download_manifest.json").exists()
+    assert not (root / "extracted").exists()
+
+def test_custom_source_url_is_bound_and_safely_extracted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.zip"
+    _write_archive(
+        source,
+        {
+            "dataset/rawimages/image_001.tif": b"raw",
+            "dataset/groundtruth/mask_001.tif": b"mask",
+            "dataset/readme.txt": b"CC0",
+        },
+    )
+    root = tmp_path / "target"
+    source_url = "https://mirror.example.test/S-BIAD634/dataset.zip"
+    monkeypatch.setattr(downloader, "download", _stub_download(source))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "download_s_biad634.py",
+            "--data-root",
+            str(root),
+            "--url",
+            source_url,
+            "--keep-archive",
+        ],
+    )
+
+    downloader.main()
+
+    manifest = json.loads((root / "download_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["source_url"] == source_url
+    assert (root / "extracted/dataset/rawimages/image_001.tif").read_bytes() == b"raw"
+

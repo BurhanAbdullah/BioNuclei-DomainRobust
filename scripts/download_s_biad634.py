@@ -20,6 +20,11 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+if __package__:
+    from .extract_s_biad634_archive import _safe_member, extract_verified_dataset
+else:
+    from extract_s_biad634_archive import _safe_member, extract_verified_dataset
+
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
 DOWNLOAD_TIMEOUT_SECONDS = 120
 MAX_DOWNLOAD_ATTEMPTS = 4
@@ -96,6 +101,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, default=Path("data/raw/S-BIAD634"))
     parser.add_argument("--url", default=SOURCE_URL)
     parser.add_argument("--keep-archive", action="store_true")
+    parser.add_argument("--skip-extract", action="store_true", help="Inventory the ZIP without extracting it.")
     args = parser.parse_args()
 
     root = args.data_root
@@ -108,9 +114,15 @@ def main() -> None:
         bad = zf.testzip()
         if bad is not None:
             raise SystemExit(f"Corrupt ZIP member: {bad}")
-        zf.extractall(root / "extracted")
-
-    files = sorted(str(p.relative_to(root / "extracted")) for p in (root / "extracted").rglob("*") if p.is_file())
+        # Inventory ZIP metadata without writing archive-controlled paths.
+        # Extraction is delegated to the manifest-verifying safe extractor.
+        files = sorted(
+            name
+            for info in zf.infolist()
+            if (name := _safe_member(info)) is not None
+        )
+    if len(files) != len(set(files)):
+        raise SystemExit("Duplicate file paths in S-BIAD634 archive")
     raw = [p for p in files if "/rawimages/" in f"/{p}"]
     groundtruth = [p for p in files if "/groundtruth/" in f"/{p}"]
     metadata = [p for p in files if p.lower().endswith((".txt", ".csv", ".tsv"))]
@@ -126,6 +138,10 @@ def main() -> None:
         "metadata_candidates": metadata,
     }
     (root / "download_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
+    if not args.skip_extract:
+        # This validates the archive digest and every ZIP member before writing.
+        extract_verified_dataset(root, expected_source_url=args.url)
 
     if not args.keep_archive:
         archive.unlink()

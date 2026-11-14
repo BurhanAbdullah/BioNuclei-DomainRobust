@@ -45,7 +45,11 @@ def _safe_member(info: zipfile.ZipInfo) -> str | None:
     return name
 
 
-def extract_verified_dataset(data_root: Path) -> dict[str, object]:
+def extract_verified_dataset(
+    data_root: Path,
+    *,
+    expected_source_url: str = SOURCE_URL,
+) -> dict[str, object]:
     root = Path(data_root)
     archive = root / "dataset.zip"
     manifest_path = root / "download_manifest.json"
@@ -59,7 +63,7 @@ def extract_verified_dataset(data_root: Path) -> dict[str, object]:
         raise ValueError("Target-dataset manifest must be a JSON object")
     if manifest.get("dataset") != DATASET:
         raise ValueError("Target-dataset manifest identifies an unexpected dataset")
-    if manifest.get("source_url") != SOURCE_URL:
+    if manifest.get("source_url") != expected_source_url:
         raise ValueError("Target-dataset manifest identifies an unexpected source URL")
     if manifest.get("expected_public_license") != "CC0":
         raise ValueError("Target-dataset manifest does not record the expected CC0 license")
