@@ -94,6 +94,7 @@ def _probe_api_health(
                 request_error = "ReadinessBudgetExceeded"
                 response = None
                 break
+            request_error = None
             response = candidate
             if candidate.status_code == 200:
                 attempt_record["result"] = "http_200"
