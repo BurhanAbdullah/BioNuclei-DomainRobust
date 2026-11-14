@@ -183,3 +183,32 @@ def test_public_e2e_fails_closed_without_the_immutable_checkpoint_health_contrac
     assert digest_gate in source
     assert source.index(verified_gate) < source.index('page.locator("#guestButton").click')
     assert source.index(digest_gate) < source.index('page.locator("#analyzeButton").click')
+
+
+def test_http_response_clears_stale_timeout_even_when_service_is_not_ready() -> None:
+    helpers = _health_helpers()
+    clock = _Clock()
+    calls = 0
+
+    def get(_url: str, *, timeout: tuple[float, float]) -> _Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            clock.now += 10.0
+            raise _ReadTimeout("temporary cold start")
+        clock.now += 0.1
+        return _Response(503, "service unavailable")
+
+    result, attempts, request_error, body = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+        budget_seconds=12.0,
+    )
+
+    assert result is not None and result.status_code == 503
+    assert len(attempts) == 2
+    assert request_error is None
+    assert body == "service unavailable"
