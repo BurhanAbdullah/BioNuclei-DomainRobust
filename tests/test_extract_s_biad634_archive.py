@@ -105,8 +105,17 @@ def test_rejects_zip_path_traversal_without_writing_outside_root(
 
 def test_rejects_too_many_zip_entries_before_crc_scan(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "S-BIAD634"
-    _write_dataset(root)
-    monkeypatch.setattr(extractor, "MAX_ARCHIVE_ENTRIES", 2)
+    archive = _write_dataset(root)
+    # Add a directory entry: it counts toward ZIP resource limits but not the
+    # manifest's file inventory.
+    with zipfile.ZipFile(archive, "a") as dataset_zip:
+        dataset_zip.writestr("dataset/extra/", b"")
+    manifest_path = root / "download_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["archive_sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    monkeypatch.setattr(extractor, "MAX_ARCHIVE_ENTRIES", 3)
     monkeypatch.setattr(
         zipfile.ZipFile,
         "testzip",
