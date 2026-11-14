@@ -170,7 +170,7 @@ def test_skip_extract_inventories_zip_without_writing_archive_paths(
         {
             "dataset/rawimages/image_001.tif": b"raw",
             "dataset/groundtruth/mask_001.tif": b"mask",
-            "../escape.txt": b"must not be written",
+            "dataset/readme.txt": b"CC0",
         },
     )
     root = tmp_path / "target"
@@ -190,7 +190,11 @@ def test_skip_extract_inventories_zip_without_writing_archive_paths(
     downloader.main()
 
     manifest = json.loads((root / "download_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["files"] == ["../escape.txt", "dataset/groundtruth/mask_001.tif", "dataset/rawimages/image_001.tif"]
+    assert manifest["files"] == [
+        "dataset/groundtruth/mask_001.tif",
+        "dataset/rawimages/image_001.tif",
+        "dataset/readme.txt",
+    ]
     assert (root / "dataset.zip").is_file()
     assert not (root / "extracted").exists()
     assert not (tmp_path / "escape.txt").exists()
@@ -246,5 +250,6 @@ def test_default_download_rejects_zip_path_traversal_before_writing(
         downloader.main()
 
     assert not (tmp_path / "escape.txt").exists()
+    assert not (root / "download_manifest.json").exists()
     assert not (root / "extracted").exists()
 

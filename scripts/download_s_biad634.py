@@ -21,9 +21,9 @@ import zipfile
 from pathlib import Path
 
 if __package__:
-    from .extract_s_biad634_archive import extract_verified_dataset
+    from .extract_s_biad634_archive import _safe_member, extract_verified_dataset
 else:
-    from extract_s_biad634_archive import extract_verified_dataset
+    from extract_s_biad634_archive import _safe_member, extract_verified_dataset
 
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
 DOWNLOAD_TIMEOUT_SECONDS = 120
@@ -116,7 +116,11 @@ def main() -> None:
             raise SystemExit(f"Corrupt ZIP member: {bad}")
         # Inventory ZIP metadata without writing archive-controlled paths.
         # Extraction is delegated to the manifest-verifying safe extractor.
-        files = sorted(info.filename for info in zf.infolist() if not info.is_dir())
+        files = sorted(
+            name
+            for info in zf.infolist()
+            if (name := _safe_member(info)) is not None
+        )
     if len(files) != len(set(files)):
         raise SystemExit("Duplicate file paths in S-BIAD634 archive")
     raw = [p for p in files if "/rawimages/" in f"/{p}"]
