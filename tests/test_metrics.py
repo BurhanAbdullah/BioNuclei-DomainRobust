@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from bionuclei.metrics import aji_score
-from scripts.metrics_instance import aji_score as script_aji_score, instance_prf
+from scripts.metrics_instance import aji_score as script_aji_score, instance_count, instance_prf
 
 
 def test_aji_perfect_instance_masks_is_one():
@@ -73,3 +73,13 @@ def test_instance_prf_matches_noncontiguous_instance_labels():
     assert result["fp"] == 0
     assert result["fn"] == 0
     assert result["f1_score"] == pytest.approx(1.0)
+
+
+
+def test_instance_count_uses_distinct_positive_labels_not_max_label_id():
+    target = np.array([[0, 10, 10], [0, 30, 0]], dtype=np.int32)
+    assert instance_count(target) == 2
+    assert instance_count(np.zeros_like(target)) == 0
+
+    with pytest.raises(ValueError, match="2-D instance mask"):
+        instance_count(np.zeros((1, 2, 3), dtype=np.int32))
