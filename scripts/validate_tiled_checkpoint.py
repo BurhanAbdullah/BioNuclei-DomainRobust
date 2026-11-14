@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -51,6 +52,70 @@ def build_fixture(path: Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def resolve_revision_provenance(
+    event_name: str,
+    workflow_sha: str,
+    event_payload: dict[str, object] | None = None,
+) -> dict[str, str | None]:
+    """Distinguish the PR source/base commits from the commit actually tested.
+
+    On pull_request events GitHub sets GITHUB_SHA to the synthetic merge
+    commit. The event payload carries the source head and target base SHAs.
+    For push/workflow_dispatch, GITHUB_SHA is both the source and tested SHA.
+    """
+    if not _GIT_SHA_RE.fullmatch(workflow_sha):
+        raise ValueError("GITHUB_SHA must be a full lowercase 40-character commit SHA")
+
+    if event_name == "pull_request":
+        if not isinstance(event_payload, dict):
+            raise ValueError("pull_request event payload is required for revision provenance")
+        pull_request = event_payload.get("pull_request")
+        if not isinstance(pull_request, dict):
+            raise ValueError("pull_request event payload is missing pull_request metadata")
+        head = pull_request.get("head")
+        base = pull_request.get("base")
+        head_sha = head.get("sha") if isinstance(head, dict) else None
+        base_sha = base.get("sha") if isinstance(base, dict) else None
+        if not isinstance(head_sha, str) or not _GIT_SHA_RE.fullmatch(head_sha):
+            raise ValueError("pull_request event payload has no valid source head SHA")
+        if not isinstance(base_sha, str) or not _GIT_SHA_RE.fullmatch(base_sha):
+            raise ValueError("pull_request event payload has no valid target base SHA")
+        return {
+            "event_name": event_name,
+            "head_sha": head_sha,
+            "base_sha": base_sha,
+            "tested_sha": workflow_sha,
+        }
+
+    return {
+        "event_name": event_name or "unknown",
+        "head_sha": workflow_sha,
+        "base_sha": None,
+        "tested_sha": workflow_sha,
+    }
+
+
+def validation_revision_provenance() -> dict[str, str | None]:
+    """Resolve exact source and tested revisions from the GitHub Actions event."""
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    workflow_sha = os.environ.get("GITHUB_SHA", "")
+    event_payload = None
+    if event_name == "pull_request":
+        event_path = os.environ.get("GITHUB_EVENT_PATH", "").strip()
+        if not event_path:
+            raise ValueError("GITHUB_EVENT_PATH is required for pull_request provenance")
+        try:
+            event_payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("cannot read pull_request event payload for revision provenance") from exc
+        if not isinstance(event_payload, dict):
+            raise ValueError("pull_request event payload must be a JSON object")
+    return resolve_revision_provenance(event_name, workflow_sha, event_payload)
 
 
 def persist_validation_evidence(
@@ -281,11 +346,11 @@ def main() -> None:
             evidence_dir_raw = os.environ.get("BIONUCLEI_VALIDATION_EVIDENCE_DIR", "").strip()
             if evidence_dir_raw:
                 evidence_manifest = {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
                     "run_id": os.environ.get("GITHUB_RUN_ID"),
                     "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-                    "head_sha": os.environ.get("GITHUB_SHA"),
+                    **validation_revision_provenance(),
                     "fixture_sha256": fixture_sha,
                     "checkpoint_sha256_before": before_sha,
                     "checkpoint_sha256_after": after_sha,
