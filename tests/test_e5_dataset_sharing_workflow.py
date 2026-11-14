@@ -25,6 +25,7 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
 
     jobs = workflow["jobs"]
     prepare = jobs["prepare_target_dataset"]
+    assert "if" not in prepare, "dataset preparation must still run in prepare-only mode"
     download_commands = [
         step["run"]
         for step in prepare["steps"]
@@ -50,6 +51,8 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert "archive_sha256" in inventory["run"]
     assert "manifest_sha256" in inventory["run"]
     assert "zip_entry_count" in inventory["run"]
+    assert "zipfile.ZipFile(archive)" in inventory["run"]
+    assert "len(dataset_zip.infolist())" in inventory["run"]
     assert "zip_file_count" in inventory["run"]
 
     variant = jobs["e5_variant"]
