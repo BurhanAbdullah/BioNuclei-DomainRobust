@@ -141,7 +141,7 @@ def main() -> None:
 
     if not args.skip_extract:
         # This validates the archive digest and every ZIP member before writing.
-        extract_verified_dataset(root)
+        extract_verified_dataset(root, expected_source_url=args.url)
 
     if not args.keep_archive:
         archive.unlink()
