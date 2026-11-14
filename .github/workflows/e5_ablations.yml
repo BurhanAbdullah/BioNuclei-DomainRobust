@@ -7,7 +7,11 @@ name: E5 ablations and strong baseline
 
 on:
   push:
+    branches:
+      - main
     paths:
+      - '.github/workflows/e5_ablations.yml'
+      - 'scripts/extract_s_biad634_archive.py'
       - 'scripts/train_domain_robust.py'
       - 'scripts/evaluate_s_biad634.py'
       - 'scripts/metrics_instance.py'
@@ -28,7 +32,32 @@ on:
         default: '20'
 
 jobs:
+  prepare_target_dataset:
+    name: Prepare shared S-BIAD634 target dataset
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download and inventory target dataset once
+        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive
+      - name: Publish shared target dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e5-target-dataset-${{ github.run_id }}
+          path: |
+            data/raw/S-BIAD634/dataset.zip
+            data/raw/S-BIAD634/download_manifest.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
   e5_variant:
+    needs: prepare_target_dataset
     name: E5 ${{ matrix.variant }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -57,8 +86,13 @@ jobs:
           python scripts/download_bbbc039.py --data-root data/raw/BBBC039
           python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
           python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata --output data/manifests/bbbc039_official_split.json
-      - name: Download and inventory target dataset
-        run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
+      - name: Download shared target dataset artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: e5-target-dataset-${{ github.run_id }}
+          path: data/raw/S-BIAD634
+      - name: Verify and extract shared target dataset
+        run: python scripts/extract_s_biad634_archive.py --data-root data/raw/S-BIAD634
       - name: Run preregistered E5 variant
         env:
           EPOCHS: ${{ inputs.epochs || '20' }}
@@ -108,7 +142,9 @@ jobs:
 
   e5_gate:
     name: E5 completeness and comparator gate
-    needs: e5_variant
+    needs:
+      - e5_variant
+      - prepare_target_dataset
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -131,6 +167,13 @@ jobs:
           pattern: e5-variant-${{ github.run_id }}-*
           merge-multiple: true
           path: .
+      - name: Download shared target dataset artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: e5-target-dataset-${{ github.run_id }}
+          path: data/raw/S-BIAD634
+      - name: Verify and extract shared target dataset
+        run: python scripts/extract_s_biad634_archive.py --data-root data/raw/S-BIAD634
       - name: Verify all preregistered variants and provenance
         run: |
           python - <<'PY'
@@ -158,7 +201,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
           mkdir -p outputs/strong_baseline_source
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/checkpoint-bbbc039-v1")"
           asset_digest="$(jq -r '.assets[] | select(.name == "bionuclei_bbbc039.pt") | .digest' <<<"$release_json")"
