@@ -212,3 +212,17 @@ def test_http_response_clears_stale_timeout_even_when_service_is_not_ready() -> 
     assert len(attempts) == 2
     assert request_error is None
     assert body == "service unavailable"
+
+
+def test_live_e2e_workflow_never_contacts_public_service_from_a_pull_request() -> None:
+    import yaml
+
+    workflow_path = ROOT / ".github" / "workflows" / "live-public-agent-e2e.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    jobs = workflow["jobs"]
+
+    assert jobs["validate-harness"]["if"] == "github.event_name == 'pull_request'"
+    public_condition = jobs["public-upload-to-agent"]["if"]
+    assert "github.event_name != 'pull_request'" in public_condition
+    assert "github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust'" in public_condition
+    assert "github.ref == 'refs/heads/main'" in public_condition
