@@ -32,6 +32,93 @@ API_BASE = os.environ.get(
     "https://bionuclei-community-analyzer.onrender.com",
 ).rstrip("/")
 ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "1200000"))
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+HEALTH_READINESS_BUDGET_SECONDS = 179.0
+HEALTH_CONNECT_TIMEOUT_SECONDS = 10.0
+HEALTH_READ_TIMEOUT_CAP_SECONDS = 150.0
+
+
+def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
+    """Keep connect/read waits within the remaining monotonic readiness budget."""
+    remaining = float(remaining_seconds)
+    if remaining <= 0:
+        raise ValueError("health readiness budget is exhausted")
+    connect_timeout = min(HEALTH_CONNECT_TIMEOUT_SECONDS, remaining / 2.0)
+    read_timeout = min(HEALTH_READ_TIMEOUT_CAP_SECONDS, remaining - connect_timeout)
+    if connect_timeout <= 0 or read_timeout <= 0:
+        raise ValueError("health request timeout budget must remain positive")
+    return connect_timeout, read_timeout
+
+
+def _health_response_within_budget(completed_at: float, deadline: float) -> bool:
+    """Accept a health response only if it completed before the monotonic deadline."""
+    return completed_at <= deadline
+
+
+def _probe_api_health(
+    api_base: str,
+    *,
+    request_get,
+    request_exception,
+    monotonic,
+    sleep,
+    budget_seconds: float = HEALTH_READINESS_BUDGET_SECONDS,
+) -> tuple[object | None, list[dict[str, object]], str | None, str | None]:
+    """Probe real API health with one bounded cold-start budget and sanitized attempts."""
+    if budget_seconds <= 0:
+        raise ValueError("health readiness budget must be positive")
+    deadline = monotonic() + budget_seconds
+    attempts: list[dict[str, object]] = []
+    response = None
+    request_error = None
+    body_excerpt = None
+    attempt = 0
+
+    while True:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        attempt_started = monotonic()
+        attempt_record: dict[str, object] = {"attempt": attempt + 1}
+        try:
+            candidate = request_get(
+                f"{api_base}/health",
+                timeout=_health_request_timeout(remaining),
+            )
+            response_completed_at = monotonic()
+            attempt_record["http_status"] = candidate.status_code
+            attempt_record["elapsed_seconds"] = round(response_completed_at - attempt_started, 3)
+            if not _health_response_within_budget(response_completed_at, deadline):
+                attempt_record["error"] = "ReadinessBudgetExceeded"
+                attempts.append(attempt_record)
+                request_error = "ReadinessBudgetExceeded"
+                response = None
+                break
+            response = candidate
+            if candidate.status_code == 200:
+                attempt_record["result"] = "http_200"
+                attempts.append(attempt_record)
+                request_error = None
+                body_excerpt = None
+                break
+            body_excerpt = candidate.text[:240]
+        except request_exception as exc:
+            response = None
+            request_error = type(exc).__name__
+            attempt_record["error"] = request_error
+            attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
+
+        attempts.append(attempt_record)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        delay = min(8, 2 ** min(attempt, 3), remaining)
+        if delay > 0:
+            attempt_record["retry_delay_seconds"] = round(delay, 3)
+            sleep(delay)
+        attempt += 1
+
+    return response, attempts, request_error, body_excerpt
 
 
 def build_uint16_fixture(path: Path) -> str:
@@ -220,48 +307,52 @@ def main() -> None:
             # runtime fix. Render exposes both its branch and deployment commit;
             # verifying the source commit avoids attributing a stale deployment
             # failure to the newly merged implementation.
-            health_response = None
-            health_attempts: list[dict[str, object]] = []
-            # Render cold starts can outlast a short three-request probe. Give the
-            # actual API a bounded 119-second readiness window, recording sanitized
-            # diagnostics for every attempt. This never substitutes a fake response
-            # and still fails closed if the service is not genuinely healthy.
-            for attempt in range(8):
-                attempt_started = time.monotonic()
-                attempt_record: dict[str, object] = {"attempt": attempt + 1}
-                try:
-                    health_response = requests.get(f"{API_BASE}/health", timeout=10)
-                    attempt_record["http_status"] = health_response.status_code
-                    attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
-                    state["api_health_http_status"] = health_response.status_code
-                    if health_response.status_code == 200:
-                        attempt_record["result"] = "http_200"
-                        health_attempts.append(attempt_record)
-                        state["api_health_attempts"] = health_attempts
-                        break
-                    attempt_record["body_excerpt"] = health_response.text[:240]
-                    state["api_health_body"] = health_response.text[:240]
-                except requests.RequestException as exc:
-                    attempt_record["error"] = type(exc).__name__
-                    attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
-                    state["api_health_request_error"] = type(exc).__name__
-                health_attempts.append(attempt_record)
-                state["api_health_attempts"] = health_attempts
-                if attempt < 7:
-                    delay = min(8, 2 ** attempt)
-                    attempt_record["retry_delay_seconds"] = delay
-                    time.sleep(delay)
+            health_response, health_attempts, health_request_error, health_body = _probe_api_health(
+                API_BASE,
+                request_get=requests.get,
+                request_exception=requests.RequestException,
+                monotonic=time.monotonic,
+                sleep=time.sleep,
+            )
+            state["api_health_attempts"] = health_attempts
+            last_http_status = next(
+                (item["http_status"] for item in reversed(health_attempts) if "http_status" in item),
+                None,
+            )
+            if last_http_status is not None:
+                state["api_health_http_status"] = last_http_status
+            if health_request_error is None:
+                # A later successful response supersedes earlier timeout diagnostics.
+                state.pop("api_health_request_error", None)
+            else:
+                state["api_health_request_error"] = health_request_error
+            if health_body is None:
+                state.pop("api_health_body", None)
+            else:
+                state["api_health_body"] = health_body
             require(
                 health_response is not None and health_response.status_code == 200,
-                f"Public API health check failed after {len(health_attempts)} attempts: "
-                f"HTTP {state.get('api_health_http_status')!r}",
+                f"Public API health check failed within {HEALTH_READINESS_BUDGET_SECONDS:.0f}s "
+                f"after {len(health_attempts)} attempts: "
+                f"HTTP {state.get('api_health_http_status')!r}, "
+                f"request_error={state.get('api_health_request_error')!r}",
             )
             health = health_response.json()
             state["render_git_commit"] = health.get("render_git_commit")
             state["render_git_branch"] = health.get("render_git_branch")
             state["checkpoint_available"] = health.get("checkpoint_available")
+            state["checkpoint_verified"] = health.get("checkpoint_verified")
+            state["checkpoint_sha256"] = health.get("checkpoint_sha256")
             require(health.get("status") == "ok" and health.get("checkpoint_available") is True,
                     f"Public API is not analysis-ready: status={health.get('status')!r}, checkpoint_available={health.get('checkpoint_available')!r}")
+            require(
+                health.get("checkpoint_verified") is True,
+                "Public API health did not verify the immutable release checkpoint",
+            )
+            require(
+                health.get("checkpoint_sha256") == EXPECTED_CHECKPOINT_SHA256,
+                "Public API checkpoint digest does not match the immutable release pin",
+            )
             deployed_commit = str(health.get("render_git_commit") or "")
             require(bool(re.fullmatch(r"[0-9a-f]{40}", deployed_commit)),
                     f"Render health did not expose a valid deployed Git commit: {deployed_commit!r}")
