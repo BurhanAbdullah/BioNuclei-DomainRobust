@@ -77,6 +77,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from scripts.e5_run_ablation import verify_metrics_digest
           v=Path('outputs/e5') / '${{ matrix.variant }}'
           d=json.loads((v/'evaluation'/'metrics.json').read_text())
           assert d.get('n_images') == 79
@@ -88,6 +89,7 @@ jobs:
           assert p.get('target_manifest_sha256')
           assert p.get('source_split_manifest_sha256')
           assert p.get('checkpoint_sha256')
+          verify_metrics_digest(p, root=Path.cwd())
           print('verified', '${{ matrix.variant }}')
           PY
       - name: Upload E5 variant artifact
@@ -134,6 +136,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from scripts.e5_run_ablation import verify_metrics_digest
           root=Path('outputs/e5')
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
           assert required <= {p.name for p in root.iterdir() if p.is_dir()}
@@ -147,6 +150,7 @@ jobs:
               assert p['n_target_images']==79
               for k in ('target_manifest_sha256','source_split_manifest_sha256','config_sha256','checkpoint_sha256'):
                   assert p.get(k)
+              verify_metrics_digest(p, root=Path.cwd())
           print('all preregistered E5 variants complete')
           PY
       - name: Verify and download immutable baseline release asset
