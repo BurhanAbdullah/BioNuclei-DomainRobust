@@ -9,6 +9,37 @@ import pytest
 from scripts import validate_tiled_checkpoint as checkpoint
 
 
+def _write_archive(
+    archive_path,
+    *,
+    omitted=(),
+    empty=(),
+    extra=None,
+    result_bytes=b'{"scientific_execution": true}',
+    specialist_bytes=b'{"execution": {"status": "completed"}}',
+):
+    entries = {
+        "results/analysis_report.html": b"html",
+        "results/analysis_report.json": b"{}",
+        "results/analysis_report.pdf": b"pdf",
+        "results/measurements.csv": b"id,intensity\n1,65535\n",
+        "results/results.json": result_bytes,
+        "results/expert_agents.json": specialist_bytes,
+        "results/nuclei_analysis.csv": b"csv",
+        "results/segmentation_mask.tif": b"mask",
+        "results/overlay.tif": b"overlay",
+        "results/provenance.json": b"{}",
+    }
+    omitted = set(omitted)
+    empty = set(empty)
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for name, payload in entries.items():
+            if name not in omitted:
+                archive.writestr(name, b"" if name in empty else payload)
+        for name, payload in (extra or {}).items():
+            archive.writestr(name, payload)
+
+
 def _write_evidence_inputs(tmp_path):
     archive_path = tmp_path / "analysis-results.zip"
     result_path = tmp_path / "results.json"
@@ -17,16 +48,65 @@ def _write_evidence_inputs(tmp_path):
     specialist_bytes = b'{"execution": {"status": "completed"}}'
     result_path.write_bytes(result_bytes)
     specialist_path.write_bytes(specialist_bytes)
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        archive.writestr("results/analysis_report.html", b"html")
-        archive.writestr("results/analysis_report.pdf", b"pdf")
-        archive.writestr("results/results.json", result_bytes)
-        archive.writestr("results/expert_agents.json", specialist_bytes)
-        archive.writestr("results/nuclei_analysis.csv", b"csv")
-        archive.writestr("results/segmentation_mask.tif", b"mask")
-        archive.writestr("results/overlay.tif", b"overlay")
+    _write_archive(archive_path, result_bytes=result_bytes, specialist_bytes=specialist_bytes)
     return archive_path, result_path, specialist_path
 
+
+
+def test_validate_result_archive_requires_all_downloadable_deliverables(tmp_path):
+    archive_path = tmp_path / "complete.zip"
+    _write_archive(archive_path)
+
+    names = set(checkpoint.validate_result_archive(archive_path, "live-uint16-sentinel.tif"))
+
+    assert {
+        "results/measurements.csv",
+        "results/analysis_report.json",
+        "results/provenance.json",
+    }.issubset(names)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "results/measurements.csv",
+        "results/analysis_report.json",
+        "results/provenance.json",
+    ],
+)
+def test_validate_result_archive_rejects_missing_required_deliverables(tmp_path, missing):
+    archive_path = tmp_path / "incomplete.zip"
+    _write_archive(archive_path, omitted={missing})
+
+    with pytest.raises(AssertionError, match="ZIP missing required artifacts"):
+        checkpoint.validate_result_archive(archive_path, "live-uint16-sentinel.tif")
+
+
+def test_validate_result_archive_rejects_empty_required_deliverable(tmp_path):
+    archive_path = tmp_path / "empty-output.zip"
+    _write_archive(archive_path, empty={"results/measurements.csv"})
+
+    with pytest.raises(AssertionError, match="ZIP contains empty required artifacts"):
+        checkpoint.validate_result_archive(archive_path, "live-uint16-sentinel.tif")
+
+
+def test_validate_result_archive_rejects_source_image_and_corrupt_zip(tmp_path):
+    archive_path = tmp_path / "source-leak.zip"
+    _write_archive(
+        archive_path,
+        extra={"results/live-uint16-sentinel.tif": b"source image"},
+    )
+
+    with pytest.raises(AssertionError, match="uploaded source image"):
+        checkpoint.validate_result_archive(archive_path, "live-uint16-sentinel.tif")
+
+    corrupt_path = tmp_path / "corrupt.zip"
+    _write_archive(corrupt_path)
+    data = bytearray(corrupt_path.read_bytes())
+    data[-8] ^= 0xFF
+    corrupt_path.write_bytes(data)
+    with pytest.raises((AssertionError, zipfile.BadZipFile)):
+        checkpoint.validate_result_archive(corrupt_path, "live-uint16-sentinel.tif")
 
 def test_resolve_revision_provenance_distinguishes_source_base_and_tested_merge():
     head_sha = "a" * 40

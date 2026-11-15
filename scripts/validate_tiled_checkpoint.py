@@ -179,6 +179,61 @@ def persist_validation_evidence(
         "files": file_entries,
     }
 
+
+_REQUIRED_RESULT_ARCHIVE_ENTRIES = frozenset({
+    "results/analysis_report.html",
+    "results/analysis_report.json",
+    "results/analysis_report.pdf",
+    "results/measurements.csv",
+    "results/results.json",
+    "results/expert_agents.json",
+    "results/nuclei_analysis.csv",
+    "results/segmentation_mask.tif",
+    "results/overlay.tif",
+    "results/provenance.json",
+})
+_FORBIDDEN_SOURCE_BASENAMES = frozenset({
+    "input.tif",
+    "input.tiff",
+    "input.nd2",
+    "input_plane.tif",
+})
+
+
+def validate_result_archive(archive_path: Path, source_filename: str) -> list[str]:
+    """Require every downloadable deliverable, valid ZIP data, and no source image."""
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            entries = archive.infolist()
+            names = {entry.filename for entry in entries}
+            missing = sorted(_REQUIRED_RESULT_ARCHIVE_ENTRIES - names)
+            require(not missing, f"ZIP missing required artifacts: {missing}")
+
+            by_name = {entry.filename: entry for entry in entries}
+            empty = sorted(
+                name
+                for name in _REQUIRED_RESULT_ARCHIVE_ENTRIES
+                if by_name[name].file_size <= 0
+            )
+            require(not empty, f"ZIP contains empty required artifacts: {empty}")
+            corrupt = archive.testzip()
+            require(corrupt is None, f"ZIP contains a corrupt entry: {corrupt}")
+
+            forbidden = set(_FORBIDDEN_SOURCE_BASENAMES)
+            source_basename = source_filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if source_basename:
+                forbidden.add(source_basename)
+            leaked = sorted(
+                name
+                for name in names
+                if name.replace("\\", "/").rsplit("/", 1)[-1].lower() in forbidden
+            )
+            require(not leaked, f"ZIP contains the uploaded source image or extracted source plane: {leaked}")
+            return sorted(names)
+    except zipfile.BadZipFile as exc:
+        raise AssertionError("Result archive is not a valid ZIP") from exc
+
+
 def main() -> None:
     checkpoint_raw = os.environ.get("BIONUCLEI_CHECKPOINT", "")
     expected_checkpoint_sha = os.environ.get("BIONUCLEI_EXPECTED_CHECKPOINT_SHA256", "")
@@ -305,6 +360,7 @@ def main() -> None:
                 "analysis_report.html",
                 "analysis_report.json",
                 "analysis_report.pdf",
+                "provenance.json",
             ]
             for name in required_files:
                 path = community.get_file(job_id, owner, name)
@@ -312,28 +368,7 @@ def main() -> None:
                         f"Required scientific artifact is missing or empty: {name}")
 
             archive_path = community.get_archive(job_id, owner)
-            with zipfile.ZipFile(archive_path) as archive:
-                names = set(archive.namelist())
-                required_zip = {
-                    "results/analysis_report.html",
-                    "results/analysis_report.pdf",
-                    "results/results.json",
-                    "results/expert_agents.json",
-                    "results/nuclei_analysis.csv",
-                    "results/segmentation_mask.tif",
-                    "results/overlay.tif",
-                }
-                require(required_zip.issubset(names),
-                        f"ZIP missing required artifacts: {sorted(required_zip - names)}")
-                forbidden = {
-                    "input.tif",
-                    "input.tiff",
-                    "input.nd2",
-                    "input_plane.tif",
-                    fixture.name,
-                }
-                require(not any(Path(name).name in forbidden for name in names),
-                        "ZIP contains the uploaded source image or extracted source plane")
+            names = set(validate_result_archive(archive_path, fixture.name))
 
             job_dir = community._job_dir(job_id)
             require(not (job_dir / "input.tif").exists(),
