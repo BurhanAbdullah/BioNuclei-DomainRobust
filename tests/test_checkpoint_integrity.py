@@ -84,7 +84,6 @@ def test_environment_digest_cannot_override_pinned_release(tmp_path, monkeypatch
         tmp_path,
         monkeypatch,
         pinned_sha256="0" * 64,
-        configured_sha256=None,
     )
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", actual)
 
@@ -144,24 +143,26 @@ def test_missing_checkpoint_is_not_reported_healthy(tmp_path, monkeypatch):
         assert payload["checkpoint_sha256"] is None
 
 
-def test_checkpoint_digest_cache_reuses_stable_file_and_rehashes_after_change(
-    tmp_path,
-    monkeypatch,
-):
-    path, actual = _configure_checkpoint(tmp_path, monkeypatch)
-    scientific_app._checkpoint_sha256.cache_clear()
-    try:
-        assert _checkpoint_identity()[1] == actual
-        assert _checkpoint_identity()[1] == actual
-        assert scientific_app._checkpoint_sha256.cache_info().hits == 1
+def test_non_regular_checkpoint_is_not_reported_healthy(tmp_path, monkeypatch):
+    path = tmp_path / "checkpoint-directory"
+    path.mkdir()
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
 
-        path.write_bytes(b"modified checkpoint fixture")
-        changed_digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        identity_path, digest, verified = _checkpoint_identity()
-        assert identity_path == path.resolve()
-        assert digest == changed_digest
-        assert digest != actual
-        assert verified is False
-        assert scientific_app._checkpoint_sha256.cache_info().misses == 2
-    finally:
-        scientific_app._checkpoint_sha256.cache_clear()
+    with pytest.raises(HTTPException) as exc_info:
+        _checkpoint()
+    assert exc_info.value.status_code == 503
+    assert scientific_app.health()["status"] == "degraded"
+
+
+def test_checkpoint_digest_is_recomputed_after_file_change(tmp_path, monkeypatch):
+    path, actual = _configure_checkpoint(tmp_path, monkeypatch)
+
+    assert _checkpoint_identity()[1:] == (actual, True)
+
+    path.write_bytes(b"modified checkpoint fixture")
+    changed_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    identity_path, digest, verified = _checkpoint_identity()
+    assert identity_path == path.resolve()
+    assert digest == changed_digest
+    assert digest != actual
+    assert verified is False
