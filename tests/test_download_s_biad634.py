@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import struct
 import sys
 import urllib.error
 import zipfile
@@ -28,6 +29,18 @@ class _DisconnectAfterFirstRead(io.BytesIO):
 
 def _part_files(destination: Path) -> list[Path]:
     return list(destination.parent.glob(f".{destination.name}.*.part"))
+
+
+def _zip_bytes(payload: bytes = b"dataset member", *, corrupt: bool = False) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr("dataset/rawimages/image_001.tif", payload)
+    data = bytearray(buffer.getvalue())
+    if corrupt:
+        filename_length, extra_length = struct.unpack_from("<HH", data, 26)
+        member_offset = 30 + filename_length + extra_length
+        data[member_offset] ^= 0xFF
+    return bytes(data)
 
 
 def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
@@ -147,6 +160,66 @@ def test_download_stops_after_bounded_transient_failures_without_partial_archive
     assert delays == [2, 4, 8]
     assert destination.read_bytes() == b"previous complete archive"
     assert _part_files(destination) == []
+
+def test_download_retries_crc_invalid_archive_before_replacing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    corrupt_archive = _zip_bytes(corrupt=True)
+    valid_archive = _zip_bytes()
+    delays: list[float] = []
+    calls = 0
+
+    def fake_urlopen(_url: str, *, timeout: int):
+        nonlocal calls
+        calls += 1
+        assert timeout == downloader.DOWNLOAD_TIMEOUT_SECONDS
+        if calls == 1:
+            return io.BytesIO(corrupt_archive)
+        assert destination.read_bytes() == b"previous complete archive"
+        assert _part_files(destination) == []
+        return io.BytesIO(valid_archive)
+
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(downloader.time, "sleep", delays.append)
+
+    downloader.download("https://example.test/dataset.zip", destination)
+
+    assert calls == 2
+    assert delays == [2]
+    assert destination.read_bytes() == valid_archive
+    with zipfile.ZipFile(destination) as archive:
+        assert archive.testzip() is None
+    assert _part_files(destination) == []
+
+
+def test_download_stops_after_bounded_crc_invalid_archives_without_replacing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    corrupt_archive = _zip_bytes(corrupt=True)
+    delays: list[float] = []
+    calls = 0
+
+    def fake_urlopen(_url: str, *, timeout: int):
+        nonlocal calls
+        calls += 1
+        assert timeout == downloader.DOWNLOAD_TIMEOUT_SECONDS
+        return io.BytesIO(corrupt_archive)
+
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(downloader.time, "sleep", delays.append)
+
+    with pytest.raises(downloader.CorruptDatasetArchiveError, match="corrupt member"):
+        downloader.download("https://example.test/dataset.zip", destination)
+
+    assert calls == downloader.MAX_DOWNLOAD_ATTEMPTS
+    assert delays == [2, 4, 8]
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
+
 
 def _write_archive(path: Path, members: dict[str, bytes]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
