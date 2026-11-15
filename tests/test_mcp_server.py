@@ -82,10 +82,10 @@ def test_bearer_middleware_rejects_missing_invalid_and_duplicate_headers() -> No
     for headers in (
         [],
         [(b"authorization", b"Bearer wrong")],
-                    [
-                (b"authorization", f"Bearer {token}".encode()),
-                (b"authorization", f"Bearer {token}".encode()),
-            ],
+        [
+            (b"authorization", f"Bearer {token}".encode()),
+            (b"authorization", f"Bearer {token}".encode()),
+        ],
     ):
         called = False
         events = _invoke_asgi(middleware, headers)
