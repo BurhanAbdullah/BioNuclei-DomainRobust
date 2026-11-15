@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
@@ -36,15 +37,35 @@ def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+class CorruptDatasetArchiveError(RuntimeError):
+    """A completed HTTP transfer did not produce a readable, CRC-valid ZIP."""
+
+
 def _retry_delay(attempt: int) -> float:
     return min(RETRY_BASE_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_SECONDS)
 
 
-def download(url: str, destination: Path) -> None:
-    """Download atomically, retrying only transient transport/server failures.
+def _validate_downloaded_archive(path: Path) -> None:
+    """Validate the ZIP central directory and every member before publication."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            corrupt_member = archive.testzip()
+    except (zipfile.BadZipFile, EOFError, zlib.error) as exc:
+        raise CorruptDatasetArchiveError(
+            "downloaded dataset is not a valid, readable ZIP archive"
+        ) from exc
+    if corrupt_member is not None:
+        raise CorruptDatasetArchiveError(
+            f"downloaded dataset ZIP contains a corrupt member: {corrupt_member}"
+        )
 
-    A failed or interrupted transfer must never leave a partial ZIP at the
-    destination path: the evaluator opens that path immediately after download.
+
+def download(url: str, destination: Path) -> None:
+    """Download atomically, retrying transient transport and corrupt-ZIP failures.
+
+    A failed, interrupted, or CRC-invalid transfer must never replace a prior
+    complete archive. Validation is performed against the temporary file before
+    the atomic replace, so downstream inventory/extraction sees only a verified ZIP.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
 
@@ -63,9 +84,15 @@ def download(url: str, destination: Path) -> None:
                     shutil.copyfileobj(response, out, length=1024 * 1024)
                     out.flush()
 
+            _validate_downloaded_archive(temporary_path)
             temporary_path.replace(destination)
             temporary_path = None
             return
+        except CorruptDatasetArchiveError as exc:
+            if attempt == MAX_DOWNLOAD_ATTEMPTS:
+                raise
+            delay = _retry_delay(attempt)
+            reason = str(exc)
         except urllib.error.HTTPError as exc:
             retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
             if not retryable or attempt == MAX_DOWNLOAD_ATTEMPTS:
