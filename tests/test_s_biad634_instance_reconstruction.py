@@ -42,6 +42,20 @@ def test_diagonally_touching_interiors_use_training_four_connectivity() -> None:
     assert np.unique(predicted[predicted > 0]).size == 2
 
 
+def test_diagonally_touching_boundary_only_nuclei_remain_separate() -> None:
+    instances = np.zeros((5, 5), dtype=np.int32)
+    instances[1:3, 1:3] = 10
+    instances[3:5, 3:5] = 30
+
+    semantic = instance_to_boundary_target(instances)
+    assert not np.any(semantic == 1)
+
+    predicted = semantic_to_instances(semantic)
+
+    assert np.unique(predicted[predicted > 0]).size == 2
+    assert np.all(predicted[semantic > 0] > 0)
+
+
 def test_empty_semantic_mask_returns_no_instances() -> None:
     predicted = semantic_to_instances(np.zeros((4, 5), dtype=np.uint8))
 
