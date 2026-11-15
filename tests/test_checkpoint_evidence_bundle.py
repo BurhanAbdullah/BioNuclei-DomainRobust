@@ -88,8 +88,8 @@ def test_persist_evidence_bundle_hashes_and_preserves_source_free_results(tmp_pa
 
 def test_persist_evidence_bundle_rejects_source_image(tmp_path):
     source = tmp_path / "unsafe-results.zip"
-    with zipfile.ZipFile(source, "w") as archive:
-        archive.writestr("results/results.json", b"validated")
+    _write_results_archive(source)
+    with zipfile.ZipFile(source, "a") as archive:
         archive.writestr("results/input.tif", b"source pixels")
 
     with pytest.raises(AssertionError, match="contains the source image"):
