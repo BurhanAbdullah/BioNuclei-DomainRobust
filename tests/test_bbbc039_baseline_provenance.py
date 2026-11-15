@@ -87,11 +87,12 @@ def test_rejects_baseline_run_from_pull_request_branch() -> None:
         )
 
 
-def test_rejects_pull_request_event_even_when_branch_and_repository_match() -> None:
+@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
+def test_rejects_non_push_baseline_events_even_when_branch_and_repository_match(event: str) -> None:
     run, artifacts, comparison = valid_inputs()
-    run["event"] = "pull_request"
+    run["event"] = event
 
-    with pytest.raises(ValueError, match="event must be push or workflow_dispatch"):
+    with pytest.raises(ValueError, match="event must be a reproducible main-branch push"):
         validate_baseline_provenance(
             run, artifacts, comparison,
             expected_sha=EVALUATION_SHA, repository=REPOSITORY,
