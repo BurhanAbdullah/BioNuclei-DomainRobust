@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from webapp import app as scientific_app
 from webapp import community_app
-from webapp.app import RELEASE_CHECKPOINT_SHA256, _checkpoint, _checkpoint_identity
+from webapp.app import RELEASE_CHECKPOINT_SHA256, _checkpoint, _checkpoint_for_inference, _checkpoint_identity
 
 
 def _configure_checkpoint(tmp_path, monkeypatch, expected: str | None = None):
@@ -29,8 +29,7 @@ def test_checkpoint_identity_and_both_health_endpoints_report_actual_digest(tmp_
     assert identity_path == path.resolve()
     assert digest == actual
     assert verified is True
-    with _checkpoint() as checkpoint:
-        assert os.path.samefile(checkpoint, path)
+    assert _checkpoint() == path.resolve()
 
     for payload in (scientific_app.health(), community_app.health()):
         assert payload["status"] == "ok"
@@ -48,8 +47,7 @@ def test_checkpoint_digest_mismatch_blocks_inference_and_degrades_health(tmp_pat
     assert verified is False
 
     with pytest.raises(HTTPException) as exc_info:
-        with _checkpoint():
-            pass
+        _checkpoint()
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -73,8 +71,7 @@ def test_environment_digest_cannot_override_pinned_release(tmp_path, monkeypatch
     assert verified is False
 
     with pytest.raises(HTTPException) as exc_info:
-        with _checkpoint():
-            pass
+        _checkpoint()
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -88,8 +85,7 @@ def test_missing_checkpoint_is_not_reported_healthy(tmp_path, monkeypatch):
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", RELEASE_CHECKPOINT_SHA256)
 
     with pytest.raises(HTTPException) as exc_info:
-        with _checkpoint():
-            pass
+        _checkpoint()
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -108,8 +104,7 @@ def test_invalid_expected_digest_reports_available_unverified_checkpoint_and_fai
     assert verified is False
 
     with pytest.raises(HTTPException) as exc_info:
-        with _checkpoint():
-            pass
+        _checkpoint()
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -147,8 +142,7 @@ def test_checkpoint_digest_cache_reuses_verified_file_and_rejects_replacement(tm
     assert hash_calls == 2
 
     with pytest.raises(HTTPException) as exc_info:
-        with _checkpoint():
-            pass
+        _checkpoint()
     assert exc_info.value.status_code == 503
 
 
@@ -240,7 +234,7 @@ def test_inference_load_uses_verified_inode_after_checkpoint_path_replacement(tm
     if not os.path.isdir("/proc/self/fd") and not os.path.isdir("/dev/fd"):
         pytest.skip("stable descriptor paths require /proc/self/fd or /dev/fd")
 
-    with _checkpoint() as verified_checkpoint:
+    with _checkpoint_for_inference() as verified_checkpoint:
         path.replace(original)
         replacement.replace(path)
         inference._load_model(verified_checkpoint, device="cpu")
