@@ -71,9 +71,9 @@ def validate_baseline_provenance(
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         raise ValueError("baseline run must be completed successfully")
 
-    if run.get("event") not in {"push", "workflow_dispatch"}:
+    if run.get("event") != "push":
         raise ValueError(
-            f"baseline event must be push or workflow_dispatch, got {run.get('event')!r}"
+            f"baseline event must be a reproducible main-branch push, got {run.get('event')!r}"
         )
 
     run_repository = (run.get("repository") or {}).get("full_name")
