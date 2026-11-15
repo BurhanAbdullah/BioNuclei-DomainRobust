@@ -39,7 +39,7 @@ bionuclei-mcp-http
 
 Remote clients must send `Authorization: Bearer <token>` on every HTTP request.
 The server rejects missing, duplicate, or invalid Authorization headers with HTTP 401.
-The token must contain at least 32 UTF-8 bytes and no whitespace.
+The token must contain at least 32 ASCII characters and no whitespace.
 
 **Trust boundary:** MCP tool arguments currently contain paths on the server host, not
 uploaded client files. An authenticated caller can therefore access files available to
