@@ -107,8 +107,9 @@ jobs:
           PY
 
       - name: Run real checkpoint worker and specialist evidence gate
+        id: checkpoint_validation
         env:
-          BIONUCLEI_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-evidence
+          BIONUCLEI_VALIDATION_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence
         run: python scripts/validate_tiled_checkpoint.py
 
       - name: Build isolated image for constrained-memory validation
@@ -164,12 +165,12 @@ jobs:
             '
           done
 
-      - name: Upload runner-only checkpoint evidence
-        if: always()
+      - name: Upload verified runner-only checkpoint evidence
+        if: always() && steps.checkpoint_validation.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-validation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/bionuclei-checkpoint-evidence/
-          if-no-files-found: warn
-          retention-days: 30
+          path: ${{ runner.temp }}/bionuclei-checkpoint-validation-evidence/
+          if-no-files-found: error
+          retention-days: 7
 
