@@ -122,6 +122,27 @@ def test_diagonal_boundary_only_nucleus_is_not_absorbed_by_seeded_component() ->
     assert np.all(predicted[classes > 0] > 0)
 
 
+def test_diagonally_touching_seeded_components_keep_distinct_instance_ids() -> None:
+    classes = np.zeros((6, 6), dtype=np.uint8)
+    classes[1:3, 1:3] = 1
+    classes[3:5, 3:5] = 1
+
+    # These foreground components are separate under the fallback 4-connectivity,
+    # but their interior pixels merge under the old global 8-connected labeling.
+    assert ndimage.label(
+        classes != 0, structure=ndimage.generate_binary_structure(2, 1)
+    )[1] == 2
+    assert ndimage.label(
+        classes == 1, structure=np.ones((3, 3), dtype=np.uint8)
+    )[1] == 1
+
+    predicted = split_boundary_instances(classes)
+
+    assert _instance_count(predicted) == 2
+    assert np.all(predicted[1:3, 1:3] == 1)
+    assert np.all(predicted[3:5, 3:5] == 2)
+
+
 def test_empty_map_returns_an_empty_instance_mask() -> None:
     instances = split_boundary_instances(np.zeros((4, 7), dtype=np.uint8))
 
