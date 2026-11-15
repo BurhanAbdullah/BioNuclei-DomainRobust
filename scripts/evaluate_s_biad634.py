@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np, tifffile, torch
 from scipy import ndimage
 from skimage.io import imread
+from skimage.segmentation import watershed
 from bionuclei.data import decode_instance_mask
 from bionuclei.targets import instance_to_boundary_target
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
@@ -65,23 +66,69 @@ def predict_semantic(model,x,tile_size=512,overlap=32):
 
 
 def semantic_to_instances(classes: np.ndarray) -> np.ndarray:
-    """Recover nucleus instances from 0=background, 1=interior, 2=boundary logits.
+    """Reconstruct full instances, assigning boundary pixels to interior markers.
 
-    Boundary pixels are deliberately excluded: the training target carves them
-    out of each instance to keep adjacent nuclei disconnected. Four-connectivity
-    matches the connectivity used by instance_to_boundary_target.
+    Class 2 is a separating band, not background. Four-connected foreground
+    components keep diagonal contacts distinct; watershed assigns boundary
+    pixels to the interior markers within each component. Boundary-only
+    components are retained as individual instances.
     """
     semantic = np.asarray(classes)
     if semantic.ndim != 2:
         raise ValueError("semantic classes must be a 2-D array")
-    if not np.isin(semantic, (0, 1, 2)).all():
+    if not np.issubdtype(semantic.dtype, np.integer):
+        raise ValueError("semantic classes must have an integer dtype")
+    if np.any((semantic < 0) | (semantic > 2)):
         raise ValueError("semantic classes must contain only 0, 1, and 2")
-    interior = semantic == 1
-    labels, _ = ndimage.label(
-        interior,
-        structure=ndimage.generate_binary_structure(2, 1),
+
+    connectivity_4 = ndimage.generate_binary_structure(2, 1)
+    connectivity_8 = np.ones((3, 3), dtype=np.uint8)
+    foreground = semantic != 0
+    foreground_components, component_count = ndimage.label(
+        foreground,
+        structure=connectivity_4,
     )
-    return labels.astype(np.int32, copy=False)
+    instances = np.zeros(semantic.shape, dtype=np.int32)
+    next_instance_label = 1
+
+    if component_count == 0:
+        return instances
+
+    for component_id, component_slice in enumerate(
+        ndimage.find_objects(foreground_components), start=1
+    ):
+        if component_slice is None:
+            continue
+
+        component_mask = foreground_components[component_slice] == component_id
+        component_interior = (semantic[component_slice] == 1) & component_mask
+        markers, marker_count = ndimage.label(
+            component_interior,
+            structure=connectivity_8,
+        )
+        instance_view = instances[component_slice]
+
+        if marker_count <= 1:
+            instance_view[component_mask] = next_instance_label
+            next_instance_label += 1
+            continue
+
+        distance = ndimage.distance_transform_edt(
+            component_interior
+        ).astype(np.float32, copy=False)
+        local_instances = watershed(
+            -distance,
+            markers,
+            mask=component_mask,
+            connectivity=connectivity_8,
+            watershed_line=False,
+        )
+        instance_view[component_mask] = (
+            local_instances[component_mask] + next_instance_label - 1
+        )
+        next_instance_label += marker_count
+
+    return instances
 
 
 def load_mask(path):return decode_instance_mask(np.asarray(imread(path)))
