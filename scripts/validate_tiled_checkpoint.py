@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import time
 import zipfile
@@ -50,6 +52,78 @@ def build_fixture(path: Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def workflow_identity() -> dict[str, object]:
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    event = json.loads(Path(event_path).read_text(encoding="utf-8")) if event_path else {}
+    require(isinstance(event, dict), "GitHub event payload is not a JSON object")
+    pull_request = event.get("pull_request")
+    pull_request = pull_request if isinstance(pull_request, dict) else {}
+    head = pull_request.get("head")
+    base = pull_request.get("base")
+    head = head if isinstance(head, dict) else {}
+    base = base if isinstance(base, dict) else {}
+    tested_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    require(bool(tested_sha), "Could not determine the checked-out revision")
+    return {
+        "schema_version": 2,
+        "head_sha": head.get("sha") or os.environ.get("GITHUB_SHA") or tested_sha,
+        "base_sha": base.get("sha"),
+        "tested_sha": tested_sha,
+        "github_sha": os.environ.get("GITHUB_SHA"),
+        "run_id": os.environ.get("GITHUB_RUN_ID"),
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+        "event_name": os.environ.get("GITHUB_EVENT_NAME"),
+        "ref": os.environ.get("GITHUB_REF"),
+    }
+
+
+def persist_evidence_bundle(
+    evidence_dir: Path,
+    archive_path: Path,
+    evidence: dict[str, object],
+) -> dict[str, object]:
+    require(archive_path.is_file(), "Validated results archive is missing")
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    copied_archive = evidence_dir / "analysis-results.zip"
+    shutil.copyfile(archive_path, copied_archive)
+    archive_sha = sha256_file(archive_path)
+    copied_sha = sha256_file(copied_archive)
+    require(archive_sha == copied_sha, "Persisted results archive failed SHA-256 readback")
+
+    with zipfile.ZipFile(copied_archive) as saved_archive:
+        names = set(saved_archive.namelist())
+    required = {
+        "results/analysis_report.html",
+        "results/analysis_report.pdf",
+        "results/results.json",
+        "results/expert_agents.json",
+        "results/nuclei_analysis.csv",
+        "results/segmentation_mask.tif",
+        "results/overlay.tif",
+    }
+    require(required.issubset(names), "Persisted results archive is missing required evidence")
+    forbidden = {"input.tif", "input.tiff", "input.nd2", "input_plane.tif", "live-uint16-sentinel.tif"}
+    require(
+        not any(Path(name).name in forbidden for name in names),
+        "Persisted results archive contains the source image",
+    )
+
+    payload = dict(evidence)
+    payload["results_zip_sha256"] = copied_sha
+    payload["results_zip_size_bytes"] = copied_archive.stat().st_size
+    payload["results_zip_entries"] = sorted(names)
+    (evidence_dir / "manifest.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return payload
 
 
 def main() -> None:
@@ -215,7 +289,7 @@ def main() -> None:
             require(after_sha == before_sha,
                     f"Checkpoint bytes changed during analysis: before={before_sha}, after={after_sha}")
 
-            print(json.dumps({
+            evidence: dict[str, object] = {
                 "status": "PASS",
                 "job_id": job_id,
                 "job_timeline": timeline,
@@ -230,13 +304,26 @@ def main() -> None:
                 "measured_max_nuclear_intensity": intensity.get("max_nuclear_intensity"),
                 "specialist_count": len(agents),
                 "specialists": [
-                    {"agent": a.get("agent"), "status": a.get("status"), "evidence_sha256": a.get("evidence_sha256")}
-                    for a in agents
+                    {
+                        "agent": agent.get("agent"),
+                        "status": agent.get("status"),
+                        "evidence_sha256": agent.get("evidence_sha256"),
+                    }
+                    for agent in agents
                 ],
                 "zip_artifacts": sorted(names),
                 "source_image_excluded": True,
                 "checkpoint_unchanged": True,
-            }, indent=2, sort_keys=True))
+                "public_inference": False,
+                "public_upload_attempted": False,
+                "evidence_scope": "GitHub Actions runner only; not public upload or inference",
+            }
+            evidence_dir_raw = os.environ.get("BIONUCLEI_EVIDENCE_DIR")
+            if evidence_dir_raw:
+                evidence.update(workflow_identity())
+                require(archive_path is not None, "Validated results archive was not created")
+                evidence = persist_evidence_bundle(Path(evidence_dir_raw), archive_path, evidence)
+            print(json.dumps(evidence, indent=2, sort_keys=True))
         finally:
             if job_id:
                 try:
