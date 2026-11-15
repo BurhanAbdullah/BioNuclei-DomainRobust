@@ -19,6 +19,8 @@ on:
       - "scripts/live_public_agent_e2e.py"
       - "scripts/render_runtime_parity.py"
       - "tests/test_render_runtime_parity.py"
+      - "webapp/community.Dockerfile"
+      - "webapp/Dockerfile"
       - ".github/workflows/live-public-agent-e2e.yml"
 
 permissions:
@@ -54,7 +56,6 @@ jobs:
       - name: Check out exact tested revision
         uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
