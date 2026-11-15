@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import zipfile
@@ -73,6 +74,15 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert "dataset_zip.infolist()" in inventory["run"]
     assert "inventory_path.write_text" in inventory["run"]
     assert "archive_inventory.json" in inventory["run"]
+    expected_env = inventory["env"]
+    assert expected_env["BIONUCLEI_S_BIAD634_EXPECTED_ARCHIVE_SHA256"] == "8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1"
+    assert expected_env["BIONUCLEI_S_BIAD634_EXPECTED_FILE_COUNT"] == "470"
+    assert expected_env["BIONUCLEI_S_BIAD634_EXPECTED_RAW_IMAGE_COUNT"] == "79"
+    assert expected_env["BIONUCLEI_S_BIAD634_EXPECTED_GROUNDTRUTH_COUNT"] == "79"
+    assert "expected_archive_sha256" in inventory["run"]
+    assert "manifest.get(\"expected_public_license\") != expected_license" in inventory["run"]
+    assert "len(raw_image_files) != expected_raw_image_count" in inventory["run"]
+    assert "len(groundtruth_files) != expected_groundtruth_count" in inventory["run"]
 
     variant = jobs["e5_variant"]
     assert variant["if"] == "${{ inputs.prepare_only != true }}"
@@ -125,7 +135,15 @@ def _inventory_script() -> str:
     return "\n".join(lines[1:-1])
 
 
-def _run_inventory(tmp_path: Path, manifest_overrides: dict[str, object] | None = None):
+def _run_inventory(
+    tmp_path: Path,
+    manifest_overrides: dict[str, object] | None = None,
+    *,
+    expected_archive_sha256: str | None = None,
+    expected_file_count: int | None = None,
+    expected_raw_image_count: int | None = None,
+    expected_groundtruth_count: int | None = None,
+):
     data_root = tmp_path / "data" / "raw" / "S-BIAD634"
     data_root.mkdir(parents=True)
     archive = data_root / "dataset.zip"
@@ -144,6 +162,7 @@ def _run_inventory(tmp_path: Path, manifest_overrides: dict[str, object] | None 
         "dataset": "S-BIAD634 / S-BSST265",
         "source_url": "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip",
         "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "expected_public_license": "CC0",
         "files": files,
         "raw_image_files": [files[0]],
         "groundtruth_files": [files[1]],
@@ -153,12 +172,28 @@ def _run_inventory(tmp_path: Path, manifest_overrides: dict[str, object] | None 
     (data_root / "download_manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
     )
+    env = os.environ.copy()
+    env.update({
+        "BIONUCLEI_S_BIAD634_EXPECTED_ARCHIVE_SHA256": (
+            expected_archive_sha256 or manifest["archive_sha256"]
+        ),
+        "BIONUCLEI_S_BIAD634_EXPECTED_FILE_COUNT": str(
+            expected_file_count if expected_file_count is not None else len(files)
+        ),
+        "BIONUCLEI_S_BIAD634_EXPECTED_RAW_IMAGE_COUNT": str(
+            expected_raw_image_count if expected_raw_image_count is not None else 1
+        ),
+        "BIONUCLEI_S_BIAD634_EXPECTED_GROUNDTRUTH_COUNT": str(
+            expected_groundtruth_count if expected_groundtruth_count is not None else 1
+        ),
+    })
     completed = subprocess.run(
         [sys.executable, "-c", _inventory_script()],
         cwd=tmp_path,
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     return completed, data_root, archive
 
@@ -177,6 +212,10 @@ def test_archive_inventory_counts_real_zip_entries_and_classifies_paths(tmp_path
     assert inventory["manifest_file_count"] == 3
     assert inventory["raw_image_count"] == 1
     assert inventory["groundtruth_count"] == 1
+    assert inventory["expected_archive_sha256"] == inventory["archive_sha256"]
+    assert inventory["expected_file_count"] == 3
+    assert inventory["expected_raw_image_count"] == 1
+    assert inventory["expected_groundtruth_count"] == 1
 
 
 def test_archive_inventory_rejects_same_count_but_different_member_paths(tmp_path: Path) -> None:
@@ -199,3 +238,30 @@ def test_archive_inventory_rejects_misclassified_manifest_paths(tmp_path: Path) 
     )
     assert completed.returncode != 0
     assert "Archive raw-image paths do not match the manifest inventory" in completed.stderr
+
+
+def test_archive_inventory_rejects_unpinned_archive_sha256(tmp_path: Path) -> None:
+    completed, _data_root, _archive = _run_inventory(
+        tmp_path,
+        expected_archive_sha256="0" * 64,
+    )
+    assert completed.returncode != 0
+    assert "pinned S-BIAD634 release" in completed.stderr
+
+
+def test_archive_inventory_rejects_incomplete_target_image_counts(tmp_path: Path) -> None:
+    completed, _data_root, _archive = _run_inventory(
+        tmp_path,
+        expected_raw_image_count=2,
+    )
+    assert completed.returncode != 0
+    assert "raw-image count does not match the pinned S-BIAD634 release" in completed.stderr
+
+
+def test_archive_inventory_rejects_unexpected_public_license(tmp_path: Path) -> None:
+    completed, _data_root, _archive = _run_inventory(
+        tmp_path,
+        {"expected_public_license": "CC-BY-4.0"},
+    )
+    assert completed.returncode != 0
+    assert "does not confirm the pinned CC0 license" in completed.stderr
