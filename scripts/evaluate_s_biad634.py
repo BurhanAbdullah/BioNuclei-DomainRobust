@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np, tifffile, torch
 from scipy import ndimage
 from skimage.io import imread
-from skimage.segmentation import watershed
 from bionuclei.data import decode_instance_mask
 from bionuclei.targets import instance_to_boundary_target
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
@@ -113,18 +112,18 @@ def semantic_to_instances(classes: np.ndarray) -> np.ndarray:
             next_instance_label += 1
             continue
 
-        distance = ndimage.distance_transform_edt(
-            component_interior
-        ).astype(np.float32, copy=False)
-        local_instances = watershed(
-            -distance,
-            markers,
-            mask=component_mask,
-            connectivity=connectivity_8,
-            watershed_line=False,
+        # Assign each foreground pixel to its nearest interior marker with
+        # SciPy's compiled distance transform. This avoids the Python priority
+        # queue and extra watershed buffers under the public worker memory cap.
+        marker_mask = markers > 0
+        nearest_indices = ndimage.distance_transform_edt(
+            ~marker_mask,
+            return_distances=False,
+            return_indices=True,
         )
+        nearest_markers = markers[tuple(nearest_indices)]
         instance_view[component_mask] = (
-            local_instances[component_mask] + next_instance_label - 1
+            nearest_markers[component_mask] + next_instance_label - 1
         )
         next_instance_label += marker_count
 
