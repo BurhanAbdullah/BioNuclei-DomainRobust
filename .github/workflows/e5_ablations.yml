@@ -31,6 +31,11 @@ on:
         description: 'Matched E5 source-training epochs'
         required: false
         default: '20'
+      prepare_only:
+        description: 'Only download, validate and publish the target dataset; skip model training'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   prepare_target_dataset:
@@ -46,6 +51,125 @@ jobs:
           python-version: '3.11'
       - name: Download and inventory target dataset once
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive --skip-extract
+      - name: Record target archive size and digest
+        env:
+          BIONUCLEI_S_BIAD634_EXPECTED_ARCHIVE_SHA256: "8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1"
+          BIONUCLEI_S_BIAD634_EXPECTED_FILE_COUNT: "470"
+          BIONUCLEI_S_BIAD634_EXPECTED_RAW_IMAGE_COUNT: "79"
+          BIONUCLEI_S_BIAD634_EXPECTED_GROUNDTRUTH_COUNT: "79"
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import zipfile
+          from pathlib import Path
+
+          archive = Path("data/raw/S-BIAD634/dataset.zip")
+          manifest_path = Path("data/raw/S-BIAD634/download_manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if not isinstance(manifest, dict):
+              raise SystemExit("Downloaded dataset manifest must be a JSON object")
+
+          expected_dataset = "S-BIAD634 / S-BSST265"
+          expected_source_url = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
+          expected_license = "CC0"
+          expected_archive_sha256 = os.environ.get(
+              "BIONUCLEI_S_BIAD634_EXPECTED_ARCHIVE_SHA256", ""
+          )
+          if (
+              len(expected_archive_sha256) != 64
+              or any(char not in "0123456789abcdef" for char in expected_archive_sha256)
+          ):
+              raise SystemExit("Missing or invalid pinned S-BIAD634 archive SHA-256")
+          expected_file_count = int(os.environ["BIONUCLEI_S_BIAD634_EXPECTED_FILE_COUNT"])
+          expected_raw_image_count = int(os.environ["BIONUCLEI_S_BIAD634_EXPECTED_RAW_IMAGE_COUNT"])
+          expected_groundtruth_count = int(os.environ["BIONUCLEI_S_BIAD634_EXPECTED_GROUNDTRUTH_COUNT"])
+          if manifest.get("dataset") != expected_dataset:
+              raise SystemExit("Downloaded manifest identifies an unexpected target dataset")
+          if manifest.get("source_url") != expected_source_url:
+              raise SystemExit("Downloaded manifest identifies an unexpected BioStudies source")
+          if manifest.get("expected_public_license") != expected_license:
+              raise SystemExit("Downloaded manifest does not confirm the pinned CC0 license")
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          archive_digest = sha256(archive)
+          if archive_digest != expected_archive_sha256:
+              raise SystemExit("Downloaded archive SHA-256 differs from the pinned S-BIAD634 release")
+          if archive_digest != manifest.get("archive_sha256"):
+              raise SystemExit("Downloaded archive digest does not match its manifest")
+
+          manifest_files = manifest.get("files")
+          if (
+              not isinstance(manifest_files, list)
+              or not manifest_files
+              or not all(isinstance(name, str) and name for name in manifest_files)
+              or len(manifest_files) != len(set(manifest_files))
+          ):
+              raise SystemExit("Downloaded dataset manifest has an invalid file inventory")
+
+          with zipfile.ZipFile(archive) as dataset_zip:
+              entries = dataset_zip.infolist()
+              zip_file_names = sorted(
+                  entry.filename for entry in entries if not entry.is_dir()
+              )
+              zip_entry_count = len(entries)
+              zip_file_entry_count = len(zip_file_names)
+              zip_directory_entry_count = sum(entry.is_dir() for entry in entries)
+
+          if zip_file_names != sorted(manifest_files):
+              raise SystemExit("Archive file paths do not match the manifest file inventory")
+
+          raw_image_files = [
+              name for name in zip_file_names if "/rawimages/" in f"/{name}"
+          ]
+          groundtruth_files = [
+              name for name in zip_file_names if "/groundtruth/" in f"/{name}"
+          ]
+          if manifest.get("raw_image_files") != raw_image_files:
+              raise SystemExit("Archive raw-image paths do not match the manifest inventory")
+          if manifest.get("groundtruth_files") != groundtruth_files:
+              raise SystemExit("Archive ground-truth paths do not match the manifest inventory")
+
+          manifest_file_count = len(manifest_files)
+          if manifest_file_count != expected_file_count:
+              raise SystemExit("Archive file count does not match the pinned S-BIAD634 release")
+          if len(raw_image_files) != expected_raw_image_count:
+              raise SystemExit("Archive raw-image count does not match the pinned S-BIAD634 release")
+          if len(groundtruth_files) != expected_groundtruth_count:
+              raise SystemExit("Archive ground-truth count does not match the pinned S-BIAD634 release")
+
+          inventory = {
+              "dataset": expected_dataset,
+              "source_url": expected_source_url,
+              "expected_public_license": expected_license,
+              "expected_archive_sha256": expected_archive_sha256,
+              "expected_file_count": expected_file_count,
+              "expected_raw_image_count": expected_raw_image_count,
+              "expected_groundtruth_count": expected_groundtruth_count,
+              "archive_bytes": archive.stat().st_size,
+              "archive_sha256": archive_digest,
+              "manifest_sha256": sha256(manifest_path),
+              "zip_entry_count": zip_entry_count,
+              "zip_file_entry_count": zip_file_entry_count,
+              "zip_directory_entry_count": zip_directory_entry_count,
+              "manifest_file_count": manifest_file_count,
+              "raw_image_count": len(raw_image_files),
+              "groundtruth_count": len(groundtruth_files),
+          }
+          inventory_path = archive.parent / "archive_inventory.json"
+          inventory_path.write_text(
+              json.dumps(inventory, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(inventory, indent=2, sort_keys=True))
+          PY
       - name: Publish shared target dataset artifact
         uses: actions/upload-artifact@v4
         with:
@@ -53,11 +177,13 @@ jobs:
           path: |
             data/raw/S-BIAD634/dataset.zip
             data/raw/S-BIAD634/download_manifest.json
+            data/raw/S-BIAD634/archive_inventory.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
 
   e5_variant:
+    if: ${{ inputs.prepare_only != true }}
     needs: prepare_target_dataset
     name: E5 ${{ matrix.variant }}
     runs-on: ubuntu-latest
@@ -142,6 +268,7 @@ jobs:
           retention-days: 30
 
   e5_gate:
+    if: ${{ inputs.prepare_only != true }}
     name: E5 completeness and comparator gate
     needs:
       - e5_variant
