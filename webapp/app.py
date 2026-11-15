@@ -159,7 +159,7 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
 
 
 @contextmanager
-def _checkpoint() -> Iterator[Path]:
+def _checkpoint_for_inference() -> Iterator[Path]:
     """Expose only the verified open checkpoint inode to the memory-mapped loader."""
     with _checkpoint_handle() as (_path, _actual, verified, stream):
         if not verified:
@@ -189,6 +189,18 @@ def _checkpoint() -> Iterator[Path]:
                 detail="Verified checkpoint cannot be loaded through a stable file descriptor",
             )
         yield descriptor_path
+
+
+
+def _checkpoint() -> Path:
+    """Fail closed when the configured checkpoint is not the pinned release."""
+    path, _actual, verified = _checkpoint_identity()
+    if not verified:
+        raise HTTPException(
+            status_code=503,
+            detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+        )
+    return path
 
 
 async def _save_upload(upload: UploadFile, suffix: str = ".tif") -> Path:
@@ -307,7 +319,7 @@ async def predict_api(image: Annotated[UploadFile, File(...)], device: Annotated
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
             output_dir = Path(out)
-            with _checkpoint() as checkpoint:
+            with _checkpoint_for_inference() as checkpoint:
                 result = predict(image_path, checkpoint, output_dir, device)
             result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
@@ -328,7 +340,7 @@ async def evaluate_api(
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
             output_dir = Path(out)
-            with _checkpoint() as checkpoint:
+            with _checkpoint_for_inference() as checkpoint:
                 result = evaluate(image_path, gt_path, checkpoint, output_dir, device)
             result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
