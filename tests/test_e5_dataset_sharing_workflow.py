@@ -122,7 +122,7 @@ def _inventory_script() -> str:
     command = step["run"]
     lines = command.splitlines()
     assert lines[0] == "python - <<'PY'" and lines[-1] == "PY"
-    return "\\n".join(lines[1:-1])
+    return "\n".join(lines[1:-1])
 
 
 def _run_inventory(tmp_path: Path, manifest_overrides: dict[str, object] | None = None):
