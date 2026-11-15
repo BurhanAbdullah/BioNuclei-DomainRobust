@@ -107,6 +107,8 @@ jobs:
           PY
 
       - name: Run real checkpoint worker and specialist evidence gate
+        env:
+          BIONUCLEI_EVIDENCE_DIR: ${{ runner.temp }}/bionuclei-checkpoint-evidence
         run: python scripts/validate_tiled_checkpoint.py
 
       - name: Build isolated image for constrained-memory validation
@@ -161,3 +163,13 @@ jobs:
               [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
             '
           done
+
+      - name: Upload runner-only checkpoint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-validation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bionuclei-checkpoint-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
