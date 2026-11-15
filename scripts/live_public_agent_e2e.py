@@ -59,11 +59,6 @@ def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
     return connect_timeout, read_timeout
 
 
-def _health_response_within_budget(completed_at: float, deadline: float) -> bool:
-    """Accept a health response only if it completed before the monotonic deadline."""
-    return completed_at <= deadline
-
-
 def _probe_api_health(
     api_base: str,
     *,
@@ -77,7 +72,8 @@ def _probe_api_health(
 
     Requests' read timeout is an inactivity timeout, not a total response deadline.
     Stream one byte at a time with a short socket-read cap so a slow-trickle response
-    cannot keep the readiness gate alive indefinitely.
+    cannot keep the readiness gate alive indefinitely. A single blocked read may
+    overrun the deadline by at most the configured socket-read cap.
     """
     if budget_seconds <= 0:
         raise ValueError("health readiness budget must be positive")
@@ -92,6 +88,10 @@ def _probe_api_health(
     while True:
         remaining = deadline - monotonic()
         if remaining <= 0:
+            if response is None and request_error is not None:
+                request_error = "ReadinessBudgetExceeded"
+                if attempts:
+                    attempts[-1]["readiness_budget_exhausted"] = True
             break
         attempt_started = monotonic()
         attempt_record: dict[str, object] = {"attempt": attempt + 1}
@@ -101,6 +101,7 @@ def _probe_api_health(
                 f"{api_base}/health",
                 timeout=_health_request_timeout(remaining),
                 stream=True,
+                allow_redirects=False,
             )
             attempt_record["http_status"] = candidate.status_code
             if monotonic() >= deadline:
