@@ -199,7 +199,6 @@ def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverifie
     assert "does not match the expected release SHA-256" in response.json()["detail"]
 
 
-
 def test_inference_load_uses_verified_inode_after_checkpoint_path_replacement(tmp_path, monkeypatch):
     import torch
     from bionuclei import inference
