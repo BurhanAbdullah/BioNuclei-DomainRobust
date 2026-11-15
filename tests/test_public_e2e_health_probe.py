@@ -63,7 +63,6 @@ def _health_helpers() -> dict[str, object]:
         "HEALTH_READ_TIMEOUT_CAP_SECONDS",
         "HEALTH_RESPONSE_MAX_BYTES",
         "_health_request_timeout",
-        "_health_response_within_budget",
         "_probe_api_health",
         "_HealthReadinessBudgetExceeded",
         "_HealthResponseTooLarge",
@@ -106,7 +105,7 @@ def test_health_probe_recovers_after_realistic_cold_start_retries() -> None:
     calls = 0
     response = _Response(200, body=b'{"status":"ok"}')
 
-    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
         nonlocal calls
         calls += 1
         assert stream is True
@@ -141,7 +140,7 @@ def test_health_probe_rejects_a_response_after_the_deadline() -> None:
     clock = _Clock()
     response = _Response(200, body=b'{"status":"ok"}')
 
-    def late_get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def late_get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
         clock.now += 180.0
         return response
 
@@ -170,7 +169,7 @@ def test_health_probe_stops_slow_trickle_body_at_total_deadline() -> None:
         seconds_per_chunk=1.0,
     )
 
-    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
         return response
 
     result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
@@ -193,7 +192,7 @@ def test_health_probe_rejects_oversized_response_body() -> None:
     helpers = _health_helpers()
     response = _Response(200, body=b"x" * (64 * 1024 + 1))
 
-    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
         return response
 
     result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
@@ -217,7 +216,7 @@ def test_health_probe_clears_stale_timeout_after_recovery() -> None:
     calls = 0
     response = _Response(200, body=b'{"status":"ok"}')
 
-    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -247,8 +246,15 @@ def test_health_probe_stops_at_one_total_budget() -> None:
     helpers = _health_helpers()
     clock = _Clock()
 
-    def timeout_get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def timeout_get(
+        _url: str,
+        *,
+        timeout: tuple[float, float],
+        stream: bool,
+        allow_redirects: bool,
+    ) -> _Response:
         assert stream is True
+        assert allow_redirects is False
         clock.now += sum(timeout)
         raise _ReadTimeout("still starting")
 
@@ -264,23 +270,30 @@ def test_health_probe_stops_at_one_total_budget() -> None:
     assert request_error == "ReadinessBudgetExceeded"
     assert len(attempts) > 2
     assert clock.now == pytest.approx(179.0)
+    assert attempts[-1]["readiness_budget_exhausted"] is True
     assert payload is None
-
 
 def test_http_response_clears_stale_timeout_even_when_service_is_not_ready() -> None:
     helpers = _health_helpers()
     clock = _Clock()
     calls = 0
-    response = _Response(503, "service unavailable")
+    response_503 = _Response(503, "service unavailable")
+    response_200 = _Response(200, body=b'{"status":"ok"}')
 
-    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def get(
+        _url: str,
+        *,
+        timeout: tuple[float, float],
+        stream: bool,
+        allow_redirects: bool,
+    ) -> _Response:
         nonlocal calls
         calls += 1
         if calls == 1:
             clock.now += sum(timeout)
             raise _ReadTimeout("temporary cold start")
         clock.now += 0.1
-        return response
+        return response_503 if calls == 2 else response_200
 
     result, attempts, request_error, body, payload = helpers["_probe_api_health"](
         "https://api.example.test",
@@ -288,22 +301,25 @@ def test_http_response_clears_stale_timeout_even_when_service_is_not_ready() -> 
         request_exception=_ReadTimeout,
         monotonic=clock.monotonic,
         sleep=clock.sleep,
-        budget_seconds=20.0,
+        budget_seconds=30.0,
     )
 
-    assert result is response and result.status_code == 503
-    assert len(attempts) == 2
+    assert result is response_200 and result.status_code == 200
+    assert len(attempts) == 3
+    assert attempts[0]["error"] == "_ReadTimeout"
+    assert attempts[1]["http_status"] == 503
+    assert "error" not in attempts[1]
     assert request_error is None
-    assert body == "service unavailable"
-    assert payload is None
-    assert response.closed
-
+    assert body is None
+    assert payload == {"status": "ok"}
+    assert response_503.closed
+    assert response_200.closed
 
 def test_invalid_health_json_fails_closed_and_closes_response() -> None:
     helpers = _health_helpers()
     response = _Response(200, body=b"not-json")
 
-    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
         return response
 
     result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
