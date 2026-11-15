@@ -106,6 +106,18 @@ def test_rejects_baseline_when_training_inputs_changed() -> None:
         )
 
 
+def test_unrelated_main_branch_scripts_do_not_invalidate_baseline() -> None:
+    unrelated_paths = (
+        "scripts/aggregate_e6_fraction_evidence.py",
+        "scripts/download_aitslab_bioimaging1.py",
+        "scripts/live_public_agent_e2e.py",
+        "scripts/public_e2e_schedule_watchdog.py",
+        "scripts/download_s_biad634.py",
+    )
+    for path in unrelated_paths:
+        assert is_baseline_input_change(path) is False, path
+
+
 def test_unknown_script_changes_fail_closed() -> None:
     assert is_baseline_input_change("scripts/new_training_pipeline.py") is True
     assert is_baseline_input_change("scripts/train_bbbc039.py") is True
