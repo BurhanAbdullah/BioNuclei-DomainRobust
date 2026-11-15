@@ -27,10 +27,8 @@ class _DisconnectAfterFirstRead(io.BytesIO):
         return super().read(size)
 
 
-
 def _part_files(destination: Path) -> list[Path]:
     return list(destination.parent.glob(f".{destination.name}.*.part"))
-
 
 
 def _zip_bytes(payload: bytes = b"dataset member", *, corrupt: bool = False) -> bytes:
@@ -43,7 +41,6 @@ def _zip_bytes(payload: bytes = b"dataset member", *, corrupt: bool = False) -> 
         member_offset = 30 + filename_length + extra_length
         data[member_offset] ^= 0xFF
     return bytes(data)
-
 
 
 def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
@@ -78,7 +75,6 @@ def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
     assert _part_files(destination) == []
 
 
-
 def test_download_retries_transient_http_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     destination = tmp_path / "dataset.zip"
     delays: list[float] = []
@@ -106,9 +102,8 @@ def test_download_retries_transient_http_status(tmp_path: Path, monkeypatch: pyt
 
     assert calls == 2
     assert delays == [2]
-    assert destination.read_bytes() == b"complete archive"
+    assert destination.read_bytes() == valid_archive
     assert _part_files(destination) == []
-
 
 
 def test_download_does_not_retry_permanent_http_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -142,7 +137,6 @@ def test_download_does_not_retry_permanent_http_error(tmp_path: Path, monkeypatc
     assert delays == []
     assert destination.read_bytes() == b"previous complete archive"
     assert _part_files(destination) == []
-
 
 
 def test_download_stops_after_bounded_transient_failures_without_partial_archive(
@@ -204,7 +198,6 @@ def test_download_retries_crc_invalid_archive_before_replacing_destination(
     assert _part_files(destination) == []
 
 
-
 def test_download_stops_after_bounded_crc_invalid_archives_without_replacing_destination(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -232,7 +225,6 @@ def test_download_stops_after_bounded_crc_invalid_archives_without_replacing_des
     assert _part_files(destination) == []
 
 
-
 def test_download_validates_expansion_limits_before_crc_scan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -258,7 +250,6 @@ def test_download_validates_expansion_limits_before_crc_scan(
     assert _part_files(destination) == []
 
 
-
 def _write_archive(path: Path, members: dict[str, bytes]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as archive:
@@ -266,13 +257,11 @@ def _write_archive(path: Path, members: dict[str, bytes]) -> None:
             archive.writestr(name, content)
 
 
-
 def _stub_download(source: Path):
     def copy_archive(_url: str, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source.read_bytes())
     return copy_archive
-
 
 
 def test_skip_extract_inventories_zip_without_writing_archive_paths(
@@ -314,7 +303,6 @@ def test_skip_extract_inventories_zip_without_writing_archive_paths(
     assert not (tmp_path / "escape.txt").exists()
 
 
-
 def test_default_download_uses_manifest_verified_safe_extractor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -339,7 +327,6 @@ def test_default_download_uses_manifest_verified_safe_extractor(
 
     assert (root / "extracted/dataset/rawimages/image_001.tif").read_bytes() == b"raw"
     assert (root / "extracted/dataset/groundtruth/mask_001.tif").read_bytes() == b"mask"
-
 
 
 def test_default_download_rejects_zip_path_traversal_before_writing(
@@ -405,9 +392,6 @@ def test_custom_source_url_is_bound_and_safely_extracted(
     assert (root / "extracted/dataset/rawimages/image_001.tif").read_bytes() == b"raw"
 
 
-
-
-
 def test_download_rejects_oversized_archive_without_replacing_existing_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -425,7 +409,6 @@ def test_download_rejects_oversized_archive_without_replacing_existing_file(
 
     assert destination.read_bytes() == b"previous complete archive"
     assert _part_files(destination) == []
-
 
 
 def test_skip_extract_validates_expansion_limits_before_crc_scan(
