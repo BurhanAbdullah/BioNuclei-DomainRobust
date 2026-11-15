@@ -200,8 +200,16 @@ _FORBIDDEN_SOURCE_BASENAMES = frozenset({
 })
 
 
-def validate_result_archive(archive_path: Path, source_filename: str) -> list[str]:
-    """Require every downloadable deliverable, valid ZIP data, and no source image."""
+def validate_result_archive(
+    archive_path: Path,
+    source_filename: str,
+    source_sha256: str,
+) -> list[str]:
+    """Require complete outputs and exclude the source by name and exact bytes."""
+    require(
+        bool(re.fullmatch(r"[0-9a-f]{64}", source_sha256)),
+        "source SHA-256 must be a lowercase 64-character hex digest",
+    )
     try:
         with zipfile.ZipFile(archive_path) as archive:
             entries = archive.infolist()
@@ -229,6 +237,24 @@ def validate_result_archive(archive_path: Path, source_filename: str) -> list[st
                 if name.replace("\\", "/").rsplit("/", 1)[-1].lower() in forbidden
             )
             require(not leaked, f"ZIP contains the uploaded source image or extracted source plane: {leaked}")
+
+            # Filename checks cannot detect a source image renamed to an arbitrary
+            # archive member. Compare every member's uncompressed bytes to the
+            # exact uploaded fixture digest without loading large files at once.
+            byte_matches: list[str] = []
+            for entry in entries:
+                if entry.is_dir():
+                    continue
+                digest = hashlib.sha256()
+                with archive.open(entry, "r") as member:
+                    for chunk in iter(lambda: member.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                if digest.hexdigest() == source_sha256:
+                    byte_matches.append(entry.filename)
+            require(
+                not byte_matches,
+                f"ZIP contains uploaded source image bytes under an arbitrary filename: {byte_matches}",
+            )
             return sorted(names)
     except zipfile.BadZipFile as exc:
         raise AssertionError("Result archive is not a valid ZIP") from exc
@@ -368,7 +394,7 @@ def main() -> None:
                         f"Required scientific artifact is missing or empty: {name}")
 
             archive_path = community.get_archive(job_id, owner)
-            names = set(validate_result_archive(archive_path, fixture.name))
+            names = set(validate_result_archive(archive_path, fixture.name, fixture_sha))
 
             job_dir = community._job_dir(job_id)
             require(not (job_dir / "input.tif").exists(),
