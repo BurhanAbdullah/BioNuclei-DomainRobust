@@ -94,7 +94,7 @@ jobs:
           }
           inventory_path = archive.parent / "archive_inventory.json"
           inventory_path.write_text(
-              json.dumps(inventory, indent=2, sort_keys=True) + "\\n",
+              json.dumps(inventory, indent=2, sort_keys=True) + "\n",
               encoding="utf-8",
           )
           print(json.dumps(inventory, indent=2, sort_keys=True))
