@@ -15,17 +15,42 @@ The MCP SDK handles protocol framing; scientific computation remains inside the 
 
 ## Hosted MCP mode
 
-For an agent or shared client that needs a network endpoint, use Streamable HTTP:
+Streamable HTTP binds to loopback by default. This is suitable for a local agent or a
+trusted process on the same machine:
 
 ```bash
 python -m pip install -e '.[mcp]'
+BIOMCP_MCP_HOST=127.0.0.1 \
+BIOMCP_MCP_PORT=8001 \
+BIOMCP_STREAMABLE_HTTP_PATH=/mcp \
+bionuclei-mcp-http
+```
+
+A non-loopback bind is refused unless a strong bearer token is configured. Generate
+a fresh secret and keep it out of source control, command history, and logs:
+
+```bash
+export BIOMCP_MCP_BEARER_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 BIOMCP_MCP_HOST=0.0.0.0 \
 BIOMCP_MCP_PORT=8001 \
 BIOMCP_STREAMABLE_HTTP_PATH=/mcp \
 bionuclei-mcp-http
 ```
 
-The current MCP Python SDK documents Streamable HTTP as the deployment transport; SSE is retained only for legacy clients. The repository therefore does not build new deployment paths on SSE.
+Remote clients must send `Authorization: Bearer <token>` on every HTTP request.
+The server rejects missing, duplicate, or invalid Authorization headers with HTTP 401.
+The token must contain at least 32 UTF-8 bytes and no whitespace.
+
+**Trust boundary:** MCP tool arguments currently contain paths on the server host, not
+uploaded client files. An authenticated caller can therefore access files available to
+the server process through the registered path-based tools. Only share the bearer token
+with trusted clients; do not expose this server as a public multi-tenant service. Use
+separate isolated workers and per-user authorization before serving mutually untrusted
+users.
+
+The current MCP Python SDK documents Streamable HTTP as the deployment transport; SSE
+is retained only for legacy clients. The repository therefore does not build new
+deployment paths on SSE.
 
 ## Browser website
 
