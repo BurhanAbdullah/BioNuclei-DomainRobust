@@ -143,6 +143,34 @@ def test_diagonally_touching_seeded_components_keep_distinct_instance_ids() -> N
     assert np.all(predicted[3:5, 3:5] == 2)
 
 
+
+def test_diagonal_interior_markers_stay_distinct_inside_boundary_connected_component() -> None:
+    classes = np.array(
+        [
+            [1, 2, 0],
+            [2, 1, 2],
+            [0, 2, 0],
+        ],
+        dtype=np.uint8,
+    )
+
+    # The boundary bridge makes one foreground component, but the two
+    # diagonal interior markers remain separate under target 4-connectivity.
+    assert ndimage.label(
+        classes != 0, structure=ndimage.generate_binary_structure(2, 1)
+    )[1] == 1
+    assert ndimage.label(
+        classes == 1, structure=ndimage.generate_binary_structure(2, 1)
+    )[1] == 2
+    assert ndimage.label(
+        classes == 1, structure=np.ones((3, 3), dtype=np.uint8)
+    )[1] == 1
+
+    predicted = split_boundary_instances(classes)
+
+    assert _instance_count(predicted) == 2
+
+
 def test_empty_map_returns_an_empty_instance_mask() -> None:
     instances = split_boundary_instances(np.zeros((4, 7), dtype=np.uint8))
 
