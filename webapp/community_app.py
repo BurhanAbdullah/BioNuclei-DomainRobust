@@ -83,7 +83,8 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
         )
     # Reject uploads before authentication, job creation, or persistent storage
     # when the configured model is not the immutable release checkpoint.
-    community_service._checkpoint()
+    with community_service._checkpoint():
+        pass
     user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
