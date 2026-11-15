@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 
 if __package__:
@@ -50,6 +51,25 @@ def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 def _retry_delay(attempt: int) -> float:
     return min(RETRY_BASE_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_SECONDS)
+
+
+class CorruptDatasetArchiveError(RuntimeError):
+    """A completed HTTP transfer did not produce a readable, CRC-valid ZIP."""
+
+
+def _validate_downloaded_archive(path: Path) -> None:
+    """Validate every member before the temporary archive can replace the destination."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            corrupt_member = archive.testzip()
+    except (zipfile.BadZipFile, EOFError, zlib.error) as exc:
+        raise CorruptDatasetArchiveError(
+            "downloaded dataset is not a valid, readable ZIP archive"
+        ) from exc
+    if corrupt_member is not None:
+        raise CorruptDatasetArchiveError(
+            f"downloaded dataset ZIP contains a corrupt member: {corrupt_member}"
+        )
 
 
 def download(url: str, destination: Path) -> None:
@@ -96,9 +116,15 @@ def download(url: str, destination: Path) -> None:
                         out.write(chunk)
                     out.flush()
 
+            _validate_downloaded_archive(temporary_path)
             temporary_path.replace(destination)
             temporary_path = None
             return
+        except CorruptDatasetArchiveError as exc:
+            if attempt == MAX_DOWNLOAD_ATTEMPTS:
+                raise
+            delay = _retry_delay(attempt)
+            reason = str(exc)
         except urllib.error.HTTPError as exc:
             retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
             if not retryable or attempt == MAX_DOWNLOAD_ATTEMPTS:
