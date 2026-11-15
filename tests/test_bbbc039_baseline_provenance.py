@@ -214,6 +214,21 @@ def test_unrelated_main_branch_scripts_do_not_invalidate_baseline() -> None:
         assert is_baseline_input_change(path) is False, path
 
 
+def test_only_known_unrelated_workflows_are_exempt() -> None:
+    unrelated_workflows = (
+        ".github/workflows/e6_e7_uncertainty_analysis.yml",
+        ".github/workflows/e6_external_few_shot.yml",
+        ".github/workflows/e6_retry_watchdog.yml",
+        ".github/workflows/live-public-agent-e2e.yml",
+        ".github/workflows/public-e2e-schedule-watchdog.yml",
+        ".github/workflows/s_biad634_zero_shot.yml",
+    )
+    for path in unrelated_workflows:
+        assert is_baseline_input_change(path) is False, path
+
+    assert is_baseline_input_change(".github/workflows/new_training_workflow.yml") is True
+
+
 def test_unknown_script_changes_fail_closed() -> None:
     assert is_baseline_input_change("scripts/new_training_pipeline.py") is True
     assert is_baseline_input_change("scripts/train_bbbc039.py") is True
