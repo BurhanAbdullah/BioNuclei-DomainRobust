@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 
@@ -242,3 +243,31 @@ def test_inference_load_uses_verified_inode_after_checkpoint_path_replacement(tm
     assert loaded["marker"].tolist() == [111]
     assert hashlib.sha256(original.read_bytes()).hexdigest() == actual
     assert path.read_bytes() != original.read_bytes()
+
+
+
+def test_inference_snapshot_is_sealed_against_in_place_checkpoint_mutation(tmp_path, monkeypatch):
+    path, actual = _configure_checkpoint(tmp_path, monkeypatch)
+    original = path.read_bytes()
+
+    with _checkpoint_for_inference() as verified_checkpoint:
+        assert verified_checkpoint.read_bytes() == original
+
+        # Mutate the same source inode after verification and snapshot creation.
+        path.write_bytes(b"modified bytes on the original inode")
+        assert path.read_bytes() != original
+        assert verified_checkpoint.read_bytes() == original
+
+        snapshot_fd = int(verified_checkpoint.name)
+        seals = fcntl.fcntl(snapshot_fd, fcntl.F_GET_SEALS)
+        assert seals & fcntl.F_SEAL_WRITE
+        assert seals & fcntl.F_SEAL_GROW
+        assert seals & fcntl.F_SEAL_SHRINK
+        assert seals & fcntl.F_SEAL_SEAL
+
+        writable_fd = os.open(verified_checkpoint, os.O_WRONLY)
+        try:
+            with pytest.raises(OSError):
+                os.write(writable_fd, b"tamper")
+        finally:
+            os.close(writable_fd)
