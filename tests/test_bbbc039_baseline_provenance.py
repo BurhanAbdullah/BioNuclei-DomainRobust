@@ -298,3 +298,31 @@ def test_zero_shot_workflow_is_main_only() -> None:
     )
     assert download["uses"] == "actions/download-artifact@v8"
     assert download["with"]["digest-mismatch"] == "error"
+
+
+
+def test_zero_shot_checkpoint_loader_uses_weights_only(monkeypatch, tmp_path):
+    from scripts import evaluate_s_biad634
+
+    checkpoint_path = tmp_path / "baseline.pt"
+    expected = {"model": {"weight": object()}, "config": {"model": {}}}
+    observed = {}
+
+    def safe_load(path, *, map_location, weights_only):
+        observed.update(
+            {
+                "path": Path(path),
+                "map_location": map_location,
+                "weights_only": weights_only,
+            }
+        )
+        return expected
+
+    monkeypatch.setattr(evaluate_s_biad634.torch, "load", safe_load)
+
+    assert evaluate_s_biad634.load_checkpoint(checkpoint_path) is expected
+    assert observed == {
+        "path": checkpoint_path,
+        "map_location": "cpu",
+        "weights_only": True,
+    }
