@@ -213,7 +213,17 @@ def validate_result_archive(
     try:
         with zipfile.ZipFile(archive_path) as archive:
             entries = archive.infolist()
-            names = {entry.filename for entry in entries}
+            seen_names: set[str] = set()
+            duplicate_names: set[str] = set()
+            for entry in entries:
+                if entry.filename in seen_names:
+                    duplicate_names.add(entry.filename)
+                seen_names.add(entry.filename)
+            require(
+                not duplicate_names,
+                f"ZIP contains duplicate entries: {sorted(duplicate_names)}",
+            )
+            names = seen_names
             missing = sorted(_REQUIRED_RESULT_ARCHIVE_ENTRIES - names)
             require(not missing, f"ZIP missing required artifacts: {missing}")
 
