@@ -11,19 +11,27 @@ import argparse
 import hashlib
 import http.client
 import json
-import shutil
 import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 
 if __package__:
-    from .extract_s_biad634_archive import _safe_member, extract_verified_dataset
+    from .extract_s_biad634_archive import (
+        MAX_ARCHIVE_BYTES,
+        extract_verified_dataset,
+        validated_member_names,
+    )
 else:
-    from extract_s_biad634_archive import _safe_member, extract_verified_dataset
+    from extract_s_biad634_archive import (
+        MAX_ARCHIVE_BYTES,
+        extract_verified_dataset,
+        validated_member_names,
+    )
 
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
 DOWNLOAD_TIMEOUT_SECONDS = 120
@@ -45,6 +53,27 @@ def _retry_delay(attempt: int) -> float:
     return min(RETRY_BASE_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_SECONDS)
 
 
+class CorruptDatasetArchiveError(RuntimeError):
+    """A completed HTTP transfer did not produce a readable, CRC-valid ZIP."""
+
+
+def _validate_downloaded_archive(path: Path) -> None:
+    """Validate every member before the temporary archive can replace the destination."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            # Apply entry/path/expansion limits before CRC scanning decompresses members.
+            validated_member_names(archive.infolist())
+            corrupt_member = archive.testzip()
+    except (zipfile.BadZipFile, EOFError, zlib.error) as exc:
+        raise CorruptDatasetArchiveError(
+            "downloaded dataset is not a valid, readable ZIP archive"
+        ) from exc
+    if corrupt_member is not None:
+        raise CorruptDatasetArchiveError(
+            f"downloaded dataset ZIP contains a corrupt member: {corrupt_member}"
+        )
+
+
 def download(url: str, destination: Path) -> None:
     """Download atomically, retrying only transient transport/server failures.
 
@@ -57,6 +86,19 @@ def download(url: str, destination: Path) -> None:
         temporary_path: Path | None = None
         try:
             with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+                headers = getattr(response, "headers", None)
+                content_length = headers.get("Content-Length") if headers is not None else None
+                if content_length:
+                    try:
+                        declared_size = int(content_length)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("BioStudies returned an invalid Content-Length") from exc
+                    if declared_size > MAX_ARCHIVE_BYTES:
+                        raise ValueError(
+                            f"BioStudies archive exceeds the compressed-size limit "
+                            f"({declared_size} > {MAX_ARCHIVE_BYTES} bytes)"
+                        )
+
                 with tempfile.NamedTemporaryFile(
                     mode="wb",
                     prefix=f".{destination.name}.",
@@ -65,12 +107,26 @@ def download(url: str, destination: Path) -> None:
                     delete=False,
                 ) as out:
                     temporary_path = Path(out.name)
-                    shutil.copyfileobj(response, out, length=1024 * 1024)
+                    total_bytes = 0
+                    while chunk := response.read(1024 * 1024):
+                        total_bytes += len(chunk)
+                        if total_bytes > MAX_ARCHIVE_BYTES:
+                            raise ValueError(
+                                f"BioStudies archive exceeds the compressed-size limit "
+                                f"({total_bytes} > {MAX_ARCHIVE_BYTES} bytes)"
+                            )
+                        out.write(chunk)
                     out.flush()
 
+            _validate_downloaded_archive(temporary_path)
             temporary_path.replace(destination)
             temporary_path = None
             return
+        except CorruptDatasetArchiveError as exc:
+            if attempt == MAX_DOWNLOAD_ATTEMPTS:
+                raise
+            delay = _retry_delay(attempt)
+            reason = str(exc)
         except urllib.error.HTTPError as exc:
             retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
             if not retryable or attempt == MAX_DOWNLOAD_ATTEMPTS:
@@ -111,18 +167,12 @@ def main() -> None:
     archive_hash = sha256(archive)
 
     with zipfile.ZipFile(archive) as zf:
+        # Validate paths and declared expansion sizes before CRC verification
+        # decompresses any member, including in inventory-only mode.
+        files = sorted(validated_member_names(zf.infolist()))
         bad = zf.testzip()
         if bad is not None:
             raise SystemExit(f"Corrupt ZIP member: {bad}")
-        # Inventory ZIP metadata without writing archive-controlled paths.
-        # Extraction is delegated to the manifest-verifying safe extractor.
-        files = sorted(
-            name
-            for info in zf.infolist()
-            if (name := _safe_member(info)) is not None
-        )
-    if len(files) != len(set(files)):
-        raise SystemExit("Duplicate file paths in S-BIAD634 archive")
     raw = [p for p in files if "/rawimages/" in f"/{p}"]
     groundtruth = [p for p in files if "/groundtruth/" in f"/{p}"]
     metadata = [p for p in files if p.lower().endswith((".txt", ".csv", ".tsv"))]

@@ -15,6 +15,14 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 DATASET = "S-BIAD634 / S-BSST265"
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
 
+# S-BSST265 documents 79 fluorescence images; the archive also carries
+# annotations and metadata. Keep explicit operational ceilings so ZIP metadata
+# cannot trigger unbounded decompression before the manifest is checked.
+MAX_ARCHIVE_BYTES = 600 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 512
+MAX_MEMBER_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_UNCOMPRESSED_BYTES = 768 * 1024 * 1024
+
 
 def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.sha256()
@@ -40,9 +48,56 @@ def _safe_member(info: zipfile.ZipInfo) -> str | None:
         or stat.S_ISLNK(info.external_attr >> 16)
     ):
         raise ValueError(f"Unsafe target-dataset ZIP member: {name!r}")
+    file_type = stat.S_IFMT(info.external_attr >> 16)
+    if file_type not in (0, stat.S_IFREG, stat.S_IFDIR):
+        raise ValueError(f"Unsupported target-dataset ZIP member type: {name!r}")
     if info.is_dir():
         return None
     return name
+
+
+def validated_member_names(infos: list[zipfile.ZipInfo]) -> list[str]:
+    """Validate ZIP paths and declared expansion sizes before reading member data."""
+    if len(infos) > MAX_ARCHIVE_ENTRIES:
+        raise ValueError(
+            f"Target-dataset ZIP has {len(infos)} entries; maximum is {MAX_ARCHIVE_ENTRIES}"
+        )
+
+    members: list[str] = []
+    seen: set[str] = set()
+    total_uncompressed_bytes = 0
+    for info in infos:
+        safe_name = _safe_member(info)
+        normalized = str(PurePosixPath(info.filename))
+        expected_name = normalized + ("/" if info.is_dir() else "")
+        if normalized in {"", "."} or info.filename != expected_name:
+            raise ValueError(f"Non-canonical target-dataset ZIP member: {info.filename!r}")
+        if normalized in seen:
+            raise ValueError(f"Duplicate target-dataset ZIP member: {info.filename!r}")
+        seen.add(normalized)
+
+        if info.file_size < 0 or info.compress_size < 0:
+            raise ValueError(f"Invalid target-dataset ZIP member size: {info.filename!r}")
+        if info.is_dir():
+            if info.file_size != 0:
+                raise ValueError(f"Directory ZIP member contains data: {info.filename!r}")
+            continue
+        if info.file_size > MAX_MEMBER_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                f"Target-dataset ZIP member exceeds the per-file limit: "
+                f"{info.filename!r} ({info.file_size} bytes)"
+            )
+
+        total_uncompressed_bytes += info.file_size
+        if total_uncompressed_bytes > MAX_TOTAL_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                "Target-dataset ZIP exceeds the total uncompressed-size limit "
+                f"({total_uncompressed_bytes} > {MAX_TOTAL_UNCOMPRESSED_BYTES} bytes)"
+            )
+        if safe_name is None:
+            raise ValueError(f"Invalid target-dataset ZIP file member: {info.filename!r}")
+        members.append(safe_name)
+    return members
 
 
 def extract_verified_dataset(
@@ -55,6 +110,12 @@ def extract_verified_dataset(
     manifest_path = root / "download_manifest.json"
     if not archive.is_file():
         raise FileNotFoundError(f"Shared target-dataset archive is missing: {archive}")
+    archive_size = archive.stat().st_size
+    if archive_size > MAX_ARCHIVE_BYTES:
+        raise ValueError(
+            f"Target-dataset ZIP exceeds the compressed archive limit "
+            f"({archive_size} > {MAX_ARCHIVE_BYTES} bytes)"
+        )
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Shared target-dataset manifest is missing: {manifest_path}")
 
@@ -86,6 +147,7 @@ def extract_verified_dataset(
         not isinstance(expected_files, list)
         or not expected_files
         or not all(isinstance(name, str) and name for name in expected_files)
+        or len(expected_files) > MAX_ARCHIVE_ENTRIES
         or len(expected_files) != len(set(expected_files))
     ):
         raise ValueError("Target-dataset manifest has an invalid file inventory")
@@ -108,15 +170,14 @@ def extract_verified_dataset(
     candidate = staging / "extracted"
     try:
         with zipfile.ZipFile(archive) as dataset_zip:
+            # Inspect the central directory and enforce expansion limits before
+            # testzip() decompresses any member or extractall() writes any file.
+            members = validated_member_names(dataset_zip.infolist())
+            if sorted(members) != sorted(expected_files):
+                raise ValueError("Target-dataset ZIP members do not match the verified manifest")
             bad_member = dataset_zip.testzip()
             if bad_member is not None:
                 raise zipfile.BadZipFile(f"Corrupt target-dataset ZIP member: {bad_member}")
-            members = [
-                name for info in dataset_zip.infolist()
-                if (name := _safe_member(info)) is not None
-            ]
-            if len(members) != len(set(members)) or sorted(members) != sorted(expected_files):
-                raise ValueError("Target-dataset ZIP members do not match the verified manifest")
             candidate.mkdir()
             dataset_zip.extractall(candidate)
 
