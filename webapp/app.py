@@ -9,10 +9,14 @@ Run locally with:
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import io
 import json
 import os
+import stat
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
@@ -43,15 +47,99 @@ app.add_middleware(
 )
 
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
 
-def _checkpoint() -> Path:
+def _checkpoint_stat_signature(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    """Identify one immutable file version without hashing it on every health poll."""
+    return (
+        int(info.st_dev),
+        int(info.st_ino),
+        int(info.st_size),
+        int(info.st_mtime_ns),
+        int(info.st_ctime_ns),
+    )
+
+
+@lru_cache(maxsize=8)
+def _checkpoint_sha256(
+    path_text: str,
+    signature: tuple[int, int, int, int, int],
+) -> str:
+    """Hash one stable checkpoint file version and cache its digest by file identity."""
+    digest = hashlib.sha256()
+    with Path(path_text).open("rb") as stream:
+        before = _checkpoint_stat_signature(os.fstat(stream.fileno()))
+        if before != signature:
+            raise OSError("Checkpoint changed before digest verification")
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+        after = _checkpoint_stat_signature(os.fstat(stream.fileno()))
+        if after != signature:
+            raise OSError("Checkpoint changed during digest verification")
+    return digest.hexdigest()
+
+
+def _checkpoint_identity() -> tuple[Path, str, bool]:
+    """Return the checkpoint path, actual digest, and immutable-release verification."""
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
     if not raw:
         raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT is not configured on this server")
-    path = Path(raw).expanduser().resolve()
-    if not path.is_file():
-        raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
+    try:
+        path = Path(raw).expanduser().resolve()
+        info = path.stat()
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is not a regular file")
+
+    try:
+        actual = _checkpoint_sha256(str(path), _checkpoint_stat_signature(info))
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be verified") from exc
+
+    configured = os.getenv("BIONUCLEI_CHECKPOINT_SHA256")
+    configured_pin_matches = True
+    if configured is not None:
+        configured = configured.strip().lower()
+        if configured.startswith("sha256:"):
+            configured = configured.removeprefix("sha256:")
+        configured_pin_matches = (
+            len(configured) == 64
+            and all(char in "0123456789abcdef" for char in configured)
+            and hmac.compare_digest(configured, RELEASE_CHECKPOINT_SHA256)
+        )
+    verified = (
+        hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256)
+        and configured_pin_matches
+    )
+    return path, actual, verified
+
+
+def _checkpoint_health_fields() -> dict[str, object]:
+    """Expose checkpoint availability separately from immutable-release verification."""
+    try:
+        path, digest, verified = _checkpoint_identity()
+    except HTTPException:
+        return {
+            "checkpoint_available": False,
+            "checkpoint_sha256": None,
+            "checkpoint_verified": False,
+        }
+    return {
+        "checkpoint_available": path.is_file(),
+        "checkpoint_sha256": digest,
+        "checkpoint_verified": verified,
+    }
+
+
+def _checkpoint() -> Path:
+    path, _digest, verified = _checkpoint_identity()
+    if not verified:
+        raise HTTPException(
+            status_code=503,
+            detail="Configured BioNuclei checkpoint does not match the immutable release SHA-256",
+        )
     return path
 
 
@@ -106,11 +194,12 @@ def _artifact_payload(output: Path, *, original: Path | None = None) -> dict[str
 
 @app.get("/health")
 def health() -> dict[str, object]:
-    checkpoint = os.getenv("BIONUCLEI_CHECKPOINT")
+    checkpoint = _checkpoint_health_fields()
     return {
-        "status": "ok" if checkpoint and Path(checkpoint).expanduser().is_file() else "degraded",
+        "status": "ok" if checkpoint["checkpoint_available"] and checkpoint["checkpoint_verified"] else "degraded",
         "scientific_engine": "bionuclei-domainrobust",
-        "checkpoint_configured": bool(checkpoint),
+        "checkpoint_configured": bool(os.getenv("BIONUCLEI_CHECKPOINT")),
+        **checkpoint,
     }
 
 
