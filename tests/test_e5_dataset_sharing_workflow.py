@@ -120,9 +120,9 @@ def _inventory_script() -> str:
         if item.get("name") == "Record target archive size and digest"
     )
     command = step["run"]
-    prefix = "python - <<'PY'\\n"
-    assert command.startswith(prefix)
-    return command[len(prefix):].rsplit("\\nPY", 1)[0]
+    lines = command.splitlines()
+    assert lines[0] == "python - <<'PY'" and lines[-1] == "PY"
+    return "\\n".join(lines[1:-1])
 
 
 def _run_inventory(tmp_path: Path, manifest_overrides: dict[str, object] | None = None):
