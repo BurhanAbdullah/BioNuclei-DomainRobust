@@ -48,6 +48,15 @@ def test_mcp_server_builds_when_sdk_is_installed() -> None:
     assert server.name == "BioMCP-BioNuclei"
 
 
+def test_mcp_streamable_http_app_constructs_when_sdk_is_installed() -> None:
+    if importlib.util.find_spec("mcp") is None:
+        pytest.skip("MCP SDK is an optional dependency")
+    from bionuclei.mcp_server import build_server
+
+    app = build_server().streamable_http_app(streamable_http_path="/mcp", host="127.0.0.1")
+    assert callable(app)
+
+
 def test_remote_http_bind_requires_a_strong_bearer_token() -> None:
     from bionuclei.mcp_server import _validated_http_token
 
