@@ -16,7 +16,6 @@ import json
 import os
 import stat
 import tempfile
-from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
@@ -51,7 +50,7 @@ RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e19
 
 
 def _checkpoint_stat_signature(info: os.stat_result) -> tuple[int, int, int, int, int]:
-    """Identify one immutable file version without hashing it on every health poll."""
+    """Identify one stable file version while its digest is being computed."""
     return (
         int(info.st_dev),
         int(info.st_ino),
@@ -61,25 +60,6 @@ def _checkpoint_stat_signature(info: os.stat_result) -> tuple[int, int, int, int
     )
 
 
-@lru_cache(maxsize=8)
-def _checkpoint_sha256(
-    path_text: str,
-    signature: tuple[int, int, int, int, int],
-) -> str:
-    """Hash one stable checkpoint file version and cache its digest by file identity."""
-    digest = hashlib.sha256()
-    with Path(path_text).open("rb") as stream:
-        before = _checkpoint_stat_signature(os.fstat(stream.fileno()))
-        if before != signature:
-            raise OSError("Checkpoint changed before digest verification")
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-        after = _checkpoint_stat_signature(os.fstat(stream.fileno()))
-        if after != signature:
-            raise OSError("Checkpoint changed during digest verification")
-    return digest.hexdigest()
-
-
 def _checkpoint_identity() -> tuple[Path, str, bool]:
     """Return the checkpoint path, actual digest, and immutable-release verification."""
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
@@ -87,17 +67,38 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
         raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT is not configured on this server")
     try:
         path = Path(raw).expanduser().resolve()
-        info = path.stat()
-    except (OSError, RuntimeError) as exc:
+        initial = path.stat()
+    except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable") from exc
-    if not stat.S_ISREG(info.st_mode):
+    if not stat.S_ISREG(initial.st_mode):
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is not a regular file")
 
     try:
-        actual = _checkpoint_sha256(str(path), _checkpoint_stat_signature(info))
-    except OSError as exc:
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is not a regular file")
+            initial_signature = _checkpoint_stat_signature(initial)
+            if _checkpoint_stat_signature(before) != initial_signature:
+                raise HTTPException(status_code=503, detail="Checkpoint changed before digest verification")
+
+            digest = hashlib.sha256()
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+            after = os.fstat(stream.fileno())
+
+        current = path.stat()
+    except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be verified") from exc
 
+    verified_file_signature = _checkpoint_stat_signature(after)
+    if (
+        verified_file_signature != initial_signature
+        or _checkpoint_stat_signature(current) != verified_file_signature
+    ):
+        raise HTTPException(status_code=503, detail="Checkpoint changed during digest verification")
+
+    actual = digest.hexdigest()
     configured = os.getenv("BIONUCLEI_CHECKPOINT_SHA256")
     configured_pin_matches = True
     if configured is not None:
