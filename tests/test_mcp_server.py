@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import importlib.util
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -280,7 +281,7 @@ def test_mcp_sdk_dependency_has_redirect_safe_minimum() -> None:
     assert '"mcp>=2.2,<3"' in requirements
 
 
-def test_streamable_http_client_discovers_and_calls_real_bionuclei_tools() -> None:
+def test_streamable_http_client_discovers_and_calls_real_bionuclei_tools(tmp_path: Path) -> None:
     if importlib.util.find_spec("mcp") is None:
         pytest.skip("MCP SDK is an optional dependency")
 
@@ -300,7 +301,7 @@ def test_streamable_http_client_discovers_and_calls_real_bionuclei_tools() -> No
     token = "mcp-sdk-http-" + "r" * 40
     image = np.zeros((32, 32), dtype=np.uint16)
     image[0, 0] = 65535
-    image_path = __import__("pathlib").Path(__import__("tempfile").mkdtemp()) / "http-uint16.tif"
+    image_path = tmp_path / "http-uint16.tif"
     tifffile.imwrite(image_path, image)
 
     app = build_server().streamable_http_app(
@@ -368,5 +369,3 @@ def test_streamable_http_client_discovers_and_calls_real_bionuclei_tools() -> No
         server.should_exit = True
         thread.join(timeout=5)
         assert not thread.is_alive(), "Uvicorn MCP test server did not shut down cleanly"
-        image_path.unlink(missing_ok=True)
-        image_path.parent.rmdir()
