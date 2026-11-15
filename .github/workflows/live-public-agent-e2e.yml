@@ -13,6 +13,7 @@ on:
       - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-specialist-verification.js"
       - "scripts/live_public_agent_e2e.py"
+      - "scripts/render_runtime_parity.py"
       - "render.yaml"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
