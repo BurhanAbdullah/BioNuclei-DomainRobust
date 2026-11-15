@@ -292,3 +292,9 @@ def test_zero_shot_workflow_is_main_only() -> None:
     assert workflow["on"]["push"]["branches"] == ["main"]
     assert workflow["on"]["workflow_run"]["branches"] == ["main"]
     assert "refs/heads/main" in workflow["jobs"]["zero-shot"]["if"]
+    download = next(
+        step for step in workflow["jobs"]["zero-shot"]["steps"]
+        if step.get("name") == "Download baseline artifact"
+    )
+    assert download["uses"] == "actions/download-artifact@v8"
+    assert download["with"]["digest-mismatch"] == "error"
