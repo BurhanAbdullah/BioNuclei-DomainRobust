@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager
 import base64
+import fcntl
 import hashlib
 import hmac
 import io
@@ -64,10 +65,10 @@ MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1
 
 RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
-# The release checkpoint is approximately 3 GB. Cache its digest only for the
-# exact filesystem identity that was hashed; every health/inference check still
-# opens the path and compares descriptor + path metadata to detect replacement
-# or in-place modification without rereading unchanged checkpoint bytes.
+# Cache the source digest by exact file identity for health/preflight calls.
+# Inference always copies the opened source into a sealed memfd snapshot, so a
+# same-inode write after verification cannot change the bytes mmap loads. The
+# pinned BBBC039 release asset is 7,743,145 bytes; the snapshot copy is bounded.
 _CHECKPOINT_CACHE_LOCK = threading.Lock()
 _CHECKPOINT_CACHE: tuple[str, tuple[int, int, int, int, int], str] | None = None
 
@@ -159,25 +160,63 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
 
 
 @contextmanager
-def _checkpoint_for_inference() -> Iterator[Path]:
-    """Expose only the verified open checkpoint inode to the memory-mapped loader."""
-    with _checkpoint_handle() as (_path, _actual, verified, stream):
-        if not verified:
+def _sealed_checkpoint_snapshot(stream: BinaryIO, expected_sha256: str) -> Iterator[Path]:
+    """Copy verified bytes into a write-sealed memfd for race-free mmap loading."""
+    try:
+        snapshot_fd = os.memfd_create(
+            "bionuclei-verified-checkpoint",
+            os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+        )
+    except (AttributeError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="This runtime cannot create an immutable checkpoint snapshot",
+        ) from exc
+
+    try:
+        stream.seek(0)
+        digest = hashlib.sha256()
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(snapshot_fd, view)
+                if written <= 0:
+                    raise OSError("checkpoint snapshot write made no progress")
+                view = view[written:]
+
+        if not hmac.compare_digest(digest.hexdigest(), expected_sha256):
             raise HTTPException(
                 status_code=503,
-                detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+                detail="Checkpoint bytes changed while creating the immutable inference snapshot",
             )
 
+        os.lseek(snapshot_fd, 0, os.SEEK_SET)
+        required_seals = (
+            fcntl.F_SEAL_WRITE
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_SEAL
+        )
+        fcntl.fcntl(snapshot_fd, fcntl.F_ADD_SEALS, required_seals)
+        actual_seals = fcntl.fcntl(snapshot_fd, fcntl.F_GET_SEALS)
+        if actual_seals & required_seals != required_seals:
+            raise HTTPException(
+                status_code=503,
+                detail="The verified checkpoint snapshot could not be write-sealed",
+            )
+
+        descriptor_stat = os.fstat(snapshot_fd)
         descriptor_path = None
-        descriptor_stat = os.fstat(stream.fileno())
         for descriptor_root in (Path("/proc/self/fd"), Path("/dev/fd")):
-            candidate = descriptor_root / str(stream.fileno())
+            candidate = descriptor_root / str(snapshot_fd)
             try:
                 candidate_stat = candidate.stat()
             except OSError:
                 continue
             if (
-                candidate_stat.st_dev == descriptor_stat.st_dev
+                stat.S_ISREG(candidate_stat.st_mode)
+                and candidate_stat.st_dev == descriptor_stat.st_dev
                 and candidate_stat.st_ino == descriptor_stat.st_ino
             ):
                 descriptor_path = candidate
@@ -186,9 +225,31 @@ def _checkpoint_for_inference() -> Iterator[Path]:
         if descriptor_path is None:
             raise HTTPException(
                 status_code=503,
-                detail="Verified checkpoint cannot be loaded through a stable file descriptor",
+                detail="Immutable checkpoint snapshot has no stable descriptor path",
             )
         yield descriptor_path
+    except HTTPException:
+        raise
+    except (AttributeError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Verified checkpoint could not be snapshotted and sealed for inference",
+        ) from exc
+    finally:
+        os.close(snapshot_fd)
+
+
+@contextmanager
+def _checkpoint_for_inference() -> Iterator[Path]:
+    """Load only a write-sealed snapshot of the verified release checkpoint."""
+    with _checkpoint_handle() as (_path, actual, verified, stream):
+        if not verified:
+            raise HTTPException(
+                status_code=503,
+                detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+            )
+        with _sealed_checkpoint_snapshot(stream, actual) as snapshot_path:
+            yield snapshot_path
 
 
 
