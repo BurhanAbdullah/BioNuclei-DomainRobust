@@ -9,6 +9,11 @@ on:
     paths:
       - "webapp/**"
       - "src/bionuclei/**"
+      - "configs/**"
+      - "pyproject.toml"
+      - "README.md"
+      - "docs/RESEARCH_PROTOCOL.md"
+      - "docs/DATASETS.md"
       - "docs/bionuclei-app.html"
       - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-specialist-verification.js"
