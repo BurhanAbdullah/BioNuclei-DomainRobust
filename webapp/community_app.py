@@ -57,7 +57,7 @@ def health():
         "account_required": False,
         "guest_access": True,
         "input_retention": "transient",
-        "result_retention_hours": community_service.DEFAULT_RESULT_RETENTION_HOURS,
+        "result_retention_hours": 1,
     }
 
 @app.get("/algorithms")
