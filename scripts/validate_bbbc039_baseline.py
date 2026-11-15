@@ -18,9 +18,13 @@ _SAFE_PATHS = frozenset(
         "LICENSE",
         "README.md",
         "render.yaml",
+        "scripts/aggregate_e6_fraction_evidence.py",
+        "scripts/download_aitslab_bioimaging1.py",
         "scripts/download_s_biad634.py",
         "scripts/evaluate_s_biad634.py",
+        "scripts/live_public_agent_e2e.py",
         "scripts/metrics_instance.py",
+        "scripts/public_e2e_schedule_watchdog.py",
         "scripts/validate_bbbc039_baseline.py",
     }
 )
