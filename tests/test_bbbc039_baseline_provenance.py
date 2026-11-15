@@ -302,6 +302,20 @@ def test_zero_shot_workflow_is_main_only() -> None:
 
 
 
+def test_zero_shot_fallback_selects_only_completed_main_push_baselines() -> None:
+    workflow_path = Path(".github/workflows/s_biad634_zero_shot.yml")
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    selection = next(
+        step for step in workflow["jobs"]["zero-shot"]["steps"]
+        if step.get("name") == "Select and validate main-branch baseline provenance"
+    )
+
+    assert "status=completed" in selection["run"]
+    assert '.event == "push"' in selection["run"]
+    assert '.head_branch == "main"' in selection["run"]
+    assert '.conclusion == "success"' in selection["run"]
+
+
 def test_zero_shot_checkpoint_loader_uses_weights_only(monkeypatch, tmp_path):
     from scripts import evaluate_s_biad634
 
