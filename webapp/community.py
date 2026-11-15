@@ -539,7 +539,6 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
     output = root / "results"
     try:
         _set_job(job_id, status="planning")
-        checkpoint = _checkpoint()
         raw = image_path.read_bytes()
         input_sha256 = hashlib.sha256(raw).hexdigest()
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
@@ -550,7 +549,8 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
             raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
         _set_job(job_id, status="running")
         with INFERENCE_LOCK:
-            result = predict(inference_input, checkpoint, output, device="cpu")
+            with _checkpoint() as checkpoint:
+                result = predict(inference_input, checkpoint, output, device="cpu")
             gc.collect()
         _set_job(job_id, status="measuring")
         report_summary = _extended_reports(inference_input, output, analysis_modules)
