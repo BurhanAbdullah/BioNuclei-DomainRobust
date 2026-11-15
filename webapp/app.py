@@ -144,6 +144,7 @@ def _checkpoint_handle() -> Iterator[tuple[Path, str, bool, BinaryIO]]:
         _CHECKPOINT_CACHE = None
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
 
+    assert stream is not None
     verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
     try:
         yield path, actual, verified, stream
