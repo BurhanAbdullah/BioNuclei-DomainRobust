@@ -271,3 +271,102 @@ def test_bearer_auth_wraps_the_actual_streamable_http_mcp_route() -> None:
         server.should_exit = True
         thread.join(timeout=5)
         assert not thread.is_alive(), "Uvicorn test server did not shut down cleanly"
+
+
+def test_mcp_sdk_dependency_has_redirect_safe_minimum() -> None:
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    requirements = (root / "pyproject.toml").read_text(encoding="utf-8")
+    # GHSA-5h93-6whr-6q8j affects MCP SDK 2.0.0 through 2.1.1.
+    assert '"mcp>=2.2,<3"' in requirements
+
+
+def test_streamable_http_client_discovers_and_calls_real_bionuclei_tools() -> None:
+    if importlib.util.find_spec("mcp") is None:
+        pytest.skip("MCP SDK is an optional dependency")
+
+    import socket
+    import threading
+    import time
+
+    import httpx2
+    import numpy as np
+    import tifffile
+    import uvicorn
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    from bionuclei.mcp_server import _BearerTokenASGIMiddleware, build_server
+
+    token = "mcp-sdk-http-" + "r" * 40
+    image = np.zeros((32, 32), dtype=np.uint16)
+    image[0, 0] = 65535
+    image_path = __import__("pathlib").Path(__import__("tempfile").mkdtemp()) / "http-uint16.tif"
+    tifffile.imwrite(image_path, image)
+
+    app = build_server().streamable_http_app(
+        streamable_http_path="/mcp",
+        host="127.0.0.1",
+    )
+    protected_app = _BearerTokenASGIMiddleware(app, token)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    server = uvicorn.Server(
+        uvicorn.Config(
+            protected_app,
+            host="127.0.0.1",
+            port=port,
+            log_level="critical",
+            lifespan="on",
+        )
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if not server.started:
+        server.should_exit = True
+        thread.join(timeout=5)
+        pytest.fail("Uvicorn did not start the Streamable HTTP MCP app")
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    try:
+        async def exercise_client() -> None:
+            timeout = httpx2.Timeout(5.0, read=10.0)
+            async with httpx2.AsyncClient(
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=timeout,
+                follow_redirects=False,
+            ) as http_client:
+                async with streamable_http_client(
+                    url=url,
+                    http_client=http_client,
+                    terminate_on_close=False,
+                ) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        advertised = await session.list_tools()
+                        names = {tool.name for tool in advertised.tools}
+                        assert "inspect_image" in names
+
+                        result = await session.call_tool(
+                            "inspect_image",
+                            arguments={"input_path": str(image_path)},
+                        )
+                        assert not result.isError
+                        structured = getattr(result, "structuredContent", None)
+                        if structured is None:
+                            structured = getattr(result, "structured_content", None)
+                        assert isinstance(structured, dict)
+                        assert structured["dtype"] == "uint16"
+                        assert structured["max"] == 65535.0
+
+        asyncio.run(exercise_client())
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+        assert not thread.is_alive(), "Uvicorn MCP test server did not shut down cleanly"
+        image_path.unlink(missing_ok=True)
+        image_path.parent.rmdir()
