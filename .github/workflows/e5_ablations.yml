@@ -62,6 +62,8 @@ jobs:
           archive = Path("data/raw/S-BIAD634/dataset.zip")
           manifest_path = Path("data/raw/S-BIAD634/download_manifest.json")
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if not isinstance(manifest, dict):
+              raise SystemExit("Downloaded dataset manifest must be a JSON object")
 
           def sha256(path: Path) -> str:
               digest = hashlib.sha256()
@@ -73,17 +75,40 @@ jobs:
           archive_digest = sha256(archive)
           if archive_digest != manifest.get("archive_sha256"):
               raise SystemExit("Downloaded archive digest does not match its manifest")
+
+          manifest_files = manifest.get("files")
+          if (
+              not isinstance(manifest_files, list)
+              or not manifest_files
+              or not all(isinstance(name, str) and name for name in manifest_files)
+              or len(manifest_files) != len(set(manifest_files))
+          ):
+              raise SystemExit("Downloaded dataset manifest has an invalid file inventory")
+
           with zipfile.ZipFile(archive) as dataset_zip:
               entries = dataset_zip.infolist()
+              zip_file_names = sorted(
+                  entry.filename for entry in entries if not entry.is_dir()
+              )
               zip_entry_count = len(entries)
-              zip_file_entry_count = sum(not entry.is_dir() for entry in entries)
+              zip_file_entry_count = len(zip_file_names)
               zip_directory_entry_count = sum(entry.is_dir() for entry in entries)
 
-          manifest_file_count = len(manifest.get("files", []))
-          if zip_file_entry_count != manifest_file_count:
-              raise SystemExit(
-                  "Archive non-directory entry count does not match the manifest file inventory"
-              )
+          if zip_file_names != sorted(manifest_files):
+              raise SystemExit("Archive file paths do not match the manifest file inventory")
+
+          raw_image_files = [
+              name for name in zip_file_names if "/rawimages/" in f"/{name}"
+          ]
+          groundtruth_files = [
+              name for name in zip_file_names if "/groundtruth/" in f"/{name}"
+          ]
+          if manifest.get("raw_image_files") != raw_image_files:
+              raise SystemExit("Archive raw-image paths do not match the manifest inventory")
+          if manifest.get("groundtruth_files") != groundtruth_files:
+              raise SystemExit("Archive ground-truth paths do not match the manifest inventory")
+
+          manifest_file_count = len(manifest_files)
 
           inventory = {
               "dataset": manifest.get("dataset"),
@@ -95,8 +120,8 @@ jobs:
               "zip_file_entry_count": zip_file_entry_count,
               "zip_directory_entry_count": zip_directory_entry_count,
               "manifest_file_count": manifest_file_count,
-              "raw_image_count": len(manifest.get("raw_image_files", [])),
-              "groundtruth_count": len(manifest.get("groundtruth_files", [])),
+              "raw_image_count": len(raw_image_files),
+              "groundtruth_count": len(groundtruth_files),
           }
           inventory_path = archive.parent / "archive_inventory.json"
           inventory_path.write_text(
