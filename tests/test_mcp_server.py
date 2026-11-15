@@ -4,7 +4,6 @@ import asyncio
 import importlib
 import importlib.util
 import sys
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -59,10 +58,12 @@ def test_remote_http_bind_requires_a_strong_bearer_token() -> None:
 
     with pytest.raises(RuntimeError, match="non-loopback"):
         _validated_http_token("0.0.0.0", None)
-    with pytest.raises(RuntimeError, match="32 UTF-8 bytes"):
+    with pytest.raises(RuntimeError, match="32 ASCII characters"):
         _validated_http_token("127.0.0.1", "short")
     with pytest.raises(RuntimeError, match="no whitespace"):
         _validated_http_token("0.0.0.0", "x" * 31 + " ")
+    with pytest.raises(RuntimeError, match="32 ASCII characters"):
+        _validated_http_token("127.0.0.1", "é" * 32)
 
 
 def test_bearer_middleware_rejects_missing_invalid_and_duplicate_headers() -> None:
@@ -81,7 +82,10 @@ def test_bearer_middleware_rejects_missing_invalid_and_duplicate_headers() -> No
     for headers in (
         [],
         [(b"authorization", b"Bearer wrong")],
-        [(b"authorization", f"Bearer {token}".encode()), (b"authorization", f"Bearer {token}".encode())],
+                    [
+                (b"authorization", f"Bearer {token}".encode()),
+                (b"authorization", f"Bearer {token}".encode()),
+            ],
     ):
         called = False
         events = _invoke_asgi(middleware, headers)
