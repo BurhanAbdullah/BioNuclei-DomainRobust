@@ -81,7 +81,6 @@ def semantic_to_instances(classes: np.ndarray) -> np.ndarray:
         raise ValueError("semantic classes must contain only 0, 1, and 2")
 
     connectivity_4 = ndimage.generate_binary_structure(2, 1)
-    connectivity_8 = np.ones((3, 3), dtype=np.uint8)
     foreground = semantic != 0
     foreground_components, component_count = ndimage.label(
         foreground,
@@ -103,7 +102,7 @@ def semantic_to_instances(classes: np.ndarray) -> np.ndarray:
         component_interior = (semantic[component_slice] == 1) & component_mask
         markers, marker_count = ndimage.label(
             component_interior,
-            structure=connectivity_8,
+            structure=connectivity_4,
         )
         instance_view = instances[component_slice]
 
