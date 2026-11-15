@@ -54,6 +54,8 @@ def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
     delays: list[float] = []
     calls = 0
 
+    valid_archive = _zip_bytes()
+
     def fake_urlopen(url: str, *, timeout: int):
         nonlocal calls
         calls += 1
@@ -63,7 +65,7 @@ def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
             return _DisconnectAfterFirstRead(b"partial transfer")
         assert destination.read_bytes() == b"previous complete archive"
         assert _part_files(destination) == []
-        return io.BytesIO(b"complete archive")
+        return io.BytesIO(valid_archive)
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -72,7 +74,7 @@ def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
 
     assert calls == 2
     assert delays == [2]
-    assert destination.read_bytes() == b"complete archive"
+    assert destination.read_bytes() == valid_archive
     assert _part_files(destination) == []
 
 
@@ -80,6 +82,7 @@ def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
 def test_download_retries_transient_http_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     destination = tmp_path / "dataset.zip"
     delays: list[float] = []
+    valid_archive = _zip_bytes()
     calls = 0
 
     def fake_urlopen(_url: str, *, timeout: int):
@@ -94,7 +97,7 @@ def test_download_retries_transient_http_status(tmp_path: Path, monkeypatch: pyt
                 {},
                 io.BytesIO(b"temporary outage"),
             )
-        return io.BytesIO(b"complete archive")
+        return io.BytesIO(valid_archive)
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
