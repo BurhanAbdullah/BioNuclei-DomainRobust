@@ -1,96 +1,127 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import zipfile
-from types import SimpleNamespace
 
 import pytest
 
 from scripts import validate_tiled_checkpoint as checkpoint
 
 
-def _write_results_archive(path):
-    with zipfile.ZipFile(path, "w") as archive:
-        for name in (
-            "results/analysis_report.html",
-            "results/analysis_report.pdf",
-            "results/results.json",
-            "results/expert_agents.json",
-            "results/nuclei_analysis.csv",
-            "results/segmentation_mask.tif",
-            "results/overlay.tif",
-        ):
-            archive.writestr(name, b"validated")
+def _write_evidence_inputs(tmp_path):
+    archive_path = tmp_path / "analysis-results.zip"
+    result_path = tmp_path / "results.json"
+    specialist_path = tmp_path / "expert_agents.json"
+    result_bytes = b'{"scientific_execution": true}'
+    specialist_bytes = b'{"execution": {"status": "completed"}}'
+    result_path.write_bytes(result_bytes)
+    specialist_path.write_bytes(specialist_bytes)
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("results/analysis_report.html", b"html")
+        archive.writestr("results/analysis_report.pdf", b"pdf")
+        archive.writestr("results/results.json", result_bytes)
+        archive.writestr("results/expert_agents.json", specialist_bytes)
+        archive.writestr("results/nuclei_analysis.csv", b"csv")
+        archive.writestr("results/segmentation_mask.tif", b"mask")
+        archive.writestr("results/overlay.tif", b"overlay")
+    return archive_path, result_path, specialist_path
 
 
-def test_workflow_identity_distinguishes_source_base_and_tested_merge(monkeypatch, tmp_path):
-    event_path = tmp_path / "event.json"
-    event_path.write_text(
-        json.dumps({
-            "pull_request": {
-                "head": {"sha": "source-head"},
-                "base": {"sha": "target-base"},
-            }
-        }),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
-    monkeypatch.setenv("GITHUB_SHA", "github-merge")
-    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
-    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
-    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
-    monkeypatch.setenv("GITHUB_REF", "refs/pull/146/merge")
-    monkeypatch.setattr(
-        checkpoint.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(stdout="tested-merge\n"),
-    )
+def test_resolve_revision_provenance_distinguishes_source_base_and_tested_merge():
+    head_sha = "a" * 40
+    base_sha = "b" * 40
+    tested_sha = "c" * 40
+    payload = {
+        "pull_request": {
+            "head": {"sha": head_sha},
+            "base": {"sha": base_sha},
+        }
+    }
 
-    identity = checkpoint.workflow_identity()
+    provenance = checkpoint.resolve_revision_provenance("pull_request", tested_sha, payload)
 
-    assert identity["schema_version"] == 2
-    assert identity["head_sha"] == "source-head"
-    assert identity["base_sha"] == "target-base"
-    assert identity["tested_sha"] == "tested-merge"
-    assert identity["github_sha"] == "github-merge"
-    assert identity["run_id"] == "12345"
-    assert identity["run_attempt"] == "2"
+    assert provenance == {
+        "event_name": "pull_request",
+        "head_sha": head_sha,
+        "base_sha": base_sha,
+        "tested_sha": tested_sha,
+    }
 
 
-def test_persist_evidence_bundle_hashes_and_preserves_source_free_results(tmp_path):
-    source = tmp_path / "analysis-results.zip"
-    _write_results_archive(source)
-    evidence_dir = tmp_path / "evidence"
+def test_resolve_revision_provenance_rejects_missing_or_invalid_pr_sha():
+    payload = {
+        "pull_request": {
+            "head": {"sha": "not-a-full-sha"},
+            "base": {"sha": "b" * 40},
+        }
+    }
 
-    payload = checkpoint.persist_evidence_bundle(
+    with pytest.raises(ValueError, match="valid source head SHA"):
+        checkpoint.resolve_revision_provenance("pull_request", "c" * 40, payload)
+
+
+def test_persist_validation_evidence_hashes_all_outputs_and_manifest(tmp_path):
+    temporary_root = tmp_path / "disposable-worker"
+    temporary_root.mkdir()
+    archive_path, result_path, specialist_path = _write_evidence_inputs(tmp_path)
+    evidence_dir = tmp_path / "runner-evidence"
+    manifest = {
+        "schema_version": 2,
+        "head_sha": "a" * 40,
+        "base_sha": "b" * 40,
+        "tested_sha": "c" * 40,
+        "source_image_excluded": True,
+        "checkpoint_unchanged": True,
+        "specialist_count": 8,
+        "public_inference": False,
+    }
+
+    persisted = checkpoint.persist_validation_evidence(
         evidence_dir,
-        source,
-        {
-            "status": "PASS",
-            "head_sha": "source-head",
-            "base_sha": "target-base",
-            "tested_sha": "tested-merge",
-            "source_image_excluded": True,
-        },
+        temporary_root,
+        archive_path,
+        result_path,
+        specialist_path,
+        manifest,
     )
 
-    copied = evidence_dir / "analysis-results.zip"
-    manifest = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert copied.read_bytes() == source.read_bytes()
-    assert payload["results_zip_sha256"] == checkpoint.sha256_file(copied)
-    assert manifest["results_zip_sha256"] == checkpoint.sha256_file(copied)
-    assert manifest["head_sha"] == "source-head"
-    assert manifest["base_sha"] == "target-base"
-    assert manifest["tested_sha"] == "tested-merge"
-    assert manifest["source_image_excluded"] is True
-    assert "results/results.json" in manifest["results_zip_entries"]
+    written = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert set(persisted["files"]) == {"analysis-results.zip", "results.json", "expert_agents.json"}
+    assert written["head_sha"] == "a" * 40
+    assert written["base_sha"] == "b" * 40
+    assert written["tested_sha"] == "c" * 40
+    assert written["files"]["analysis-results.zip"]["sha256"] == hashlib.sha256(
+        (evidence_dir / "analysis-results.zip").read_bytes()
+    ).hexdigest()
+    assert written["files"]["results.json"]["sha256"] == hashlib.sha256(
+        (evidence_dir / "results.json").read_bytes()
+    ).hexdigest()
+    assert written["files"]["expert_agents.json"]["sha256"] == hashlib.sha256(
+        (evidence_dir / "expert_agents.json").read_bytes()
+    ).hexdigest()
+    assert persisted["manifest_sha256"] == hashlib.sha256(
+        (evidence_dir / "manifest.json").read_bytes()
+    ).hexdigest()
 
 
-def test_persist_evidence_bundle_rejects_source_image(tmp_path):
-    source = tmp_path / "unsafe-results.zip"
-    _write_results_archive(source)
-    with zipfile.ZipFile(source, "a") as archive:
-        archive.writestr("results/input.tif", b"source pixels")
+def test_persist_validation_evidence_rejects_unverified_or_public_manifest(tmp_path):
+    temporary_root = tmp_path / "disposable-worker"
+    temporary_root.mkdir()
+    archive_path, result_path, specialist_path = _write_evidence_inputs(tmp_path)
+    manifest = {
+        "source_image_excluded": False,
+        "checkpoint_unchanged": True,
+        "specialist_count": 8,
+        "public_inference": False,
+    }
 
-    with pytest.raises(AssertionError, match="contains the source image"):
-        checkpoint.persist_evidence_bundle(tmp_path / "evidence", source, {"status": "PASS"})
+    with pytest.raises(AssertionError, match="source-image exclusion"):
+        checkpoint.persist_validation_evidence(
+            tmp_path / "runner-evidence",
+            temporary_root,
+            archive_path,
+            result_path,
+            specialist_path,
+            manifest,
+        )
