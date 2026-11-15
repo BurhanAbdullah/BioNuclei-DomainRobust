@@ -49,7 +49,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
     def test_parity_helper_changes_trigger_main_e2e(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
-        push_section = workflow.split("  push:\\n", 1)[1].split("  pull_request:\\n", 1)[0]
+        push_section = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
         self.assertIn('      - "scripts/render_runtime_parity.py"', push_section)
 
     def test_excluded_prefixes_stay_out_of_both_render_images(self) -> None:
@@ -77,7 +77,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
                 tokens = line.split()
                 if tokens[0].upper() not in {"COPY", "ADD"}:
                     continue
-                if line.endswith("\\\\"):
+                if line.endswith("\\"):
                     self.fail(
                         f"{relative}:{line_number}: continued COPY/ADD instructions "
                         "must be reviewed before excluding non-runtime paths"
@@ -87,7 +87,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
                     self.fail(f"{relative}:{line_number}: malformed COPY/ADD instruction")
                 for source in operands[:-1]:
                     normalized = (
-                        source.replace("\\\\", "/")
+                        source.replace("\\", "/")
                         .strip("[]")
                         .strip(",")
                         .strip('"')
