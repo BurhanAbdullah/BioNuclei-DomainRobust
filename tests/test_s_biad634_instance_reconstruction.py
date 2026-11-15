@@ -56,6 +56,24 @@ def test_diagonally_touching_boundary_only_nuclei_remain_separate() -> None:
     assert np.all(predicted[semantic > 0] > 0)
 
 
+
+def test_diagonal_interiors_remain_distinct_inside_a_boundary_connected_component() -> None:
+    # The class-2 bridge joins the foreground under 4-connectivity. The two
+    # class-1 markers are still diagonal-only and must remain separate.
+    semantic = np.array(
+        [
+            [1, 2, 0],
+            [2, 1, 2],
+            [0, 2, 0],
+        ],
+        dtype=np.uint8,
+    )
+
+    predicted = semantic_to_instances(semantic)
+
+    assert np.unique(predicted[predicted > 0]).size == 2
+
+
 def test_empty_semantic_mask_returns_no_instances() -> None:
     predicted = semantic_to_instances(np.zeros((4, 5), dtype=np.uint8))
 
