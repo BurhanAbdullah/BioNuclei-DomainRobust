@@ -35,7 +35,16 @@ ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "12000
 EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 HEALTH_READINESS_BUDGET_SECONDS = 179.0
 HEALTH_CONNECT_TIMEOUT_SECONDS = 10.0
-HEALTH_READ_TIMEOUT_CAP_SECONDS = 150.0
+HEALTH_READ_TIMEOUT_CAP_SECONDS = 2.0
+HEALTH_RESPONSE_MAX_BYTES = 64 * 1024
+
+
+class _HealthReadinessBudgetExceeded(Exception):
+    """Raised when a health request or streamed body exhausts the total deadline."""
+
+
+class _HealthResponseTooLarge(Exception):
+    """Raised when the health endpoint returns an unexpectedly large body."""
 
 
 def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
@@ -63,13 +72,19 @@ def _probe_api_health(
     monotonic,
     sleep,
     budget_seconds: float = HEALTH_READINESS_BUDGET_SECONDS,
-) -> tuple[object | None, list[dict[str, object]], str | None, str | None]:
-    """Probe real API health with one bounded cold-start budget and sanitized attempts."""
+) -> tuple[object | None, list[dict[str, object]], str | None, str | None, dict | None]:
+    """Probe health with a total monotonic deadline, including streamed response reads.
+
+    Requests' read timeout is an inactivity timeout, not a total response deadline.
+    Stream one byte at a time with a short socket-read cap so a slow-trickle response
+    cannot keep the readiness gate alive indefinitely.
+    """
     if budget_seconds <= 0:
         raise ValueError("health readiness budget must be positive")
     deadline = monotonic() + budget_seconds
     attempts: list[dict[str, object]] = []
     response = None
+    health_payload = None
     request_error = None
     body_excerpt = None
     attempt = 0
@@ -80,34 +95,90 @@ def _probe_api_health(
             break
         attempt_started = monotonic()
         attempt_record: dict[str, object] = {"attempt": attempt + 1}
+        candidate = None
         try:
             candidate = request_get(
                 f"{api_base}/health",
                 timeout=_health_request_timeout(remaining),
+                stream=True,
             )
-            response_completed_at = monotonic()
             attempt_record["http_status"] = candidate.status_code
-            attempt_record["elapsed_seconds"] = round(response_completed_at - attempt_started, 3)
-            if not _health_response_within_budget(response_completed_at, deadline):
-                attempt_record["error"] = "ReadinessBudgetExceeded"
-                attempts.append(attempt_record)
-                request_error = "ReadinessBudgetExceeded"
-                response = None
-                break
-            request_error = None
-            response = candidate
+            if monotonic() >= deadline:
+                raise _HealthReadinessBudgetExceeded
+
+            body = bytearray()
+            for chunk in candidate.iter_content(chunk_size=1):
+                if monotonic() >= deadline:
+                    raise _HealthReadinessBudgetExceeded
+                if not chunk:
+                    continue
+                body.extend(chunk)
+                if len(body) > HEALTH_RESPONSE_MAX_BYTES:
+                    raise _HealthResponseTooLarge
+
+            if monotonic() >= deadline:
+                raise _HealthReadinessBudgetExceeded
+
+            attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
+            body_text = bytes(body).decode("utf-8", errors="replace")
             if candidate.status_code == 200:
-                attempt_record["result"] = "http_200"
-                attempts.append(attempt_record)
+                try:
+                    parsed = json.loads(body_text)
+                except json.JSONDecodeError:
+                    request_error = "InvalidHealthJSON"
+                    attempt_record["error"] = request_error
+                    attempts.append(attempt_record)
+                    break
+                if not isinstance(parsed, dict):
+                    request_error = "InvalidHealthJSON"
+                    attempt_record["error"] = request_error
+                    attempts.append(attempt_record)
+                    break
+                response = candidate
+                health_payload = parsed
                 request_error = None
                 body_excerpt = None
+                attempt_record["result"] = "http_200"
+                attempts.append(attempt_record)
                 break
-            body_excerpt = candidate.text[:240]
-        except request_exception as exc:
+
+            # A real HTTP response supersedes earlier transport errors, even when
+            # the service is not yet ready. Its sanitized body excerpt is retained.
+            response = candidate
+            request_error = None
+            body_excerpt = body_text[:240]
+        except _HealthReadinessBudgetExceeded:
             response = None
-            request_error = type(exc).__name__
+            health_payload = None
+            request_error = "ReadinessBudgetExceeded"
             attempt_record["error"] = request_error
             attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
+            attempts.append(attempt_record)
+            break
+        except _HealthResponseTooLarge:
+            response = None
+            health_payload = None
+            request_error = "HealthResponseTooLarge"
+            attempt_record["error"] = request_error
+            attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
+            attempts.append(attempt_record)
+            break
+        except request_exception as exc:
+            response = None
+            health_payload = None
+            request_error = (
+                "ReadinessBudgetExceeded"
+                if monotonic() >= deadline
+                else type(exc).__name__
+            )
+            attempt_record["error"] = request_error
+            attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
+        finally:
+            if candidate is not None:
+                try:
+                    candidate.close()
+                except Exception:
+                    pass
 
         attempts.append(attempt_record)
         remaining = deadline - monotonic()
@@ -119,8 +190,7 @@ def _probe_api_health(
             sleep(delay)
         attempt += 1
 
-    return response, attempts, request_error, body_excerpt
-
+    return response, attempts, request_error, body_excerpt, health_payload
 
 def build_uint16_fixture(path: Path) -> str:
     """Create a deterministic, microscopy-like 512x512 uint16 TIFF with a 65535 sentinel."""
@@ -308,7 +378,7 @@ def main() -> None:
             # runtime fix. Render exposes both its branch and deployment commit;
             # verifying the source commit avoids attributing a stale deployment
             # failure to the newly merged implementation.
-            health_response, health_attempts, health_request_error, health_body = _probe_api_health(
+            health_response, health_attempts, health_request_error, health_body, health = _probe_api_health(
                 API_BASE,
                 request_get=requests.get,
                 request_exception=requests.RequestException,
@@ -338,7 +408,7 @@ def main() -> None:
                 f"HTTP {state.get('api_health_http_status')!r}, "
                 f"request_error={state.get('api_health_request_error')!r}",
             )
-            health = health_response.json()
+            require(isinstance(health, dict), "Public API health response was not a valid JSON object")
             state["render_git_commit"] = health.get("render_git_commit")
             state["render_git_branch"] = health.get("render_git_branch")
             state["checkpoint_available"] = health.get("checkpoint_available")
