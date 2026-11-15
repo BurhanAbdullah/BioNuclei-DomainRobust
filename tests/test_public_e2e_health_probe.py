@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -22,12 +23,31 @@ class _Clock:
 
 
 class _Response:
-    def __init__(self, status_code: int, text: str = "health") -> None:
+    def __init__(
+        self,
+        status_code: int,
+        text: str = "health",
+        *,
+        body: bytes | None = None,
+        clock: _Clock | None = None,
+        seconds_per_chunk: float = 0.0,
+    ) -> None:
         self.status_code = status_code
-        self.text = text
+        self._body = body if body is not None else text.encode("utf-8")
+        self.clock = clock
+        self.seconds_per_chunk = seconds_per_chunk
+        self.closed = False
+        self.requested_chunk_size: int | None = None
 
-    def json(self) -> dict[str, str]:
-        return {"status": "ok"}
+    def iter_content(self, chunk_size: int = 1):
+        self.requested_chunk_size = chunk_size
+        for offset in range(0, len(self._body), chunk_size):
+            if self.clock is not None:
+                self.clock.now += self.seconds_per_chunk
+            yield self._body[offset : offset + chunk_size]
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class _ReadTimeout(Exception):
@@ -41,51 +61,63 @@ def _health_helpers() -> dict[str, object]:
         "HEALTH_READINESS_BUDGET_SECONDS",
         "HEALTH_CONNECT_TIMEOUT_SECONDS",
         "HEALTH_READ_TIMEOUT_CAP_SECONDS",
+        "HEALTH_RESPONSE_MAX_BYTES",
         "_health_request_timeout",
         "_health_response_within_budget",
         "_probe_api_health",
+        "_HealthReadinessBudgetExceeded",
+        "_HealthResponseTooLarge",
     }
     selected = [
         node
         for node in tree.body
-        if isinstance(node, (ast.Assign, ast.FunctionDef))
-        and (
-            any(
+        if (
+            isinstance(node, ast.Assign)
+            and any(
                 isinstance(target, ast.Name) and target.id in names
                 for target in getattr(node, "targets", [])
             )
-            or getattr(node, "name", None) in names
         )
+        or (isinstance(node, ast.FunctionDef) and node.name in names)
+        or (isinstance(node, ast.ClassDef) and node.name in names)
     ]
-    namespace: dict[str, object] = {}
+    namespace: dict[str, object] = {"json": json}
     module = ast.Module(body=selected, type_ignores=[])
     exec(compile(module, str(SCRIPT_PATH), "exec"), namespace)
     return namespace
 
 
-def test_health_timeout_is_bounded_by_remaining_budget() -> None:
+def test_health_timeout_uses_short_socket_reads_within_remaining_budget() -> None:
     helpers = _health_helpers()
     timeout_for = helpers["_health_request_timeout"]
 
-    assert timeout_for(179.0) == (10.0, 150.0)
-    assert timeout_for(134.0) == (10.0, 124.0)
-    assert timeout_for(30.0) == (10.0, 20.0)
+    assert timeout_for(179.0) == (10.0, 2.0)
+    assert timeout_for(134.0) == (10.0, 2.0)
+    assert timeout_for(30.0) == (10.0, 2.0)
+    assert timeout_for(5.0) == (2.5, 2.0)
     assert sum(timeout_for(5.0)) <= 5.0
     with pytest.raises(ValueError, match="budget is exhausted"):
         timeout_for(0.0)
 
 
-def test_health_probe_accepts_a_real_response_after_observed_cold_start() -> None:
+def test_health_probe_recovers_after_realistic_cold_start_retries() -> None:
     helpers = _health_helpers()
     clock = _Clock()
-    response = _Response(200)
+    calls = 0
+    response = _Response(200, body=b'{"status":"ok"}')
 
-    def get(_url: str, *, timeout: tuple[float, float]) -> _Response:
-        assert timeout == (10.0, 150.0)
-        clock.now += 134.0
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+        nonlocal calls
+        calls += 1
+        assert stream is True
+        assert timeout[1] <= 2.0
+        if calls <= 9:
+            clock.now += sum(timeout)
+            raise _ReadTimeout("service still starting")
+        clock.now += 0.1
         return response
 
-    result, attempts, request_error, body = helpers["_probe_api_health"](
+    result, attempts, request_error, body, payload = helpers["_probe_api_health"](
         "https://api.example.test",
         request_get=get,
         request_exception=_ReadTimeout,
@@ -94,22 +126,26 @@ def test_health_probe_accepts_a_real_response_after_observed_cold_start() -> Non
     )
 
     assert result is response
-    assert len(attempts) == 1
-    assert attempts[0]["result"] == "http_200"
-    assert attempts[0]["elapsed_seconds"] == 134.0
+    assert len(attempts) == 10
+    assert attempts[-1]["result"] == "http_200"
     assert request_error is None
     assert body is None
+    assert payload == {"status": "ok"}
+    assert response.requested_chunk_size == 1
+    assert response.closed
+    assert clock.now < 179.0
 
 
 def test_health_probe_rejects_a_response_after_the_deadline() -> None:
     helpers = _health_helpers()
     clock = _Clock()
+    response = _Response(200, body=b'{"status":"ok"}')
 
-    def late_get(_url: str, *, timeout: tuple[float, float]) -> _Response:
+    def late_get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
         clock.now += 180.0
-        return _Response(200)
+        return response
 
-    result, attempts, request_error, _body = helpers["_probe_api_health"](
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
         "https://api.example.test",
         request_get=late_get,
         request_exception=_ReadTimeout,
@@ -120,24 +156,77 @@ def test_health_probe_rejects_a_response_after_the_deadline() -> None:
     assert result is None
     assert attempts[-1]["error"] == "ReadinessBudgetExceeded"
     assert request_error == "ReadinessBudgetExceeded"
+    assert payload is None
+    assert response.closed
+
+
+def test_health_probe_stops_slow_trickle_body_at_total_deadline() -> None:
+    helpers = _health_helpers()
+    clock = _Clock()
+    response = _Response(
+        200,
+        body=b"x" * 256,
+        clock=clock,
+        seconds_per_chunk=1.0,
+    )
+
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+        return response
+
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    assert result is None
+    assert clock.now == pytest.approx(179.0)
+    assert attempts[-1]["error"] == "ReadinessBudgetExceeded"
+    assert request_error == "ReadinessBudgetExceeded"
+    assert payload is None
+    assert response.closed
+
+
+def test_health_probe_rejects_oversized_response_body() -> None:
+    helpers = _health_helpers()
+    response = _Response(200, body=b"x" * (64 * 1024 + 1))
+
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+        return response
+
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result is None
+    assert attempts[-1]["error"] == "HealthResponseTooLarge"
+    assert request_error == "HealthResponseTooLarge"
+    assert payload is None
+    assert response.closed
 
 
 def test_health_probe_clears_stale_timeout_after_recovery() -> None:
     helpers = _health_helpers()
     clock = _Clock()
     calls = 0
-    response = _Response(200)
+    response = _Response(200, body=b'{"status":"ok"}')
 
-    def get(_url: str, *, timeout: tuple[float, float]) -> _Response:
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
         nonlocal calls
         calls += 1
         if calls == 1:
-            clock.now += 10.0
+            clock.now += sum(timeout)
             raise _ReadTimeout("temporary cold start")
-        clock.now += 2.0
+        clock.now += 0.1
         return response
 
-    result, attempts, request_error, body = helpers["_probe_api_health"](
+    result, attempts, request_error, body, payload = helpers["_probe_api_health"](
         "https://api.example.test",
         request_get=get,
         request_exception=_ReadTimeout,
@@ -150,17 +239,20 @@ def test_health_probe_clears_stale_timeout_after_recovery() -> None:
     assert attempts[0]["error"] == "_ReadTimeout"
     assert request_error is None
     assert body is None
+    assert payload == {"status": "ok"}
+    assert response.closed
 
 
 def test_health_probe_stops_at_one_total_budget() -> None:
     helpers = _health_helpers()
     clock = _Clock()
 
-    def timeout_get(_url: str, *, timeout: tuple[float, float]) -> _Response:
+    def timeout_get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+        assert stream is True
         clock.now += sum(timeout)
         raise _ReadTimeout("still starting")
 
-    result, attempts, request_error, _body = helpers["_probe_api_health"](
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
         "https://api.example.test",
         request_get=timeout_get,
         request_exception=_ReadTimeout,
@@ -169,9 +261,64 @@ def test_health_probe_stops_at_one_total_budget() -> None:
     )
 
     assert result is None
-    assert request_error == "_ReadTimeout"
-    assert len(attempts) == 2
+    assert request_error == "ReadinessBudgetExceeded"
+    assert len(attempts) > 2
     assert clock.now == pytest.approx(179.0)
+    assert payload is None
+
+
+def test_http_response_clears_stale_timeout_even_when_service_is_not_ready() -> None:
+    helpers = _health_helpers()
+    clock = _Clock()
+    calls = 0
+    response = _Response(503, "service unavailable")
+
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            clock.now += sum(timeout)
+            raise _ReadTimeout("temporary cold start")
+        clock.now += 0.1
+        return response
+
+    result, attempts, request_error, body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+        budget_seconds=20.0,
+    )
+
+    assert result is response and result.status_code == 503
+    assert len(attempts) == 2
+    assert request_error is None
+    assert body == "service unavailable"
+    assert payload is None
+    assert response.closed
+
+
+def test_invalid_health_json_fails_closed_and_closes_response() -> None:
+    helpers = _health_helpers()
+    response = _Response(200, body=b"not-json")
+
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool) -> _Response:
+        return response
+
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result is None
+    assert attempts[-1]["error"] == "InvalidHealthJSON"
+    assert request_error == "InvalidHealthJSON"
+    assert payload is None
+    assert response.closed
 
 
 def test_public_e2e_fails_closed_without_the_immutable_checkpoint_health_contract() -> None:
@@ -183,35 +330,6 @@ def test_public_e2e_fails_closed_without_the_immutable_checkpoint_health_contrac
     assert digest_gate in source
     assert source.index(verified_gate) < source.index('page.locator("#guestButton").click')
     assert source.index(digest_gate) < source.index('page.locator("#analyzeButton").click')
-
-
-def test_http_response_clears_stale_timeout_even_when_service_is_not_ready() -> None:
-    helpers = _health_helpers()
-    clock = _Clock()
-    calls = 0
-
-    def get(_url: str, *, timeout: tuple[float, float]) -> _Response:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            clock.now += 10.0
-            raise _ReadTimeout("temporary cold start")
-        clock.now += 0.1
-        return _Response(503, "service unavailable")
-
-    result, attempts, request_error, body = helpers["_probe_api_health"](
-        "https://api.example.test",
-        request_get=get,
-        request_exception=_ReadTimeout,
-        monotonic=clock.monotonic,
-        sleep=clock.sleep,
-        budget_seconds=12.0,
-    )
-
-    assert result is not None and result.status_code == 503
-    assert len(attempts) == 2
-    assert request_error is None
-    assert body == "service unavailable"
 
 
 def test_live_e2e_workflow_never_contacts_public_service_from_a_pull_request() -> None:
