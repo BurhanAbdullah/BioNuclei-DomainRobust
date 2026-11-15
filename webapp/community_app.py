@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from .app import _checkpoint, _checkpoint_health_fields, _png_data_url
+from .app import _checkpoint_health_fields, _png_data_url
 from .auth import authenticate_optional, create_guest_token
 from . import community as community_service
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
