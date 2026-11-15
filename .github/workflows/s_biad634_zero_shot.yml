@@ -1,28 +1,32 @@
 name: S-BIAD634 zero-shot transfer
 
-# Release-gate rerun: execute after evaluator/data-pairing fixes.
-# Records exact repository/checkpoint provenance and requires a complete 79-image artifact.
-# Manual release-gate trigger requested 2026-08-18 after P/R/F1 integration.
+# Run only from main. Baseline checkpoints must come from a successful main run
+# whose training inputs are unchanged through the evaluation commit.
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'scripts/evaluate_s_biad634.py'
       - 'scripts/metrics_instance.py'
       - 'scripts/download_s_biad634.py'
+      - 'scripts/validate_bbbc039_baseline.py'
       - '.github/workflows/s_biad634_zero_shot.yml'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       baseline_run_id:
-        description: 'Completed BBBC039 baseline workflow run ID (optional; latest successful run is used when omitted)'
+        description: 'Successful BBBC039 baseline run from main (optional; latest eligible main run is used when omitted)'
         required: false
 
 jobs:
   zero-shot:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -39,7 +43,7 @@ jobs:
           python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           python -m pip install numpy scipy scikit-image tifffile imagecodecs pyyaml
           python -m pip install -e . --no-deps
-      - name: Select baseline run
+      - name: Select and validate main-branch baseline provenance
         id: run
         env:
           MANUAL_RUN_ID: ${{ inputs.baseline_run_id }}
@@ -47,46 +51,71 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          mkdir -p outputs/s_biad634_zero_shot
           if [ -n "$MANUAL_RUN_ID" ]; then
             RUN_ID="$MANUAL_RUN_ID"
           elif [ -n "$EVENT_RUN_ID" ]; then
             RUN_ID="$EVENT_RUN_ID"
           else
-            RUN_ID=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?status=success&per_page=20" \
-              | python -c 'import json,sys; d=json.load(sys.stdin); print(next((r["id"] for r in d["workflow_runs"] if r["conclusion"]=="success"), ""))')
+            RUN_ID=$(gh api "repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?branch=main&status=success&per_page=100" \
+              --jq '.workflow_runs[] | select(.head_branch == "main" and .conclusion == "success") | .id' \
+              | head -n 1)
           fi
           test -n "$RUN_ID"
+          gh api "repos/$REPO/actions/runs/$RUN_ID" > baseline_run.json
+          gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" > baseline_artifacts.json
+          BASELINE_SHA=$(jq -r '.head_sha // empty' baseline_run.json)
+          test -n "$BASELINE_SHA"
+          gh api "repos/$REPO/compare/$BASELINE_SHA...$GITHUB_SHA" > baseline_compare.json
+          python scripts/validate_bbbc039_baseline.py \
+            --run-json baseline_run.json \
+            --artifacts-json baseline_artifacts.json \
+            --compare-json baseline_compare.json \
+            --expected-sha "$GITHUB_SHA" \
+            --repository "$REPO" \
+            --output outputs/s_biad634_zero_shot/provenance.json
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using baseline run $RUN_ID"
+          echo "Using verified main-branch baseline run $RUN_ID"
       - name: Download baseline artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ steps.run.outputs.run_id }}
           name: bbbc039-baseline-${{ steps.run.outputs.run_id }}
           path: baseline_artifact
+          digest-mismatch: error
       - name: Locate checkpoint
         run: |
-          test -f baseline_artifact/outputs/bbbc039_baseline/last.pt
+          test -s baseline_artifact/outputs/bbbc039_baseline/last.pt
           cp baseline_artifact/outputs/bbbc039_baseline/last.pt baseline_artifact/last.pt
-      - name: Record evaluation provenance
+      - name: Complete evaluation provenance
         run: |
-          mkdir -p outputs/s_biad634_zero_shot
           python - <<'PY'
-          import json, os
+          import hashlib
+          import json
+          import os
           from pathlib import Path
-          out = {
-              'repository': os.environ.get('GITHUB_REPOSITORY'),
-              'commit': os.environ.get('GITHUB_SHA'),
-              'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
-              'baseline_run_id': os.environ.get('BASELINE_RUN_ID'),
-          }
-          Path('outputs/s_biad634_zero_shot/provenance.json').write_text(json.dumps(out, indent=2) + '\n')
+
+          provenance_path = Path("outputs/s_biad634_zero_shot/provenance.json")
+          payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+          checkpoint = Path("baseline_artifact/last.pt")
+          digest = hashlib.sha256()
+          with checkpoint.open("rb") as handle:
+              for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          payload["repository"] = os.environ["GITHUB_REPOSITORY"]
+          payload["evaluation_commit"] = os.environ["GITHUB_SHA"]
+          payload["evaluation_run_id"] = int(os.environ["GITHUB_RUN_ID"])
+          payload["baseline_checkpoint_sha256"] = digest.hexdigest()
+          provenance_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps({
+              "baseline_run_id": payload["baseline_run_id"],
+              "baseline_head_sha": payload["baseline_head_sha"],
+              "baseline_artifact_digest": payload["baseline_artifact_digest"],
+              "baseline_checkpoint_sha256": payload["baseline_checkpoint_sha256"],
+              "evaluation_commit": payload["evaluation_commit"],
+          }, indent=2))
           PY
-        env:
-          BASELINE_RUN_ID: ${{ steps.run.outputs.run_id }}
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Run zero-shot transfer evaluation
@@ -108,7 +137,11 @@ jobs:
           for key in ('dice', 'iou', 'precision', 'recall', 'f1_score', 'aji', 'boundary_f1'):
               assert key in d.get('mean', {}) and key in d.get('median', {}), key
           assert d.get('instance_iou_threshold') == 0.5
-          print('Verified 79-image zero-shot metrics artifact including instance precision/recall/F1.')
+          provenance = json.loads(Path('outputs/s_biad634_zero_shot/provenance.json').read_text())
+          assert provenance.get('baseline_head_branch') == 'main'
+          assert provenance.get('baseline_training_inputs_unchanged') is True
+          assert provenance.get('baseline_checkpoint_sha256')
+          print('Verified 79-image zero-shot metrics and main-branch baseline provenance.')
           PY
       - name: Upload zero-shot results
         if: always()
