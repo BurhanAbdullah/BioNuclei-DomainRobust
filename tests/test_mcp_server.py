@@ -186,7 +186,14 @@ def test_main_http_wraps_remote_app_with_bearer_auth(monkeypatch: pytest.MonkeyP
 def test_bearer_auth_wraps_the_actual_streamable_http_mcp_route() -> None:
     if importlib.util.find_spec("mcp") is None:
         pytest.skip("MCP SDK is an optional dependency")
-    from starlette.testclient import TestClient
+    import json
+    import socket
+    import threading
+    import time
+    import urllib.error
+    import urllib.request
+
+    import uvicorn
 
     from bionuclei.mcp_server import _BearerTokenASGIMiddleware, build_server
 
@@ -197,19 +204,70 @@ def test_bearer_auth_wraps_the_actual_streamable_http_mcp_route() -> None:
     )
     protected_app = _BearerTokenASGIMiddleware(app, token)
 
-    with TestClient(protected_app) as client:
-        request = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
-        headers = {"Accept": "application/json, text/event-stream"}
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
 
-        unauthorized = client.post("/mcp", json=request, headers=headers)
-        assert unauthorized.status_code == 401
-        assert unauthorized.headers.get("cache-control") == "no-store"
-
-        authorized = client.post(
-            "/mcp",
-            json=request,
-            headers={**headers, "Authorization": f"Bearer {token}"},
+    server = uvicorn.Server(
+        uvicorn.Config(
+            protected_app,
+            host="127.0.0.1",
+            port=port,
+            log_level="critical",
+            lifespan="on",
         )
-        # The deliberately incomplete initialize params may be rejected by the
-        # MCP SDK, but the request must pass authentication and reach the route.
-        assert authorized.status_code not in {401, 404}
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if not server.started:
+        server.should_exit = True
+        thread.join(timeout=5)
+        pytest.fail("Uvicorn did not start the actual Streamable HTTP MCP app")
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "bionuclei-auth-test", "version": "1.0.0"},
+        },
+    }
+    url = f"http://127.0.0.1:{port}/mcp"
+
+    def post(headers: dict[str, str]) -> tuple[int, Any, bytes]:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                **headers,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=3) as response:
+                return response.status, response.headers, response.read()
+        except urllib.error.HTTPError as response:
+            return response.code, response.headers, response.read()
+
+    try:
+        unauthorized_status, unauthorized_headers, unauthorized_body = post({})
+        assert unauthorized_status == 401
+        assert unauthorized_headers.get("Cache-Control") == "no-store"
+        assert b"unauthorized" in unauthorized_body
+
+        authorized_status, _authorized_headers, authorized_body = post(
+            {"Authorization": f"Bearer {token}"}
+        )
+        assert authorized_status == 200, authorized_body.decode("utf-8", errors="replace")
+        assert b"serverInfo" in authorized_body
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+        assert not thread.is_alive(), "Uvicorn test server did not shut down cleanly"
