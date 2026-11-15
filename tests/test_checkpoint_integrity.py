@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 
 import pytest
 from fastapi import HTTPException
@@ -28,7 +29,8 @@ def test_checkpoint_identity_and_both_health_endpoints_report_actual_digest(tmp_
     assert identity_path == path.resolve()
     assert digest == actual
     assert verified is True
-    assert _checkpoint() == path.resolve()
+    with _checkpoint() as checkpoint:
+        assert os.path.samefile(checkpoint, path)
 
     for payload in (scientific_app.health(), community_app.health()):
         assert payload["status"] == "ok"
@@ -46,7 +48,8 @@ def test_checkpoint_digest_mismatch_blocks_inference_and_degrades_health(tmp_pat
     assert verified is False
 
     with pytest.raises(HTTPException) as exc_info:
-        _checkpoint()
+        with _checkpoint():
+            pass
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -70,7 +73,8 @@ def test_environment_digest_cannot_override_pinned_release(tmp_path, monkeypatch
     assert verified is False
 
     with pytest.raises(HTTPException) as exc_info:
-        _checkpoint()
+        with _checkpoint():
+            pass
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -84,7 +88,8 @@ def test_missing_checkpoint_is_not_reported_healthy(tmp_path, monkeypatch):
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", RELEASE_CHECKPOINT_SHA256)
 
     with pytest.raises(HTTPException) as exc_info:
-        _checkpoint()
+        with _checkpoint():
+            pass
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -103,7 +108,8 @@ def test_invalid_expected_digest_reports_available_unverified_checkpoint_and_fai
     assert verified is False
 
     with pytest.raises(HTTPException) as exc_info:
-        _checkpoint()
+        with _checkpoint():
+            pass
     assert exc_info.value.status_code == 503
 
     for payload in (scientific_app.health(), community_app.health()):
@@ -141,7 +147,8 @@ def test_checkpoint_digest_cache_reuses_verified_file_and_rejects_replacement(tm
     assert hash_calls == 2
 
     with pytest.raises(HTTPException) as exc_info:
-        _checkpoint()
+        with _checkpoint():
+            pass
     assert exc_info.value.status_code == 503
 
 
@@ -190,3 +197,55 @@ def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverifie
 
     assert response.status_code == 503
     assert "does not match the expected release SHA-256" in response.json()["detail"]
+
+
+
+def test_inference_load_uses_verified_inode_after_checkpoint_path_replacement(tmp_path, monkeypatch):
+    import torch
+    from bionuclei import inference
+
+    path = tmp_path / "checkpoint.pt"
+    torch.save(
+        {
+            "config": {"model": {"in_channels": 1, "out_channels": 3, "base_channels": 2}},
+            "model": {"marker": torch.tensor([111])},
+        },
+        path,
+    )
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", actual)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.delenv("BIONUCLEI_CHECKPOINT_SHA256", raising=False)
+
+    loaded = {}
+
+    class CapturingModel:
+        def load_state_dict(self, state, assign=False):
+            loaded["marker"] = state["marker"].detach().clone()
+
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(inference, "BoundaryUNet", lambda **_kwargs: CapturingModel())
+
+    replacement = tmp_path / "replacement.pt"
+    torch.save(
+        {
+            "config": {"model": {"in_channels": 1, "out_channels": 3, "base_channels": 2}},
+            "model": {"marker": torch.tensor([222])},
+        },
+        replacement,
+    )
+    original = tmp_path / "verified-checkpoint.pt"
+
+    if not os.path.isdir("/proc/self/fd") and not os.path.isdir("/dev/fd"):
+        pytest.skip("stable descriptor paths require /proc/self/fd or /dev/fd")
+
+    with _checkpoint() as verified_checkpoint:
+        path.replace(original)
+        replacement.replace(path)
+        inference._load_model(verified_checkpoint, device="cpu")
+
+    assert loaded["marker"].tolist() == [111]
+    assert hashlib.sha256(original.read_bytes()).hexdigest() == actual
+    assert path.read_bytes() != original.read_bytes()
