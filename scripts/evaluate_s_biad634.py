@@ -68,9 +68,9 @@ def semantic_to_instances(classes: np.ndarray) -> np.ndarray:
     """Reconstruct full instances, assigning boundary pixels to interior markers.
 
     Class 2 is a separating band, not background. Four-connected foreground
-    components keep diagonal contacts distinct; watershed assigns boundary
-    pixels to the interior markers within each component. Boundary-only
-    components are retained as individual instances.
+    components keep diagonal contacts distinct; a component-bounded SciPy
+    distance transform assigns boundary pixels to the nearest interior marker.
+    Boundary-only 4-connected components are retained as one instance each.
     """
     semantic = np.asarray(classes)
     if semantic.ndim != 2:
