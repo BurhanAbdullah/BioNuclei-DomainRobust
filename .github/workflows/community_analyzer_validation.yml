@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       allow_live_render:
-        description: "Explicitly authorize read-only checks against the production Render service"
+        description: "Authorize live production checks, including ephemeral guest-session creation"
         required: false
         default: false
         type: boolean
