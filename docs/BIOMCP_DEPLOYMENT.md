@@ -41,6 +41,9 @@ Remote clients must send `Authorization: Bearer <token>` on every HTTP request.
 The server rejects missing, duplicate, or invalid Authorization headers with HTTP 401.
 The token must contain at least 32 ASCII characters and no whitespace.
 
+For internet-facing deployments, terminate TLS at a trusted reverse proxy and forward the
+Authorization header. Do not expose the raw HTTP port over an untrusted network.
+
 **Trust boundary:** MCP tool arguments currently contain paths on the server host, not
 uploaded client files. An authenticated caller can therefore access files available to
 the server process through the registered path-based tools. Only share the bearer token
