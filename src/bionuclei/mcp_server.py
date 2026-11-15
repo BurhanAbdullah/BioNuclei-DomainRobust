@@ -31,6 +31,7 @@ from .metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 
 SERVER_NAME = "BioMCP-BioNuclei"
 
+
 def _is_loopback_host(host: str) -> bool:
     """Return True only for a literal loopback IP address."""
     candidate = host.strip()
@@ -51,9 +52,9 @@ def _validated_http_token(host: str, token: str | None) -> str | None:
                 "BIOMCP_MCP_BEARER_TOKEN"
             )
         return None
-    if len(token.encode("utf-8")) < 32 or any(character.isspace() for character in token):
+    if len(token) < 32 or not token.isascii() or any(character.isspace() for character in token):
         raise RuntimeError(
-            "BIOMCP_MCP_BEARER_TOKEN must contain at least 32 UTF-8 bytes "
+            "BIOMCP_MCP_BEARER_TOKEN must contain at least 32 ASCII characters "
             "and no whitespace"
         )
     return token
@@ -100,8 +101,6 @@ class _BearerTokenASGIMiddleware:
             return
 
         await self.app(scope, receive, send)
-
-
 
 
 def _require_sdk() -> Any:
