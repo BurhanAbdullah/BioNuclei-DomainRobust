@@ -147,6 +147,21 @@ def test_validate_result_archive_rejects_source_bytes_under_a_renamed_member(tmp
         )
 
 
+def test_validate_result_archive_rejects_duplicate_member_names(tmp_path):
+    archive_path = tmp_path / "duplicate-entry.zip"
+    _write_archive(
+        archive_path,
+        extra={"results/provenance.json": b'{"conflicting": true}'},
+    )
+
+    with pytest.raises(AssertionError, match="ZIP contains duplicate entries"):
+        checkpoint.validate_result_archive(
+            archive_path,
+            "live-uint16-sentinel.tif",
+            hashlib.sha256(b"uploaded source bytes").hexdigest(),
+        )
+
+
 def test_resolve_revision_provenance_distinguishes_source_base_and_tested_merge():
     head_sha = "a" * 40
     base_sha = "b" * 40
