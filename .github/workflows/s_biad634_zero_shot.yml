@@ -57,8 +57,8 @@ jobs:
           elif [ -n "$EVENT_RUN_ID" ]; then
             RUN_ID="$EVENT_RUN_ID"
           else
-            RUN_ID=$(gh api "repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?branch=main&status=success&per_page=100" \
-              --jq '.workflow_runs[] | select(.head_branch == "main" and .conclusion == "success") | .id' \
+            RUN_ID=$(gh api "repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?branch=main&status=completed&per_page=100" \
+              --jq '.workflow_runs[] | select(.head_branch == "main" and .conclusion == "success" and .event == "push") | .id' \
               | head -n 1)
           fi
           test -n "$RUN_ID"
