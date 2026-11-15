@@ -12,6 +12,7 @@ def test_live_render_validation_requires_explicit_upstream_opt_in() -> None:
 
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert inputs["allow_live_render"]["default"] == "false"
+    assert "ephemeral guest-session creation" in inputs["allow_live_render"]["description"]
     assert workflow["jobs"]["live"]["if"] == (
         "${{ github.event_name == 'workflow_dispatch' "
         "&& github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' "
