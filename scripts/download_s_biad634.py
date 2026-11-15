@@ -61,6 +61,8 @@ def _validate_downloaded_archive(path: Path) -> None:
     """Validate every member before the temporary archive can replace the destination."""
     try:
         with zipfile.ZipFile(path) as archive:
+            # Apply entry/path/expansion limits before CRC scanning decompresses members.
+            validated_member_names(archive.infolist())
             corrupt_member = archive.testzip()
     except (zipfile.BadZipFile, EOFError, zlib.error) as exc:
         raise CorruptDatasetArchiveError(
