@@ -44,7 +44,10 @@ def valid_inputs():
     }
     comparison = {
         "status": "ahead",
+        "base_commit": {"sha": BASELINE_SHA},
         "merge_base_commit": {"sha": BASELINE_SHA},
+        "total_commits": 1,
+        "commits": [{"sha": EVALUATION_SHA}],
         "files": [
             {"filename": "scripts/evaluate_s_biad634.py"},
             {"filename": "docs/RESEARCH_PROTOCOL.md"},
@@ -95,6 +98,28 @@ def test_rejects_non_ancestor_baseline() -> None:
         )
 
 
+def test_rejects_comparison_for_a_different_evaluation_commit() -> None:
+    run, artifacts, comparison = valid_inputs()
+    comparison["commits"][-1]["sha"] = "3" * 40
+
+    with pytest.raises(ValueError, match="head does not match"):
+        validate_baseline_provenance(
+            run, artifacts, comparison,
+            expected_sha=EVALUATION_SHA, repository=REPOSITORY,
+        )
+
+
+def test_rejects_truncated_comparison_commit_list() -> None:
+    run, artifacts, comparison = valid_inputs()
+    comparison["total_commits"] = 250
+
+    with pytest.raises(ValueError, match="truncated commit details"):
+        validate_baseline_provenance(
+            run, artifacts, comparison,
+            expected_sha=EVALUATION_SHA, repository=REPOSITORY,
+        )
+
+
 def test_rejects_baseline_when_training_inputs_changed() -> None:
     run, artifacts, comparison = valid_inputs()
     comparison["files"].append({"filename": "src/bionuclei/models.py"})
@@ -135,7 +160,10 @@ def test_actual_main_baseline_remains_eligible_after_nontraining_changes() -> No
     }
     comparison = {
         "status": "ahead",
+        "base_commit": {"sha": baseline_sha},
         "merge_base_commit": {"sha": baseline_sha},
+        "total_commits": 12,
+        "commits": [{"sha": f"{i:040x}"} for i in range(1, 12)] + [{"sha": evaluation_sha}],
         "files": [
             {"filename": ".github/workflows/e6_e7_uncertainty_analysis.yml"},
             {"filename": ".github/workflows/e6_external_few_shot.yml"},
