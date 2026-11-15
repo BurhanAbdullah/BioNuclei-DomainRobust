@@ -71,18 +71,24 @@ def validate_baseline_provenance(
     if run.get("status") != "completed" or run.get("conclusion") != "success":
         raise ValueError("baseline run must be completed successfully")
 
+    if run.get("event") not in {"push", "workflow_dispatch"}:
+        raise ValueError(
+            f"baseline event must be push or workflow_dispatch, got {run.get('event')!r}"
+        )
+
     run_repository = (run.get("repository") or {}).get("full_name")
     if run_repository != repository:
         raise ValueError(
             f"baseline repository mismatch: expected {repository!r}, got {run_repository!r}"
         )
     head_repository = run.get("head_repository")
-    if isinstance(head_repository, dict):
-        head_full_name = head_repository.get("full_name")
-        if head_full_name and head_full_name != repository:
-            raise ValueError(
-                f"baseline head repository mismatch: expected {repository!r}, got {head_full_name!r}"
-            )
+    if not isinstance(head_repository, dict) or head_repository.get("full_name") != repository:
+        actual_head_repository = (
+            head_repository.get("full_name") if isinstance(head_repository, dict) else None
+        )
+        raise ValueError(
+            f"baseline head repository mismatch: expected {repository!r}, got {actual_head_repository!r}"
+        )
 
     baseline_sha = str(run.get("head_sha") or "")
     if not _SHA_RE.fullmatch(baseline_sha):

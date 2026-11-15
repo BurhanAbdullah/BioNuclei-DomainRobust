@@ -87,6 +87,35 @@ def test_rejects_baseline_run_from_pull_request_branch() -> None:
         )
 
 
+def test_rejects_pull_request_event_even_when_branch_and_repository_match() -> None:
+    run, artifacts, comparison = valid_inputs()
+    run["event"] = "pull_request"
+
+    with pytest.raises(ValueError, match="event must be push or workflow_dispatch"):
+        validate_baseline_provenance(
+            run, artifacts, comparison,
+            expected_sha=EVALUATION_SHA, repository=REPOSITORY,
+        )
+
+
+def test_rejects_missing_or_foreign_head_repository() -> None:
+    run, artifacts, comparison = valid_inputs()
+    run["head_repository"] = None
+
+    with pytest.raises(ValueError, match="head repository mismatch"):
+        validate_baseline_provenance(
+            run, artifacts, comparison,
+            expected_sha=EVALUATION_SHA, repository=REPOSITORY,
+        )
+
+    run["head_repository"] = {"full_name": "untrusted/fork"}
+    with pytest.raises(ValueError, match="head repository mismatch"):
+        validate_baseline_provenance(
+            run, artifacts, comparison,
+            expected_sha=EVALUATION_SHA, repository=REPOSITORY,
+        )
+
+
 def test_rejects_non_ancestor_baseline() -> None:
     run, artifacts, comparison = valid_inputs()
     comparison["status"] = "diverged"
@@ -146,6 +175,7 @@ def test_actual_main_baseline_remains_eligible_after_nontraining_changes() -> No
         "created_at": "2026-10-23T16:42:17Z",
         "html_url": "https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/39988978232",
         "repository": {"full_name": REPOSITORY},
+        "head_repository": {"full_name": REPOSITORY},
     }
     artifacts = {
         "artifacts": [
