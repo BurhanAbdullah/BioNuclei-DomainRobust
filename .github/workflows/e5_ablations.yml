@@ -53,7 +53,7 @@ jobs:
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634 --keep-archive --skip-extract
       - name: Record target archive size and digest
         env:
-          BIONUCLEI_S_BIAD634_EXPECTED_ARCHIVE_SHA256: "8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249aa07ad1"
+          BIONUCLEI_S_BIAD634_EXPECTED_ARCHIVE_SHA256: "8285987ed4d57c46a46a55a33c1c085875ea41f429b59cde31d249741aa07ad1"
           BIONUCLEI_S_BIAD634_EXPECTED_FILE_COUNT: "470"
           BIONUCLEI_S_BIAD634_EXPECTED_RAW_IMAGE_COUNT: "79"
           BIONUCLEI_S_BIAD634_EXPECTED_GROUNDTRUTH_COUNT: "79"
