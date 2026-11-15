@@ -221,6 +221,31 @@ def test_download_stops_after_bounded_crc_invalid_archives_without_replacing_des
     assert _part_files(destination) == []
 
 
+def test_download_validates_expansion_limits_before_crc_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    oversized_archive = _zip_bytes(payload=b"image-payload-too-large")
+    monkeypatch.setattr(extractor, "MAX_MEMBER_UNCOMPRESSED_BYTES", 4)
+    monkeypatch.setattr(
+        downloader.urllib.request,
+        "urlopen",
+        lambda _url, *, timeout: io.BytesIO(oversized_archive),
+    )
+    monkeypatch.setattr(
+        zipfile.ZipFile,
+        "testzip",
+        lambda _self: pytest.fail("expansion limits must be checked before CRC decompression"),
+    )
+
+    with pytest.raises(ValueError, match="per-file limit"):
+        downloader.download("https://example.test/dataset.zip", destination)
+
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
+
+
 def _write_archive(path: Path, members: dict[str, bytes]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as archive:
