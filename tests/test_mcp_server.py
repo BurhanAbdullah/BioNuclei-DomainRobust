@@ -356,10 +356,9 @@ def test_streamable_http_client_discovers_and_calls_real_bionuclei_tools(tmp_pat
                             "inspect_image",
                             arguments={"input_path": str(image_path)},
                         )
-                        assert not result.isError
-                        structured = getattr(result, "structuredContent", None)
-                        if structured is None:
-                            structured = getattr(result, "structured_content", None)
+                        payload = result.model_dump(by_alias=True)
+                        assert not payload.get("isError", payload.get("is_error", False))
+                        structured = payload.get("structuredContent") or payload.get("structured_content")
                         assert isinstance(structured, dict)
                         assert structured["dtype"] == "uint16"
                         assert structured["max"] == 65535.0
