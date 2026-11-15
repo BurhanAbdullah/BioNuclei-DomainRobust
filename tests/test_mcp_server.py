@@ -181,3 +181,35 @@ def test_main_http_wraps_remote_app_with_bearer_auth(monkeypatch: pytest.MonkeyP
 
     assert captured["host"] == "0.0.0.0"
     assert isinstance(captured["app"], module._BearerTokenASGIMiddleware)
+
+
+def test_bearer_auth_wraps_the_actual_streamable_http_mcp_route() -> None:
+    if importlib.util.find_spec("mcp") is None:
+        pytest.skip("MCP SDK is an optional dependency")
+    from fastapi.testclient import TestClient
+
+    from bionuclei.mcp_server import _BearerTokenASGIMiddleware, build_server
+
+    token = "actual-http-" + "q" * 40
+    app = build_server().streamable_http_app(
+        streamable_http_path="/mcp",
+        host="127.0.0.1",
+    )
+    protected_app = _BearerTokenASGIMiddleware(app, token)
+
+    with TestClient(protected_app) as client:
+        request = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        headers = {"Accept": "application/json, text/event-stream"}
+
+        unauthorized = client.post("/mcp", json=request, headers=headers)
+        assert unauthorized.status_code == 401
+        assert unauthorized.headers.get("cache-control") == "no-store"
+
+        authorized = client.post(
+            "/mcp",
+            json=request,
+            headers={**headers, "Authorization": f"Bearer {token}"},
+        )
+        # The deliberately incomplete initialize params may be rejected by the
+        # MCP SDK, but the request must pass authentication and reach the route.
+        assert authorized.status_code not in {401, 404}
