@@ -57,11 +57,13 @@ def test_validate_result_archive_requires_all_downloadable_deliverables(tmp_path
     archive_path = tmp_path / "complete.zip"
     _write_archive(archive_path)
 
-    names = set(checkpoint.validate_result_archive(
-        archive_path,
-        "live-uint16-sentinel.tif",
-        hashlib.sha256(b"uploaded source bytes").hexdigest(),
-    ))
+    names = set(
+        checkpoint.validate_result_archive(
+            archive_path,
+            "live-uint16-sentinel.tif",
+            hashlib.sha256(b"uploaded source bytes").hexdigest(),
+        )
+    )
 
     assert {
         "results/measurements.csv",
@@ -84,10 +86,10 @@ def test_validate_result_archive_rejects_missing_required_deliverables(tmp_path,
 
     with pytest.raises(AssertionError, match="ZIP missing required artifacts"):
         checkpoint.validate_result_archive(
-        archive_path,
-        "live-uint16-sentinel.tif",
-        hashlib.sha256(b"uploaded source bytes").hexdigest(),
-    )
+            archive_path,
+            "live-uint16-sentinel.tif",
+            hashlib.sha256(b"uploaded source bytes").hexdigest(),
+        )
 
 
 def test_validate_result_archive_rejects_empty_required_deliverable(tmp_path):
@@ -96,10 +98,10 @@ def test_validate_result_archive_rejects_empty_required_deliverable(tmp_path):
 
     with pytest.raises(AssertionError, match="ZIP contains empty required artifacts"):
         checkpoint.validate_result_archive(
-        archive_path,
-        "live-uint16-sentinel.tif",
-        hashlib.sha256(b"uploaded source bytes").hexdigest(),
-    )
+            archive_path,
+            "live-uint16-sentinel.tif",
+            hashlib.sha256(b"uploaded source bytes").hexdigest(),
+        )
 
 
 def test_validate_result_archive_rejects_source_image_and_corrupt_zip(tmp_path):
@@ -111,10 +113,10 @@ def test_validate_result_archive_rejects_source_image_and_corrupt_zip(tmp_path):
 
     with pytest.raises(AssertionError, match="uploaded source image"):
         checkpoint.validate_result_archive(
-        archive_path,
-        "live-uint16-sentinel.tif",
-        hashlib.sha256(b"uploaded source bytes").hexdigest(),
-    )
+            archive_path,
+            "live-uint16-sentinel.tif",
+            hashlib.sha256(b"source image").hexdigest(),
+        )
 
     corrupt_path = tmp_path / "corrupt.zip"
     _write_archive(corrupt_path)
@@ -122,7 +124,11 @@ def test_validate_result_archive_rejects_source_image_and_corrupt_zip(tmp_path):
     data[-8] ^= 0xFF
     corrupt_path.write_bytes(data)
     with pytest.raises((AssertionError, zipfile.BadZipFile)):
-        checkpoint.validate_result_archive(corrupt_path, "live-uint16-sentinel.tif")
+        checkpoint.validate_result_archive(
+            corrupt_path,
+            "live-uint16-sentinel.tif",
+            hashlib.sha256(b"uploaded source bytes").hexdigest(),
+        )
 
 
 def test_validate_result_archive_rejects_source_bytes_under_a_renamed_member(tmp_path):
