@@ -36,8 +36,27 @@ def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+class CorruptDatasetArchiveError(RuntimeError):
+    """A completed HTTP transfer did not produce a valid dataset ZIP."""
+
+
 def _retry_delay(attempt: int) -> float:
     return min(RETRY_BASE_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_SECONDS)
+
+
+def _validate_downloaded_archive(path: Path) -> None:
+    """Reject truncated or CRC-invalid ZIPs before replacing the prior archive."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            corrupt_member = archive.testzip()
+    except zipfile.BadZipFile as exc:
+        raise CorruptDatasetArchiveError(
+            "downloaded dataset is not a valid ZIP archive"
+        ) from exc
+    if corrupt_member is not None:
+        raise CorruptDatasetArchiveError(
+            f"downloaded dataset ZIP contains a corrupt member: {corrupt_member}"
+        )
 
 
 def download(url: str, destination: Path) -> None:
@@ -63,9 +82,15 @@ def download(url: str, destination: Path) -> None:
                     shutil.copyfileobj(response, out, length=1024 * 1024)
                     out.flush()
 
+            _validate_downloaded_archive(temporary_path)
             temporary_path.replace(destination)
             temporary_path = None
             return
+        except CorruptDatasetArchiveError as exc:
+            if attempt == MAX_DOWNLOAD_ATTEMPTS:
+                raise
+            delay = _retry_delay(attempt)
+            reason = str(exc)
         except urllib.error.HTTPError as exc:
             retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
             if not retryable or attempt == MAX_DOWNLOAD_ATTEMPTS:
