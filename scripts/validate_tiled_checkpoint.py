@@ -122,7 +122,10 @@ def main() -> None:
             profile = result.get("adaptive_plan", {}).get("profile", {})
             require(profile.get("shape") == [512, 512], f"Unexpected image shape: {profile.get('shape')!r}")
             require(profile.get("dtype") == "uint16", f"Input dtype was lost: {profile.get('dtype')!r}")
+            require(profile.get("min") == 512, f"Full uint16 minimum was lost: {profile.get('min')!r}")
             require(profile.get("max") == 65535, f"Full uint16 maximum was lost: {profile.get('max')!r}")
+            require(profile.get("max") - profile.get("min") == 65023,
+                    f"Full uint16 dynamic range was lost: min={profile.get('min')!r}, max={profile.get('max')!r}")
             intensity = result.get("reports", {}).get("intensity", {})
             require(intensity.get("max_nuclear_intensity") == 65535,
                     "Real checkpoint segmentation did not preserve the saturated core in nuclear intensity measurements")
@@ -150,6 +153,18 @@ def main() -> None:
                         f"Specialist {agent.get('agent')!r} has no valid evidence digest")
             intensity_agent = next((a for a in agents if a.get("agent") == "intensity_agent"), None)
             require(isinstance(intensity_agent, dict), "Intensity specialist output is missing")
+            require("Raw image min: 512" in intensity_agent.get("observations", []),
+                    "Intensity specialist did not reason about the raw-image minimum")
+            require("Raw image dynamic range: 65023 raw intensity units." in intensity_agent.get("observations", []),
+                    "Intensity specialist did not reason about the full raw-image dynamic range")
+            require(any(
+                claim.get("reference") == "adaptive_plan.profile.min" and claim.get("value") == 512
+                for claim in intensity_agent.get("quantitative_claims", [])
+            ), "Intensity specialist lacks an evidence-bound raw-minimum claim")
+            require(any(
+                claim.get("reference") == "adaptive_plan.profile.max" and claim.get("value") == 65535
+                for claim in intensity_agent.get("quantitative_claims", [])
+            ), "Intensity specialist lacks an evidence-bound raw-maximum claim")
             require("Raw image max: 65535" in intensity_agent.get("observations", []),
                     "Intensity specialist did not reason about the measured uint16 maximum")
             require(any(
@@ -213,7 +228,9 @@ def main() -> None:
                 "checkpoint_sha256_after": after_sha,
                 "image_shape": profile.get("shape"),
                 "image_dtype": profile.get("dtype"),
+                "raw_min": profile.get("min"),
                 "raw_max": profile.get("max"),
+                "raw_dynamic_range": profile.get("max") - profile.get("min"),
                 "measured_max_nuclear_intensity": intensity.get("max_nuclear_intensity"),
                 "specialist_count": len(agents),
                 "specialists": [
