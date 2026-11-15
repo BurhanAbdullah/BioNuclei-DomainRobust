@@ -79,6 +79,12 @@ jobs:
               zip_file_entry_count = sum(not entry.is_dir() for entry in entries)
               zip_directory_entry_count = sum(entry.is_dir() for entry in entries)
 
+          manifest_file_count = len(manifest.get("files", []))
+          if zip_file_entry_count != manifest_file_count:
+              raise SystemExit(
+                  "Archive non-directory entry count does not match the manifest file inventory"
+              )
+
           inventory = {
               "dataset": manifest.get("dataset"),
               "source_url": manifest.get("source_url"),
@@ -88,7 +94,7 @@ jobs:
               "zip_entry_count": zip_entry_count,
               "zip_file_entry_count": zip_file_entry_count,
               "zip_directory_entry_count": zip_directory_entry_count,
-              "manifest_file_count": len(manifest.get("files", [])),
+              "manifest_file_count": manifest_file_count,
               "raw_image_count": len(manifest.get("raw_image_files", [])),
               "groundtruth_count": len(manifest.get("groundtruth_files", [])),
           }
