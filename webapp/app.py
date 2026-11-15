@@ -8,7 +8,7 @@ Run locally with:
 """
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import base64
 import hashlib
 import hmac
@@ -19,7 +19,7 @@ import stat
 import tempfile
 import threading
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, BinaryIO, Iterator
 
 import numpy as np
 import tifffile
@@ -89,8 +89,9 @@ def _hash_checkpoint(stream) -> str:
     return digest.hexdigest()
 
 
-def _checkpoint_identity() -> tuple[Path, str, bool]:
-    """Return the actual checkpoint digest and whether it matches the pinned release."""
+@contextmanager
+def _checkpoint_handle() -> Iterator[tuple[Path, str, bool, BinaryIO]]:
+    """Verify a checkpoint while retaining the exact opened inode for inference."""
     global _CHECKPOINT_CACHE
 
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
@@ -108,48 +109,85 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
         expected, RELEASE_CHECKPOINT_SHA256
     )
 
+    stream: BinaryIO | None = None
     try:
+        stream = path.open("rb")
         with _CHECKPOINT_CACHE_LOCK:
-            with path.open("rb") as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode):
-                    raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
-                identity = _checkpoint_stat_key(before)
-                cached = _CHECKPOINT_CACHE
-                cache_hit = cached is not None and cached[0] == str(path) and cached[1] == identity
-                actual = cached[2] if cache_hit else _hash_checkpoint(stream)
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
+            identity = _checkpoint_stat_key(before)
+            cached = _CHECKPOINT_CACHE
+            cache_hit = cached is not None and cached[0] == str(path) and cached[1] == identity
+            actual = cached[2] if cache_hit else _hash_checkpoint(stream)
 
-                # Verify that neither the opened inode nor the path changed while
-                # checking it. A replacement or in-place write invalidates the
-                # cache and fails closed rather than accepting a stale digest.
-                after = os.fstat(stream.fileno())
-                current_path = path.stat()
-                if identity != _checkpoint_stat_key(after) or identity != _checkpoint_stat_key(current_path):
-                    _CHECKPOINT_CACHE = None
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Configured BioNuclei checkpoint changed while being verified",
-                    )
-                if not cache_hit:
-                    _CHECKPOINT_CACHE = (str(path), identity, actual)
+            # The path and opened descriptor must identify the same unchanged file
+            # at verification time. The descriptor remains open after this check,
+            # so later path replacement cannot redirect the model loader.
+            after = os.fstat(stream.fileno())
+            current_path = path.stat()
+            if identity != _checkpoint_stat_key(after) or identity != _checkpoint_stat_key(current_path):
+                _CHECKPOINT_CACHE = None
+                raise HTTPException(
+                    status_code=503,
+                    detail="Configured BioNuclei checkpoint changed while being verified",
+                )
+            if not cache_hit:
+                _CHECKPOINT_CACHE = (str(path), identity, actual)
     except HTTPException:
+        if stream is not None:
+            stream.close()
         raise
     except OSError as exc:
+        if stream is not None:
+            stream.close()
         _CHECKPOINT_CACHE = None
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
 
     verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
-    return path, actual, verified
+    try:
+        yield path, actual, verified, stream
+    finally:
+        stream.close()
 
 
-def _checkpoint() -> Path:
-    path, _actual, verified = _checkpoint_identity()
-    if not verified:
-        raise HTTPException(
-            status_code=503,
-            detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
-        )
-    return path
+def _checkpoint_identity() -> tuple[Path, str, bool]:
+    """Return the actual checkpoint digest and whether it matches the pinned release."""
+    with _checkpoint_handle() as (path, actual, verified, _stream):
+        return path, actual, verified
+
+
+@contextmanager
+def _checkpoint() -> Iterator[Path]:
+    """Expose only the verified open checkpoint inode to the memory-mapped loader."""
+    with _checkpoint_handle() as (_path, _actual, verified, stream):
+        if not verified:
+            raise HTTPException(
+                status_code=503,
+                detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+            )
+
+        descriptor_path = None
+        descriptor_stat = os.fstat(stream.fileno())
+        for descriptor_root in (Path("/proc/self/fd"), Path("/dev/fd")):
+            candidate = descriptor_root / str(stream.fileno())
+            try:
+                candidate_stat = candidate.stat()
+            except OSError:
+                continue
+            if (
+                candidate_stat.st_dev == descriptor_stat.st_dev
+                and candidate_stat.st_ino == descriptor_stat.st_ino
+            ):
+                descriptor_path = candidate
+                break
+
+        if descriptor_path is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Verified checkpoint cannot be loaded through a stable file descriptor",
+            )
+        yield descriptor_path
 
 
 async def _save_upload(upload: UploadFile, suffix: str = ".tif") -> Path:
@@ -268,7 +306,8 @@ async def predict_api(image: Annotated[UploadFile, File(...)], device: Annotated
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
             output_dir = Path(out)
-            result = predict(image_path, _checkpoint(), output_dir, device)
+            with _checkpoint() as checkpoint:
+                result = predict(image_path, checkpoint, output_dir, device)
             result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
         finally:
@@ -288,7 +327,8 @@ async def evaluate_api(
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
             output_dir = Path(out)
-            result = evaluate(image_path, gt_path, _checkpoint(), output_dir, device)
+            with _checkpoint() as checkpoint:
+                result = evaluate(image_path, gt_path, checkpoint, output_dir, device)
             result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
         finally:
