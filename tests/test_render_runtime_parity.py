@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
 import unittest
+
 
 from scripts.render_runtime_parity import is_non_runtime_path
 
@@ -51,6 +53,32 @@ class RenderRuntimeParityTests(unittest.TestCase):
         workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
         push_section = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
         self.assertIn('      - "scripts/render_runtime_parity.py"', push_section)
+
+    def test_every_render_image_input_triggers_main_e2e(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
+        push_section = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
+        push_patterns = [
+            line.strip().removeprefix("- ").strip().strip('"')
+            for line in push_section.splitlines()
+            if line.strip().startswith("- ")
+        ]
+        render_inputs = (
+            "webapp/community.py",
+            "src/bionuclei/inference.py",
+            "configs/base_system.yaml",
+            "pyproject.toml",
+            "README.md",
+            "docs/RESEARCH_PROTOCOL.md",
+            "docs/DATASETS.md",
+            "render.yaml",
+        )
+        for path in render_inputs:
+            with self.subTest(path=path):
+                self.assertTrue(
+                    any(fnmatch.fnmatchcase(path, pattern) for pattern in push_patterns),
+                    f"{path} does not trigger the main-branch E2E parity gate",
+                )
 
     def test_excluded_prefixes_stay_out_of_both_render_images(self) -> None:
         root = Path(__file__).resolve().parents[1]
