@@ -49,7 +49,7 @@ def validate_baseline_provenance(
     expected_sha: str,
     repository: str,
 ) -> dict[str, Any]:
-    """Validate run identity, main ancestry, unchanged training inputs, and artifact identity."""
+    """Validate run identity, exact compare endpoints, ancestry, inputs, and artifact identity."""
     if not _SHA_RE.fullmatch(expected_sha):
         raise ValueError("evaluation commit must be a lowercase 40-character SHA")
 
@@ -87,11 +87,31 @@ def validate_baseline_provenance(
         raise ValueError(
             f"baseline commit is not an ancestor of evaluation commit: {compare_status!r}"
         )
+    base_commit_sha = (comparison.get("base_commit") or {}).get("sha")
+    if base_commit_sha != baseline_sha:
+        raise ValueError(
+            f"GitHub comparison base mismatch: baseline={baseline_sha}, base={base_commit_sha!r}"
+        )
     merge_base_sha = (comparison.get("merge_base_commit") or {}).get("sha")
     if merge_base_sha != baseline_sha:
         raise ValueError(
             f"baseline commit is not the merge base: baseline={baseline_sha}, merge_base={merge_base_sha!r}"
         )
+
+    commits = comparison.get("commits")
+    total_commits = comparison.get("total_commits")
+    if (
+        not isinstance(commits, list)
+        or not isinstance(total_commits, int)
+        or total_commits != len(commits)
+        or total_commits >= 250
+    ):
+        raise ValueError("GitHub comparison omitted or may have truncated commit details")
+    if compare_status == "identical":
+        if baseline_sha != expected_sha or commits:
+            raise ValueError("identical comparison does not match the requested evaluation commit")
+    elif not commits or not isinstance(commits[-1], dict) or commits[-1].get("sha") != expected_sha:
+        raise ValueError("GitHub comparison head does not match the evaluation commit")
 
     changed_files = comparison.get("files")
     if not isinstance(changed_files, list) or len(changed_files) >= 300:
