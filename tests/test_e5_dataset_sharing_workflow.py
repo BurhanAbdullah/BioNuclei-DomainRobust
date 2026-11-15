@@ -42,6 +42,7 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert publish["with"]["name"] == "e5-target-dataset-${{ github.run_id }}"
     assert publish["with"]["retention-days"] == "1"
     assert publish["with"]["compression-level"] == "0"
+    assert "data/raw/S-BIAD634/archive_inventory.json" in publish["with"]["path"]
 
     inventory = next(
         step for step in prepare["steps"]
@@ -51,9 +52,15 @@ def test_e5_downloads_target_dataset_once_and_reuses_verified_artifact() -> None
     assert "archive_sha256" in inventory["run"]
     assert "manifest_sha256" in inventory["run"]
     assert "zip_entry_count" in inventory["run"]
+    assert "zip_file_entry_count" in inventory["run"]
+    assert "zip_directory_entry_count" in inventory["run"]
+    assert "manifest_file_count" in inventory["run"]
+    assert "sum(not entry.is_dir() for entry in entries)" in inventory["run"]
+    assert "sum(entry.is_dir() for entry in entries)" in inventory["run"]
     assert "zipfile.ZipFile(archive)" in inventory["run"]
-    assert "len(dataset_zip.infolist())" in inventory["run"]
-    assert "zip_file_count" in inventory["run"]
+    assert "dataset_zip.infolist()" in inventory["run"]
+    assert "inventory_path.write_text" in inventory["run"]
+    assert "archive_inventory.json" in inventory["run"]
 
     variant = jobs["e5_variant"]
     assert variant["if"] == "${{ inputs.prepare_only != true }}"
