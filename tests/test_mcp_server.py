@@ -186,7 +186,7 @@ def test_main_http_wraps_remote_app_with_bearer_auth(monkeypatch: pytest.MonkeyP
 def test_bearer_auth_wraps_the_actual_streamable_http_mcp_route() -> None:
     if importlib.util.find_spec("mcp") is None:
         pytest.skip("MCP SDK is an optional dependency")
-    from fastapi.testclient import TestClient
+    from starlette.testclient import TestClient
 
     from bionuclei.mcp_server import _BearerTokenASGIMiddleware, build_server
 
