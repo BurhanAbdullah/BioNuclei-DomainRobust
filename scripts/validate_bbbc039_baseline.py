@@ -11,13 +11,19 @@ from typing import Any
 _SHA_RE = re.compile(r"[0-9a-f]{40}")
 _ARTIFACT_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 _BASELINE_WORKFLOW = ".github/workflows/bbbc039_baseline.yml"
-_SAFE_PREFIXES = (".github/workflows/", "tests/", "docs/", "webapp/")
+_SAFE_PREFIXES = ("tests/", "docs/", "webapp/")
 _SAFE_PATHS = frozenset(
     {
         "CHANGELOG.md",
         "LICENSE",
         "README.md",
         "render.yaml",
+        ".github/workflows/e6_e7_uncertainty_analysis.yml",
+        ".github/workflows/e6_external_few_shot.yml",
+        ".github/workflows/e6_retry_watchdog.yml",
+        ".github/workflows/live-public-agent-e2e.yml",
+        ".github/workflows/public-e2e-schedule-watchdog.yml",
+        ".github/workflows/s_biad634_zero_shot.yml",
         "scripts/aggregate_e6_fraction_evidence.py",
         "scripts/download_aitslab_bioimaging1.py",
         "scripts/download_s_biad634.py",
@@ -31,7 +37,7 @@ _SAFE_PATHS = frozenset(
 
 
 def is_baseline_input_change(path: str) -> bool:
-    """Unknown paths fail closed; only known evaluation/UI/docs paths are exempt."""
+    """Unknown paths fail closed; only explicitly known downstream paths are exempt."""
     if not isinstance(path, str) or not path:
         return True
     if path == _BASELINE_WORKFLOW:
