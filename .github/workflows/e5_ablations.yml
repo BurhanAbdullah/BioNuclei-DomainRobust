@@ -74,17 +74,30 @@ jobs:
           if archive_digest != manifest.get("archive_sha256"):
               raise SystemExit("Downloaded archive digest does not match its manifest")
           with zipfile.ZipFile(archive) as dataset_zip:
-              zip_entry_count = len(dataset_zip.infolist())
+              entries = dataset_zip.infolist()
+              zip_entry_count = len(entries)
+              zip_file_entry_count = sum(not entry.is_dir() for entry in entries)
+              zip_directory_entry_count = sum(entry.is_dir() for entry in entries)
 
-          print(json.dumps({
+          inventory = {
+              "dataset": manifest.get("dataset"),
+              "source_url": manifest.get("source_url"),
               "archive_bytes": archive.stat().st_size,
               "archive_sha256": archive_digest,
               "manifest_sha256": sha256(manifest_path),
               "zip_entry_count": zip_entry_count,
-              "zip_file_count": len(manifest.get("files", [])),
+              "zip_file_entry_count": zip_file_entry_count,
+              "zip_directory_entry_count": zip_directory_entry_count,
+              "manifest_file_count": len(manifest.get("files", [])),
               "raw_image_count": len(manifest.get("raw_image_files", [])),
               "groundtruth_count": len(manifest.get("groundtruth_files", [])),
-          }, indent=2))
+          }
+          inventory_path = archive.parent / "archive_inventory.json"
+          inventory_path.write_text(
+              json.dumps(inventory, indent=2, sort_keys=True) + "\\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(inventory, indent=2, sort_keys=True))
           PY
       - name: Publish shared target dataset artifact
         uses: actions/upload-artifact@v4
@@ -93,6 +106,7 @@ jobs:
           path: |
             data/raw/S-BIAD634/dataset.zip
             data/raw/S-BIAD634/download_manifest.json
+            data/raw/S-BIAD634/archive_inventory.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
