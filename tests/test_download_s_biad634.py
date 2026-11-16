@@ -5,6 +5,7 @@ import io
 import json
 import struct
 import sys
+from types import SimpleNamespace
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -450,11 +451,21 @@ def test_skip_extract_validates_expansion_limits_before_crc_scan(
     assert not (root / "extracted").exists()
 
 
+class _TimeoutRecorder:
+    def __init__(self) -> None:
+        self.values: list[float] = []
+
+    def settimeout(self, value: float) -> None:
+        self.values.append(value)
+
+
 class _SlowTrickleResponse(io.BytesIO):
     def __init__(self, clock: list[float]) -> None:
         super().__init__(b"")
         self.clock = clock
         self.read_calls = 0
+        self.socket = _TimeoutRecorder()
+        self.fp = SimpleNamespace(raw=SimpleNamespace(_sock=self.socket))
 
     def read1(self, size: int = -1) -> bytes:
         self.read_calls += 1
@@ -475,11 +486,11 @@ def test_download_enforces_one_total_deadline_against_slow_trickle(
     def fake_urlopen(_url: str, *, timeout: float):
         nonlocal calls
         calls += 1
-        assert timeout == 2
+        assert timeout == 10
         return response
 
-    monkeypatch.setattr(downloader, "DOWNLOAD_TIMEOUT_SECONDS", 2)
-    monkeypatch.setattr(downloader, "DOWNLOAD_TOTAL_TIMEOUT_SECONDS", 5)
+    monkeypatch.setattr(downloader, "DOWNLOAD_TIMEOUT_SECONDS", 10)
+    monkeypatch.setattr(downloader, "DOWNLOAD_TOTAL_TIMEOUT_SECONDS", 15)
     monkeypatch.setattr(downloader.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
@@ -488,7 +499,8 @@ def test_download_enforces_one_total_deadline_against_slow_trickle(
         downloader.download("https://example.test/slow-trickle.zip", destination)
 
     assert calls == 1
-    assert response.read_calls == 2
+    assert response.read_calls == 5
+    assert response.socket.values == [10, 10, 9, 6, 3]
     assert delays == []
     assert destination.read_bytes() == b"previous complete archive"
     assert _part_files(destination) == []

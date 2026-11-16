@@ -59,6 +59,22 @@ class DownloadDeadlineExceeded(TimeoutError):
     """The total BioStudies download budget was exhausted."""
 
 
+def _set_response_read_timeout(response, timeout: float) -> None:
+    """Clamp the underlying urllib socket timeout to the remaining total budget.
+
+    urlopen(timeout=...) configures an inactivity timeout once, at connection
+    creation. It does not shrink as the monotonic download deadline approaches.
+    """
+    raw_socket = getattr(
+        getattr(getattr(response, "fp", None), "raw", None),
+        "_sock",
+        None,
+    )
+    settimeout = getattr(raw_socket, "settimeout", None)
+    if callable(settimeout):
+        settimeout(timeout)
+
+
 class CorruptDatasetArchiveError(RuntimeError):
     """A completed HTTP transfer did not produce a readable, CRC-valid ZIP."""
 
@@ -137,6 +153,10 @@ def download(url: str, destination: Path) -> None:
                             raise DownloadDeadlineExceeded(
                                 f"BioStudies download exceeded its {DOWNLOAD_TOTAL_TIMEOUT_SECONDS}s total deadline"
                             )
+                        _set_response_read_timeout(
+                            response,
+                            min(DOWNLOAD_TIMEOUT_SECONDS, remaining),
+                        )
                         chunk = read_chunk(DOWNLOAD_READ_CHUNK_BYTES)
                         if not chunk:
                             break
