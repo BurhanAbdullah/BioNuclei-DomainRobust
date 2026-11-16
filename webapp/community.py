@@ -477,13 +477,21 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         # ND2File.asarray() materializes every T/Z/C/P frame.  The public
         # analyzer consumes one selected 2-D plane, so resolve its frame index
         # from metadata and decode only that frame.
+        legacy = bool(ndfile.is_legacy)
+        # Modern ND2 indexes channels as individual frames. Legacy ND2 stores
+        # all channels in each frame, so select C from the returned YXC array.
+        frame_indices_to_match = {
+            axis: value
+            for axis, value in selected.items()
+            if not (legacy and axis == "C")
+        }
         frame_index = next(
             (
                 index
                 for index, frame_indices in enumerate(ndfile.loop_indices)
                 if all(
                     int(frame_indices.get(axis, 0)) == value
-                    for axis, value in selected.items()
+                    for axis, value in frame_indices_to_match.items()
                 )
             ),
             None,
@@ -492,7 +500,20 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
             raise ValueError(
                 f"Selected ND2 plane was not found: indices={selected}, sizes={sizes}"
             )
-        plane = np.squeeze(np.asarray(ndfile.read_frame(frame_index)))
+        frame = np.asarray(ndfile.read_frame(frame_index))
+        if legacy:
+            channel_index = selected.get("C", 0)
+            if frame.ndim == 3 and channel_index < frame.shape[-1]:
+                plane = np.squeeze(frame[..., channel_index])
+            elif frame.ndim == 2 and channel_index == 0:
+                plane = frame
+            else:
+                raise ValueError(
+                    f"Selected legacy ND2 channel is not available: "
+                    f"channel={channel_index}, frame_shape={frame.shape}, sizes={sizes}"
+                )
+        else:
+            plane = np.squeeze(frame)
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
@@ -505,6 +526,7 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
             "source_axes": axes,
             "selected_indices": selected,
             "selected_frame_index": frame_index,
+            "legacy_reader": legacy,
             "selected_plane_shape": list(plane.shape),
             "conversion": "ND2 selected frame read directly to TIFF for the 2-D BioNuclei inference pipeline",
         }
