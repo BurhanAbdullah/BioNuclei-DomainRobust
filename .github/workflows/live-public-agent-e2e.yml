@@ -20,6 +20,7 @@ on:
       - "scripts/live_public_agent_e2e.py"
       - "scripts/render_runtime_parity.py"
       - "render.yaml"
+      - "deploy/render-cpu-constraints.txt"
       - ".dockerignore"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
@@ -32,6 +33,7 @@ on:
       - ".dockerignore"
       - "webapp/Dockerfile.dockerignore"
       - "webapp/community.Dockerfile.dockerignore"
+      - "deploy/render-cpu-constraints.txt"
       - "render.yaml"
       - ".github/workflows/live-public-agent-e2e.yml"
 
