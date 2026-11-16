@@ -9,6 +9,7 @@ from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_optional, create_guest_token
@@ -64,11 +65,25 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
             status_code=400,
             detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
         )
-    user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
-    if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
+    user=authenticate_optional(request)
     modules=[x.strip().lower() for x in analysis_modules.split(",") if x.strip()]
-    try: job_id=create_job(data,image.filename or "uploaded-image.tif",user.id,False,algorithm_profile,modules,channel=nd2_channel,time=nd2_time,z=nd2_z,field=nd2_field)
-    except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
+    try:
+        await image.seek(0)
+        job_id=await run_in_threadpool(
+            create_job,
+            image.file,
+            image.filename or "uploaded-image.tif",
+            user.id,
+            False,
+            algorithm_profile,
+            modules,
+            channel=nd2_channel,
+            time=nd2_time,
+            z=nd2_z,
+            field=nd2_field,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400,detail=str(exc)) from exc
     return {"job_id":job_id,"status":"queued","poll":f"/jobs/{job_id}","progress":f"/jobs/{job_id}/progress","account":user.email or ("guest" if user.guest else user.id),"guest":user.guest,"research_consent":False,"analysis_modules":modules}
 
 @app.get("/jobs")
