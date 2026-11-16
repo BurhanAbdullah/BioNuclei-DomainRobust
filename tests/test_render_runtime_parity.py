@@ -91,7 +91,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
     def test_cpu_constraint_file_triggers_pr_harness(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
-        pull_request_section = workflow.split("  pull_request:\\n", 1)[1].split("\\npermissions:\\n", 1)[0]
+        pull_request_section = workflow.split("  pull_request:\n", 1)[1].split("\npermissions:\n", 1)[0]
         self.assertIn('      - "deploy/render-cpu-constraints.txt"', pull_request_section)
 
     def test_excluded_prefixes_stay_out_of_both_render_images(self) -> None:
@@ -104,6 +104,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "src",
             "webapp",
             "configs",
+            "deploy/render-cpu-constraints.txt",
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
         }
