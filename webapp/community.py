@@ -465,17 +465,14 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         if "Y" not in sizes or "X" not in sizes:
             raise ValueError(f"ND2 file has no Y/X image plane: sizes={sizes}")
         requested = {"C": channel, "T": time, "Z": z, "P": field, "S": 0, "V": field}
-        indexers: list[int | slice] = []
         selected: dict[str, int] = {}
         for axis in axes:
             if axis in {"Y", "X"}:
-                indexers.append(slice(None))
                 continue
             size = int(sizes[axis])
             value = int(requested.get(axis, 0))
             if value < 0 or value >= size:
                 raise ValueError(f"ND2 axis {axis} index {value} outside [0, {size - 1}]")
-            indexers.append(value)
             selected[axis] = value
         # ND2File.asarray() materializes every T/Z/C/P frame.  The public
         # analyzer consumes one selected 2-D plane, so resolve its frame index
@@ -499,7 +496,18 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
-        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_frame_index":frame_index,"selected_plane_shape":list(plane.shape),"conversion":"ND2 selected frame read directly to TIFF for the 2-D BioNuclei inference pipeline"}
+        return {
+            "input_format": "ND2",
+            "reader": "nd2",
+            "reader_version": getattr(nd2, "__version__", "unknown"),
+            "source_shape": list(shape),
+            "source_sizes": sizes,
+            "source_axes": axes,
+            "selected_indices": selected,
+            "selected_frame_index": frame_index,
+            "selected_plane_shape": list(plane.shape),
+            "conversion": "ND2 selected frame read directly to TIFF for the 2-D BioNuclei inference pipeline",
+        }
 
 
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
