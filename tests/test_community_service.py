@@ -292,6 +292,7 @@ def test_nd2_to_tiff_reads_only_the_selected_frame(monkeypatch, tmp_path: Path) 
     class FakeND2File:
         sizes = {"T": 2, "Z": 2, "C": 2, "Y": 3, "X": 4}
         shape = (2, 2, 2, 3, 4)
+        is_legacy = False
         loop_indices = tuple(
             {"T": time, "Z": z, "C": channel}
             for time in range(2)
