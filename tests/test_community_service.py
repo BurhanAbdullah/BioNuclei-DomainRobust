@@ -263,8 +263,6 @@ def test_expired_timestamp_does_not_hide_active_job(isolated_jobs):
     assert payload is not None and payload["status"] == "running"
     assert root.exists()
 
-
-
 def test_sha256_file_streams_large_inputs_without_read_bytes(isolated_jobs, monkeypatch, tmp_path: Path) -> None:
     payload = bytes(range(256)) * 16384
     path = tmp_path / "large-input.tif"
@@ -284,7 +282,6 @@ def test_sha256_file_rejects_non_positive_chunk_size(isolated_jobs, tmp_path: Pa
 
     with pytest.raises(ValueError, match="chunk_size must be positive"):
         isolated_jobs._sha256_file(path, chunk_size=0)
-
 
 def test_nd2_to_tiff_reads_only_the_selected_frame(monkeypatch, tmp_path: Path) -> None:
     class FakeND2File:
