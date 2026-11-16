@@ -23,6 +23,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "pyproject.toml",
             "README.md",
             "render.yaml",
+            "deploy/render-cpu-constraints.txt",
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
         )
@@ -75,6 +76,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
             "render.yaml",
+            "deploy/render-cpu-constraints.txt",
             ".dockerignore",
             "webapp/Dockerfile.dockerignore",
             "webapp/community.Dockerfile.dockerignore",
@@ -85,6 +87,12 @@ class RenderRuntimeParityTests(unittest.TestCase):
                     any(fnmatch.fnmatchcase(path, pattern) for pattern in push_patterns),
                     f"{path} does not trigger the main-branch E2E parity gate",
                 )
+
+    def test_cpu_constraint_file_triggers_pr_harness(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
+        pull_request_section = workflow.split("  pull_request:\\n", 1)[1].split("\\npermissions:\\n", 1)[0]
+        self.assertIn('      - "deploy/render-cpu-constraints.txt"', pull_request_section)
 
     def test_excluded_prefixes_stay_out_of_both_render_images(self) -> None:
         root = Path(__file__).resolve().parents[1]
