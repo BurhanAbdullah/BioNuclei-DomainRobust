@@ -503,8 +503,9 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         frame = np.asarray(ndfile.read_frame(frame_index))
         if legacy:
             channel_index = selected.get("C", 0)
-            if frame.ndim == 3 and channel_index < frame.shape[-1]:
-                plane = np.squeeze(frame[..., channel_index])
+            if frame.ndim == 3 and channel_index < frame.shape[0]:
+                # ND2File.read_frame() returns legacy channels first (C, Y, X).
+                plane = np.squeeze(frame[channel_index])
             elif frame.ndim == 2 and channel_index == 0:
                 plane = frame
             else:
