@@ -23,6 +23,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "pyproject.toml",
             "README.md",
             "render.yaml",
+            "deploy/render-cpu-constraints.txt",
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
         )
@@ -66,15 +67,24 @@ class RenderRuntimeParityTests(unittest.TestCase):
             for line in push_section.splitlines()
             if line.strip().startswith("- ")
         ]
+        source_root = root / "src"
+        source_inputs = tuple(
+            path.relative_to(root).as_posix()
+            for path in sorted(source_root.rglob("*"))
+            if path.is_file() and "__pycache__" not in path.parts
+        )
+        self.assertTrue(source_inputs, "Render image source tree must contain tracked source files")
+
         render_inputs = (
             "webapp/community.py",
-            "src/bionuclei/inference.py",
+            *source_inputs,
             "configs/base_system.yaml",
             "pyproject.toml",
             "README.md",
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
             "render.yaml",
+            "deploy/render-cpu-constraints.txt",
             ".dockerignore",
             "webapp/Dockerfile.dockerignore",
             "webapp/community.Dockerfile.dockerignore",
@@ -86,6 +96,12 @@ class RenderRuntimeParityTests(unittest.TestCase):
                     f"{path} does not trigger the main-branch E2E parity gate",
                 )
 
+    def test_cpu_constraint_file_triggers_pr_harness(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
+        pull_request_section = workflow.split("  pull_request:\n", 1)[1].split("\npermissions:\n", 1)[0]
+        self.assertIn('      - "deploy/render-cpu-constraints.txt"', pull_request_section)
+
     def test_excluded_prefixes_stay_out_of_both_render_images(self) -> None:
         root = Path(__file__).resolve().parents[1]
         excluded_prefixes = {".github", "tests", "scripts"}
@@ -96,6 +112,7 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "src",
             "webapp",
             "configs",
+            "deploy/render-cpu-constraints.txt",
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
         }
