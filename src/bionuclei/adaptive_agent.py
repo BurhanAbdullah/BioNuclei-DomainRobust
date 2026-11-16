@@ -118,7 +118,7 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
     try:
         # Share the lock used by full inference so simultaneous jobs cannot load
         # separate U-Nets and run competing forward passes on a small CPU worker.
-        from bionuclei.inference import _INFERENCE_LOCK, _load_model
+        from bionuclei.inference import _INFERENCE_LOCK, _load_model, _trim_cpu_allocator
         checkpoint_path = Path(os.getenv("BIONUCLEI_CHECKPOINT", ""))
         if not checkpoint_path.is_file():
             return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", ("Released checkpoint is not available for the CNN gate.",))
@@ -188,6 +188,9 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
                 del x
                 import gc
                 gc.collect()
+                # Match the final inference cleanup: return freed PyTorch/glibc
+                # arenas before the full-resolution pass loads the model again.
+                _trim_cpu_allocator()
 
     except Exception as exc:
         return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", (f"CNN gate could not execute: {type(exc).__name__}.",))
