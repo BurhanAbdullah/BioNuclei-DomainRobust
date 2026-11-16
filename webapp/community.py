@@ -78,6 +78,17 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Hash an uploaded source file with bounded memory use."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _set_job(job_id: str, **fields: object) -> None:
     fields["updated_at"] = _now().isoformat()
     assignments = ", ".join(f"{k} = ?" for k in fields)
@@ -540,8 +551,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
     try:
         _set_job(job_id, status="planning")
         checkpoint = _checkpoint()
-        raw = image_path.read_bytes()
-        input_sha256 = hashlib.sha256(raw).hexdigest()
+        input_sha256 = _sha256_file(image_path)
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
         plan = build_plan(inference_input, analysis_modules)
         output.mkdir(parents=True, exist_ok=True)
