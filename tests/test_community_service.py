@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -259,3 +260,24 @@ def test_expired_timestamp_does_not_hide_active_job(isolated_jobs):
     assert payload is not None and payload["status"] == "running"
     assert root.exists()
 
+
+
+def test_sha256_file_streams_large_inputs_without_read_bytes(isolated_jobs, monkeypatch, tmp_path: Path) -> None:
+    payload = bytes(range(256)) * 16384
+    path = tmp_path / "large-input.tif"
+    path.write_bytes(payload)
+
+    def reject_read_bytes(_path):
+        raise AssertionError("streaming hash must not materialize the entire source file")
+
+    monkeypatch.setattr(Path, "read_bytes", reject_read_bytes)
+
+    assert isolated_jobs._sha256_file(path, chunk_size=4096) == hashlib.sha256(payload).hexdigest()
+
+
+def test_sha256_file_rejects_non_positive_chunk_size(isolated_jobs, tmp_path: Path) -> None:
+    path = tmp_path / "input.tif"
+    path.write_bytes(b"source")
+
+    with pytest.raises(ValueError, match="chunk_size must be positive"):
+        isolated_jobs._sha256_file(path, chunk_size=0)
