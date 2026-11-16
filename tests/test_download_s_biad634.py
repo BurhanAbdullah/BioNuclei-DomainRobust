@@ -20,11 +20,11 @@ class _DisconnectAfterFirstRead(io.BytesIO):
         super().__init__(initial)
         self._reads = 0
 
-    def read(self, size: int = -1) -> bytes:
+    def read1(self, size: int = -1) -> bytes:
         self._reads += 1
         if self._reads == 2:
             raise http.client.RemoteDisconnected("connection closed during response body")
-        return super().read(size)
+        return super().read1(size)
 
 
 def _part_files(destination: Path) -> list[Path]:
@@ -448,3 +448,47 @@ def test_skip_extract_validates_expansion_limits_before_crc_scan(
 
     assert not (root / "download_manifest.json").exists()
     assert not (root / "extracted").exists()
+
+
+class _SlowTrickleResponse(io.BytesIO):
+    def __init__(self, clock: list[float]) -> None:
+        super().__init__(b"")
+        self.clock = clock
+        self.read_calls = 0
+
+    def read1(self, size: int = -1) -> bytes:
+        self.read_calls += 1
+        self.clock[0] += 3
+        return b"x"
+
+
+def test_download_enforces_one_total_deadline_against_slow_trickle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    clock = [0.0]
+    delays: list[float] = []
+    response = _SlowTrickleResponse(clock)
+    calls = 0
+
+    def fake_urlopen(_url: str, *, timeout: float):
+        nonlocal calls
+        calls += 1
+        assert timeout == 2
+        return response
+
+    monkeypatch.setattr(downloader, "DOWNLOAD_TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr(downloader, "DOWNLOAD_TOTAL_TIMEOUT_SECONDS", 5)
+    monkeypatch.setattr(downloader.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(downloader.time, "sleep", delays.append)
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(downloader.DownloadDeadlineExceeded, match="total deadline"):
+        downloader.download("https://example.test/slow-trickle.zip", destination)
+
+    assert calls == 1
+    assert response.read_calls == 2
+    assert delays == []
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
