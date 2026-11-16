@@ -339,3 +339,62 @@ def test_nd2_to_tiff_reads_only_the_selected_frame(monkeypatch, tmp_path: Path) 
     assert np.array_equal(community.tifffile.imread(destination), reader.frames[5])
     assert metadata["selected_indices"] == {"T": 1, "Z": 0, "C": 1}
     assert metadata["selected_frame_index"] == 5
+
+
+def test_legacy_nd2_to_tiff_reads_one_frame_and_selects_channel(
+    monkeypatch, tmp_path: Path
+) -> None:
+    class FakeLegacyND2File:
+        sizes = {"T": 2, "C": 2, "Y": 3, "X": 4}
+        shape = (2, 2, 3, 4)
+        is_legacy = True
+        loop_indices = ({"T": 0}, {"T": 1})
+
+        def __init__(self) -> None:
+            self.read_calls: list[int] = []
+            self.frames = [
+                np.stack(
+                    (
+                        np.full((3, 4), 10 + time, dtype=np.uint16),
+                        np.full((3, 4), 20 + time, dtype=np.uint16),
+                    ),
+                    axis=-1,
+                )
+                for time in range(2)
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> None:
+            return None
+
+        def asarray(self):
+            raise AssertionError("legacy ND2 conversion must not materialize the full stack")
+
+        def read_frame(self, frame_index: int) -> np.ndarray:
+            self.read_calls.append(frame_index)
+            return self.frames[frame_index]
+
+    reader = FakeLegacyND2File()
+    monkeypatch.setitem(
+        sys.modules,
+        "nd2",
+        SimpleNamespace(ND2File=lambda _source: reader, __version__="0.11.0"),
+    )
+    destination = tmp_path / "legacy-selected-plane.tif"
+
+    metadata = community._nd2_to_tiff(
+        tmp_path / "legacy-source.nd2",
+        destination,
+        channel=1,
+        time=1,
+    )
+
+    assert reader.read_calls == [1]
+    assert np.array_equal(
+        community.tifffile.imread(destination), reader.frames[1][..., 1]
+    )
+    assert metadata["selected_indices"] == {"T": 1, "C": 1}
+    assert metadata["selected_frame_index"] == 1
+    assert metadata["legacy_reader"] is True
