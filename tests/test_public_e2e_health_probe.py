@@ -330,7 +330,9 @@ def test_invalid_health_json_fails_closed_and_closes_response() -> None:
         sleep=lambda _seconds: None,
     )
 
-    assert result is None
+    assert result is response
+    assert result.status_code == 200
+    assert attempts[-1]["http_status"] == 200
     assert attempts[-1]["error"] == "InvalidHealthJSON"
     assert request_error == "InvalidHealthJSON"
     assert payload is None
