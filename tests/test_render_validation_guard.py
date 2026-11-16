@@ -43,3 +43,6 @@ def test_memory_gate_tracks_and_builds_cpu_only_community_image() -> None:
     assert "torch.version.cuda is None" in install["run"]
     build = next(step for step in steps if step.get("name") == "Build production community image for constrained-memory validation")
     assert "docker build --file webapp/community.Dockerfile" in build["run"]
+    memory_run = next(step for step in steps if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit")["run"]
+    assert "for attempt in 1 2" not in memory_run
+    assert "Constrained-memory validation attempt" not in memory_run
