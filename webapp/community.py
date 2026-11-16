@@ -27,7 +27,7 @@ from bionuclei.adaptive_agent import build_plan, to_dict
 from bionuclei.expert_agents import SPECIALIST_AGENTS, run_expert_agents
 from bionuclei.inference import predict
 from bionuclei.report import build_report
-from .app import _checkpoint
+from .app import _checkpoint, _checkpoint_for_inference
 
 JOB_ROOT = Path(os.getenv("BIONUCLEI_JOB_DIR", "/tmp/bionuclei-community-jobs")).expanduser()
 DB_PATH = JOB_ROOT / "jobs.sqlite3"
@@ -640,7 +640,6 @@ def _run(
     output = root / "results"
     try:
         _set_job(job_id, status="planning")
-        checkpoint = _checkpoint()
         raw = image_path.read_bytes()
         input_sha256 = hashlib.sha256(raw).hexdigest()
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
@@ -651,7 +650,8 @@ def _run(
             raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
         _set_job(job_id, status="running")
         with INFERENCE_LOCK:
-            result = predict(inference_input, checkpoint, output, device="cpu")
+            with _checkpoint_for_inference() as checkpoint:
+                result = predict(inference_input, checkpoint, output, device="cpu")
             gc.collect()
         _set_job(job_id, status="measuring")
         report_summary = _extended_reports(inference_input, output, analysis_modules)
