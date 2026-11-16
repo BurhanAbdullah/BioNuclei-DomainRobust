@@ -25,6 +25,82 @@ def test_create_job_rejects_unknown_algorithm(isolated_jobs):
         isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "unknown")
 
 
+def test_create_job_streams_file_like_upload_in_bounded_chunks(isolated_jobs, monkeypatch):
+    payload = bytes(range(256)) * 16384
+
+    class ChunkReader:
+        def __init__(self, value: bytes) -> None:
+            self.value = value
+            self.offset = 0
+            self.requested_sizes: list[int] = []
+
+        def read(self, size: int = -1) -> bytes:
+            assert size > 0, "upload copying must never request an unbounded read"
+            self.requested_sizes.append(size)
+            end = min(self.offset + min(size, 4096), len(self.value))
+            chunk = self.value[self.offset:end]
+            self.offset = end
+            return chunk
+
+    class InertThread:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(isolated_jobs.threading, "Thread", InertThread)
+    source = ChunkReader(payload)
+    job_id = isolated_jobs.create_job(
+        source, "streamed.tif", "user-1", False, "auto"
+    )
+    try:
+        input_path = isolated_jobs._job_dir(job_id) / "input.tif"
+        assert input_path.read_bytes() == payload
+        assert source.requested_sizes
+        assert set(source.requested_sizes) == {isolated_jobs.UPLOAD_COPY_CHUNK_BYTES}
+        row = isolated_jobs.get_job(job_id, "user-1")
+        assert row is not None and row["status"] == "queued"
+    finally:
+        isolated_jobs.ACTIVE_JOB_THREADS.pop(job_id, None)
+
+
+def test_create_job_rejects_oversized_stream_and_removes_partial_job(
+    isolated_jobs, monkeypatch
+) -> None:
+    monkeypatch.setattr(isolated_jobs, "MAX_UPLOAD_BYTES", 8)
+
+    class OversizedStream:
+        def __init__(self) -> None:
+            self.sent = False
+
+        def read(self, _size: int) -> bytes:
+            if self.sent:
+                return b""
+            self.sent = True
+            return b"123456789"
+
+    with pytest.raises(ValueError, match="Upload exceeds 8 bytes"):
+        isolated_jobs.create_job(
+            OversizedStream(), "oversized.tif", "user-1", False, "auto"
+        )
+
+    assert not [path for path in isolated_jobs.JOB_ROOT.iterdir() if path.is_dir()]
+
+
+def test_create_job_rejects_empty_stream_and_removes_partial_job(isolated_jobs) -> None:
+    class EmptyStream:
+        def read(self, _size: int) -> bytes:
+            return b""
+
+    with pytest.raises(ValueError, match="Uploaded image is empty"):
+        isolated_jobs.create_job(
+            EmptyStream(), "empty.tif", "user-1", False, "auto"
+        )
+
+    assert not [path for path in isolated_jobs.JOB_ROOT.iterdir() if path.is_dir()]
+
+
 def test_delete_research_copy_requires_existing_job(isolated_jobs):
     with pytest.raises(FileNotFoundError):
         isolated_jobs.delete_research_copy("missing", "user-1")
