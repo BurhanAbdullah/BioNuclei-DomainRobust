@@ -359,7 +359,7 @@ def test_legacy_nd2_to_tiff_reads_one_frame_and_selects_channel(
                         np.full((3, 4), 10 + time, dtype=np.uint16),
                         np.full((3, 4), 20 + time, dtype=np.uint16),
                     ),
-                    axis=-1,
+                    axis=0,
                 )
                 for time in range(2)
             ]
@@ -394,7 +394,7 @@ def test_legacy_nd2_to_tiff_reads_one_frame_and_selects_channel(
 
     assert reader.read_calls == [1]
     assert np.array_equal(
-        community.tifffile.imread(destination), reader.frames[1][..., 1]
+        community.tifffile.imread(destination), reader.frames[1][1]
     )
     assert metadata["selected_indices"] == {"T": 1, "C": 1}
     assert metadata["selected_frame_index"] == 1
