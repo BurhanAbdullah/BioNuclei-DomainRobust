@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import timedelta
 import hashlib
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from webapp import community
@@ -281,3 +284,56 @@ def test_sha256_file_rejects_non_positive_chunk_size(isolated_jobs, tmp_path: Pa
 
     with pytest.raises(ValueError, match="chunk_size must be positive"):
         isolated_jobs._sha256_file(path, chunk_size=0)
+
+
+def test_nd2_to_tiff_reads_only_the_selected_frame(monkeypatch, tmp_path: Path) -> None:
+    class FakeND2File:
+        sizes = {"T": 2, "Z": 2, "C": 2, "Y": 3, "X": 4}
+        shape = (2, 2, 2, 3, 4)
+        loop_indices = tuple(
+            {"T": time, "Z": z, "C": channel}
+            for time in range(2)
+            for z in range(2)
+            for channel in range(2)
+        )
+
+        def __init__(self) -> None:
+            self.read_calls: list[int] = []
+            self.frames = [
+                np.full((3, 4), index, dtype=np.uint16)
+                for index in range(len(self.loop_indices))
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> None:
+            return None
+
+        def asarray(self):
+            raise AssertionError("ND2 conversion must not materialize the full stack")
+
+        def read_frame(self, frame_index: int) -> np.ndarray:
+            self.read_calls.append(frame_index)
+            return self.frames[frame_index]
+
+    reader = FakeND2File()
+    monkeypatch.setitem(
+        sys.modules,
+        "nd2",
+        SimpleNamespace(ND2File=lambda _source: reader, __version__="0.11.0"),
+    )
+    destination = tmp_path / "selected-plane.tif"
+
+    metadata = community._nd2_to_tiff(
+        tmp_path / "source.nd2",
+        destination,
+        channel=1,
+        time=1,
+        z=0,
+    )
+
+    assert reader.read_calls == [5]
+    assert np.array_equal(community.tifffile.imread(destination), reader.frames[5])
+    assert metadata["selected_indices"] == {"T": 1, "Z": 0, "C": 1}
+    assert metadata["selected_frame_index"] == 5
