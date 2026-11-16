@@ -18,6 +18,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import BinaryIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import numpy as np
@@ -34,6 +35,7 @@ JOB_ROOT = Path(os.getenv("BIONUCLEI_JOB_DIR", "/tmp/bionuclei-community-jobs"))
 DB_PATH = JOB_ROOT / "jobs.sqlite3"
 JOB_ROOT.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+UPLOAD_COPY_CHUNK_BYTES = 1024 * 1024
 DEFAULT_RESULT_RETENTION_HOURS = int(os.getenv("BIONUCLEI_RESULT_RETENTION_HOURS", "1"))
 ENABLED_MODULES = {"nuclei", "morphology", "intensity"}
 ALLOWED_UPLOAD_SUFFIXES = {".tif", ".tiff", ".nd2"}
@@ -671,9 +673,46 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
                 ACTIVE_JOB_THREADS.pop(job_id, None)
 
 
-def create_job(data: bytes, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
+def _write_upload(source: bytes | BinaryIO, destination: Path) -> int:
+    """Copy an upload to disk with bounded memory and enforce the size limit."""
+    if isinstance(source, bytes):
+        size = len(source)
+        if size > MAX_UPLOAD_BYTES:
+            raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
+        if size == 0:
+            raise ValueError("Uploaded image is empty")
+        destination.write_bytes(source)
+        return size
+
+    reader = getattr(source, "read", None)
+    if not callable(reader):
+        raise TypeError("Upload must be bytes or a binary file-like object")
+
+    total = 0
+    try:
+        with destination.open("wb") as output:
+            while True:
+                chunk = reader(UPLOAD_COPY_CHUNK_BYTES)
+                if not chunk:
+                    break
+                if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                    raise TypeError("Upload stream must return binary chunks")
+                chunk_size = len(chunk)
+                if total + chunk_size > MAX_UPLOAD_BYTES:
+                    raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
+                output.write(chunk)
+                total += chunk_size
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
+    if total == 0:
+        destination.unlink(missing_ok=True)
+        raise ValueError("Uploaded image is empty")
+    return total
+
+
+def create_job(data: bytes | BinaryIO, original_name: str, user_id: str, research_consent: bool, algorithm_profile: str, analysis_modules: list[str] | None = None, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> str:
     suffix = Path(original_name or "").suffix.lower()
     if suffix not in ALLOWED_UPLOAD_SUFFIXES:
         raise ValueError("Unsupported image format. Upload a TIFF (.tif/.tiff) or Nikon ND2 (.nd2) file.")
@@ -690,7 +729,11 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     root = _job_dir(job_id)
     root.mkdir(parents=True, exist_ok=True)
     input_path = root / f"input{suffix}"
-    input_path.write_bytes(data)
+    try:
+        _write_upload(data, input_path)
+    except Exception:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
     expires = _now() + timedelta(hours=DEFAULT_RESULT_RETENTION_HOURS)
     with DB_LOCK, _db() as conn:
         conn.execute("INSERT INTO jobs(id,status,created_at,updated_at,expires_at,user_id,input_name,retained_copy,research_consent,algorithm_profile,analysis_modules) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (job_id,"queued",_now().isoformat(),_now().isoformat(),expires.isoformat(),user_id,original_name,0,0,algorithm_profile,",".join(sorted(modules))))
@@ -712,7 +755,6 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         _cleanup_failed_job(job_id, root)
         raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
     return job_id
-
 
 def serialize(row: sqlite3.Row) -> dict[str, object]:
     result = json.loads(row["result_json"]) if row["result_json"] else None
