@@ -53,6 +53,65 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def github_revision_identity() -> dict[str, str | None]:
+    """Distinguish a PR source head from GitHub's synthetic merge revision."""
+    workflow_sha = os.environ.get("GITHUB_SHA", "").strip()
+    require(len(workflow_sha) == 40 and all(c in "0123456789abcdef" for c in workflow_sha),
+            "GITHUB_SHA is missing or is not a full commit SHA")
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "").strip()
+    event_path = os.environ.get("GITHUB_EVENT_PATH", "").strip()
+    payload: dict[str, object] = {}
+    if event_path:
+        path = Path(event_path)
+        require(path.is_file(), f"GITHUB_EVENT_PATH does not exist: {path}")
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        require(isinstance(loaded, dict), "GitHub event payload must be a JSON object")
+        payload = loaded
+
+    pull_request = payload.get("pull_request")
+    if event_name == "pull_request":
+        require(isinstance(pull_request, dict),
+                "pull_request event payload has no pull_request object")
+        head = pull_request.get("head")
+        base = pull_request.get("base")
+        require(isinstance(head, dict) and isinstance(base, dict),
+                "pull_request event payload is missing head/base identity")
+        head_sha = head.get("sha")
+        base_sha = base.get("sha")
+        require(
+            isinstance(head_sha, str)
+            and len(head_sha) == 40
+            and all(c in "0123456789abcdef" for c in head_sha),
+            "pull_request head SHA is missing or invalid",
+        )
+        require(
+            isinstance(base_sha, str)
+            and len(base_sha) == 40
+            and all(c in "0123456789abcdef" for c in base_sha),
+            "pull_request base SHA is missing or invalid",
+        )
+        merge_sha = pull_request.get("merge_commit_sha") or workflow_sha
+        require(
+            isinstance(merge_sha, str)
+            and len(merge_sha) == 40
+            and all(c in "0123456789abcdef" for c in merge_sha),
+            "pull_request merge SHA is missing or invalid",
+        )
+        return {
+            "head_sha": head_sha,
+            "base_sha": base_sha,
+            "workflow_sha": workflow_sha,
+            "merge_commit_sha": merge_sha,
+        }
+
+    return {
+        "head_sha": workflow_sha,
+        "base_sha": None,
+        "workflow_sha": workflow_sha,
+        "merge_commit_sha": None,
+    }
+
+
 def persist_validation_evidence(
     evidence_dir: Path,
     temporary_root: Path,
@@ -280,12 +339,15 @@ def main() -> None:
 
             evidence_dir_raw = os.environ.get("BIONUCLEI_VALIDATION_EVIDENCE_DIR", "").strip()
             if evidence_dir_raw:
+                revision_identity = github_revision_identity()
                 evidence_manifest = {
                     "schema_version": 1,
                     "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                    "repository": os.environ.get("GITHUB_REPOSITORY"),
+                    "event_name": os.environ.get("GITHUB_EVENT_NAME"),
                     "run_id": os.environ.get("GITHUB_RUN_ID"),
                     "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-                    "head_sha": os.environ.get("GITHUB_SHA"),
+                    **revision_identity,
                     "fixture_sha256": fixture_sha,
                     "checkpoint_sha256_before": before_sha,
                     "checkpoint_sha256_after": after_sha,

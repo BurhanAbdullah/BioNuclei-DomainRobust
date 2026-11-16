@@ -126,3 +126,73 @@ def test_both_production_images_use_the_same_single_thread_defaults() -> None:
         env_block = (root / relative).read_text(encoding="utf-8").split("\n\n", 2)[1]
         for variable in variables:
             assert f"{variable}=1" in env_block, f"{relative} is missing {variable}=1"
+
+def test_pull_request_evidence_distinguishes_head_base_and_merge_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts.validate_tiled_checkpoint import github_revision_identity
+
+    head_sha = "1" * 40
+    base_sha = "2" * 40
+    merge_sha = "3" * 40
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps(
+            {
+                "pull_request": {
+                    "head": {"sha": head_sha},
+                    "base": {"sha": base_sha},
+                    "merge_commit_sha": merge_sha,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_SHA", merge_sha)
+
+    assert github_revision_identity() == {
+        "head_sha": head_sha,
+        "base_sha": base_sha,
+        "workflow_sha": merge_sha,
+        "merge_commit_sha": merge_sha,
+    }
+
+
+def test_push_evidence_uses_the_pushed_commit_as_head_and_workflow_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts.validate_tiled_checkpoint import github_revision_identity
+
+    pushed_sha = "4" * 40
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps({"ref": "refs/heads/main"}), encoding="utf-8")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_SHA", pushed_sha)
+
+    assert github_revision_identity() == {
+        "head_sha": pushed_sha,
+        "base_sha": None,
+        "workflow_sha": pushed_sha,
+        "merge_commit_sha": None,
+    }
+
+
+def test_pull_request_evidence_rejects_missing_head_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts.validate_tiled_checkpoint import github_revision_identity
+
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps({"pull_request": {"head": {}, "base": {"sha": "2" * 40}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.setenv("GITHUB_SHA", "3" * 40)
+
+    with pytest.raises(AssertionError, match="head SHA"):
+        github_revision_identity()
