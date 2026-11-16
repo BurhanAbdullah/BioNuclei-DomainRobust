@@ -337,6 +337,37 @@ def test_invalid_health_json_fails_closed_and_closes_response() -> None:
     assert response.closed
 
 
+def test_invalid_health_json_after_503_reports_the_latest_http_response() -> None:
+    helpers = _health_helpers()
+    clock = _Clock()
+    response_503 = _Response(503, "service unavailable")
+    response_200 = _Response(200, body=b"not-json")
+    calls = 0
+
+    def get(_url: str, *, timeout: tuple[float, float], stream: bool, allow_redirects: bool) -> _Response:
+        nonlocal calls
+        calls += 1
+        return response_503 if calls == 1 else response_200
+
+    result, attempts, request_error, body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+        budget_seconds=30.0,
+    )
+
+    assert result is response_200
+    assert [attempt["http_status"] for attempt in attempts] == [503, 200]
+    assert attempts[-1]["error"] == "InvalidHealthJSON"
+    assert request_error == "InvalidHealthJSON"
+    assert body is None
+    assert payload is None
+    assert response_503.closed
+    assert response_200.closed
+
+
 def test_public_e2e_fails_closed_without_the_immutable_checkpoint_health_contract() -> None:
     source = SCRIPT_PATH.read_text(encoding="utf-8")
     assert "EXPECTED_CHECKPOINT_SHA256 = " in source
