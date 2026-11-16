@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -10,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from webapp import app as scientific_app
 from webapp import community_app
-from webapp.app import RELEASE_CHECKPOINT_SHA256, _checkpoint, _checkpoint_identity
+from webapp.app import RELEASE_CHECKPOINT_SHA256, _checkpoint, _checkpoint_for_inference, _checkpoint_identity
 
 
 def _configure_checkpoint(tmp_path, monkeypatch, expected: str | None = None):
@@ -268,3 +270,81 @@ def test_bbbc039_baseline_training_is_main_only():
     assert job["if"] == "${{ github.ref == 'refs/heads/main' }}"
     assert job["timeout-minutes"] == 350
 
+
+def test_inference_load_uses_verified_inode_after_checkpoint_path_replacement(tmp_path, monkeypatch):
+    import torch
+    from bionuclei import inference
+
+    path = tmp_path / "checkpoint.pt"
+    torch.save(
+        {
+            "config": {"model": {"in_channels": 1, "out_channels": 3, "base_channels": 2}},
+            "model": {"marker": torch.tensor([111])},
+        },
+        path,
+    )
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", actual)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.delenv("BIONUCLEI_CHECKPOINT_SHA256", raising=False)
+
+    loaded = {}
+
+    class CapturingModel:
+        def load_state_dict(self, state, assign=False):
+            loaded["marker"] = state["marker"].detach().clone()
+
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(inference, "BoundaryUNet", lambda **_kwargs: CapturingModel())
+
+    replacement = tmp_path / "replacement.pt"
+    torch.save(
+        {
+            "config": {"model": {"in_channels": 1, "out_channels": 3, "base_channels": 2}},
+            "model": {"marker": torch.tensor([222])},
+        },
+        replacement,
+    )
+    original = tmp_path / "verified-checkpoint.pt"
+
+    if not os.path.isdir("/proc/self/fd") and not os.path.isdir("/dev/fd"):
+        pytest.skip("stable descriptor paths require /proc/self/fd or /dev/fd")
+
+    with _checkpoint_for_inference() as verified_checkpoint:
+        path.replace(original)
+        replacement.replace(path)
+        inference._load_model(verified_checkpoint, device="cpu")
+
+    assert loaded["marker"].tolist() == [111]
+    assert hashlib.sha256(original.read_bytes()).hexdigest() == actual
+    assert path.read_bytes() != original.read_bytes()
+
+
+
+def test_inference_snapshot_is_sealed_against_in_place_checkpoint_mutation(tmp_path, monkeypatch):
+    path, actual = _configure_checkpoint(tmp_path, monkeypatch)
+    original = path.read_bytes()
+
+    with _checkpoint_for_inference() as verified_checkpoint:
+        assert verified_checkpoint.read_bytes() == original
+
+        # Mutate the same source inode after verification and snapshot creation.
+        path.write_bytes(b"modified bytes on the original inode")
+        assert path.read_bytes() != original
+        assert verified_checkpoint.read_bytes() == original
+
+        snapshot_fd = int(verified_checkpoint.name)
+        seals = fcntl.fcntl(snapshot_fd, fcntl.F_GET_SEALS)
+        assert seals & fcntl.F_SEAL_WRITE
+        assert seals & fcntl.F_SEAL_GROW
+        assert seals & fcntl.F_SEAL_SHRINK
+        assert seals & fcntl.F_SEAL_SEAL
+
+        writable_fd = os.open(verified_checkpoint, os.O_WRONLY)
+        try:
+            with pytest.raises(OSError):
+                os.write(writable_fd, b"tamper")
+        finally:
+            os.close(writable_fd)
