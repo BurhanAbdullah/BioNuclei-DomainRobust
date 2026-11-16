@@ -477,12 +477,29 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
                 raise ValueError(f"ND2 axis {axis} index {value} outside [0, {size - 1}]")
             indexers.append(value)
             selected[axis] = value
-        arr = np.asarray(ndfile.asarray())
-        plane = np.squeeze(arr[tuple(indexers)])
+        # ND2File.asarray() materializes every T/Z/C/P frame.  The public
+        # analyzer consumes one selected 2-D plane, so resolve its frame index
+        # from metadata and decode only that frame.
+        frame_index = next(
+            (
+                index
+                for index, frame_indices in enumerate(ndfile.loop_indices)
+                if all(
+                    int(frame_indices.get(axis, 0)) == value
+                    for axis, value in selected.items()
+                )
+            ),
+            None,
+        )
+        if frame_index is None:
+            raise ValueError(
+                f"Selected ND2 plane was not found: indices={selected}, sizes={sizes}"
+            )
+        plane = np.squeeze(np.asarray(ndfile.read_frame(frame_index)))
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
-        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline"}
+        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_frame_index":frame_index,"selected_plane_shape":list(plane.shape),"conversion":"ND2 selected frame read directly to TIFF for the 2-D BioNuclei inference pipeline"}
 
 
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
