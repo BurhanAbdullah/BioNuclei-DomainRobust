@@ -6,14 +6,33 @@ name: S-BIAD634 zero-shot transfer
 
 on:
   push:
+    branches: [main]
     paths:
       - 'scripts/evaluate_s_biad634.py'
       - 'scripts/metrics_instance.py'
       - 'scripts/download_s_biad634.py'
+      - 'src/bionuclei/data.py'
+      - 'src/bionuclei/masks.py'
+      - 'src/bionuclei/models.py'
+      - 'src/bionuclei/metrics.py'
+      - 'src/bionuclei/postprocessing.py'
+      - 'pyproject.toml'
       - '.github/workflows/s_biad634_zero_shot.yml'
+  pull_request:
+    paths:
+      - 'scripts/evaluate_s_biad634.py'
+      - 'scripts/metrics_instance.py'
+      - 'scripts/download_s_biad634.py'
+      - 'src/bionuclei/data.py'
+      - 'src/bionuclei/masks.py'
+      - 'src/bionuclei/models.py'
+      - 'src/bionuclei/metrics.py'
+      - 'src/bionuclei/postprocessing.py'
+      - 'pyproject.toml'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       baseline_run_id:
@@ -22,7 +41,7 @@ on:
 
 jobs:
   zero-shot:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'pull_request' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
