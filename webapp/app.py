@@ -8,8 +8,9 @@ Run locally with:
 """
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import base64
+import fcntl
 import hashlib
 import hmac
 import io
@@ -19,7 +20,7 @@ import stat
 import tempfile
 import threading
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, BinaryIO, Iterator
 
 import numpy as np
 import tifffile
@@ -63,10 +64,10 @@ MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1
 
 RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 
-# The release checkpoint is approximately 3 GB. Cache its digest only for the
-# exact filesystem identity that was hashed; every health/inference check still
-# opens the path and compares descriptor + path metadata to detect replacement
-# or in-place modification without rereading unchanged checkpoint bytes.
+# Cache the source digest by exact file identity for health/preflight calls.
+# Inference copies the opened source into a sealed memfd snapshot, so a same-inode
+# write after verification cannot change the bytes loaded by PyTorch. The pinned
+# BBBC039 release asset is 7,743,145 bytes; the snapshot copy is bounded.
 _CHECKPOINT_CACHE_LOCK = threading.Lock()
 _CHECKPOINT_CACHE: tuple[str, tuple[int, int, int, int, int], str] | None = None
 
@@ -88,8 +89,9 @@ def _hash_checkpoint(stream) -> str:
     return digest.hexdigest()
 
 
-def _checkpoint_identity() -> tuple[Path, str, bool]:
-    """Return the actual checkpoint digest and whether it matches the pinned release."""
+@contextmanager
+def _checkpoint_handle() -> Iterator[tuple[Path, str, bool, BinaryIO]]:
+    """Verify a checkpoint while retaining the exact opened inode for inference."""
     global _CHECKPOINT_CACHE
 
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
@@ -107,41 +109,151 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
         expected, RELEASE_CHECKPOINT_SHA256
     )
 
+    stream: BinaryIO | None = None
     try:
+        stream = path.open("rb")
         with _CHECKPOINT_CACHE_LOCK:
-            with path.open("rb") as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode):
-                    raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
-                identity = _checkpoint_stat_key(before)
-                cached = _CHECKPOINT_CACHE
-                cache_hit = cached is not None and cached[0] == str(path) and cached[1] == identity
-                actual = cached[2] if cache_hit else _hash_checkpoint(stream)
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
+            identity = _checkpoint_stat_key(before)
+            cached = _CHECKPOINT_CACHE
+            cache_hit = cached is not None and cached[0] == str(path) and cached[1] == identity
+            actual = cached[2] if cache_hit else _hash_checkpoint(stream)
 
-                # Verify that neither the opened inode nor the path changed while
-                # checking it. A replacement or in-place write invalidates the
-                # cache and fails closed rather than accepting a stale digest.
-                after = os.fstat(stream.fileno())
-                current_path = path.stat()
-                if identity != _checkpoint_stat_key(after) or identity != _checkpoint_stat_key(current_path):
-                    _CHECKPOINT_CACHE = None
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Configured BioNuclei checkpoint changed while being verified",
-                    )
-                if not cache_hit:
-                    _CHECKPOINT_CACHE = (str(path), identity, actual)
+            # The path and opened descriptor must identify the same unchanged file
+            # at verification time. The descriptor remains open after this check,
+            # so later path replacement cannot redirect the model loader.
+            after = os.fstat(stream.fileno())
+            current_path = path.stat()
+            if identity != _checkpoint_stat_key(after) or identity != _checkpoint_stat_key(current_path):
+                _CHECKPOINT_CACHE = None
+                raise HTTPException(
+                    status_code=503,
+                    detail="Configured BioNuclei checkpoint changed while being verified",
+                )
+            if not cache_hit:
+                _CHECKPOINT_CACHE = (str(path), identity, actual)
     except HTTPException:
+        if stream is not None:
+            stream.close()
         raise
     except OSError as exc:
+        if stream is not None:
+            stream.close()
         _CHECKPOINT_CACHE = None
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
 
+    assert stream is not None
     verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
-    return path, actual, verified
+    try:
+        yield path, actual, verified, stream
+    finally:
+        stream.close()
+
+
+def _checkpoint_identity() -> tuple[Path, str, bool]:
+    """Return the actual checkpoint digest and whether it matches the pinned release."""
+    with _checkpoint_handle() as (path, actual, verified, _stream):
+        return path, actual, verified
+
+
+@contextmanager
+def _sealed_checkpoint_snapshot(stream: BinaryIO, expected_sha256: str) -> Iterator[Path]:
+    """Copy verified bytes into a write-sealed memfd for race-free mmap loading."""
+    try:
+        snapshot_fd = os.memfd_create(
+            "bionuclei-verified-checkpoint",
+            os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+        )
+    except (AttributeError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="This runtime cannot create an immutable checkpoint snapshot",
+        ) from exc
+
+    try:
+        stream.seek(0)
+        digest = hashlib.sha256()
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(snapshot_fd, view)
+                if written <= 0:
+                    raise OSError("checkpoint snapshot write made no progress")
+                view = view[written:]
+
+        if not hmac.compare_digest(digest.hexdigest(), expected_sha256):
+            raise HTTPException(
+                status_code=503,
+                detail="Checkpoint bytes changed while creating the immutable inference snapshot",
+            )
+
+        os.lseek(snapshot_fd, 0, os.SEEK_SET)
+        required_seals = (
+            fcntl.F_SEAL_WRITE
+            | fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_SEAL
+        )
+        fcntl.fcntl(snapshot_fd, fcntl.F_ADD_SEALS, required_seals)
+        actual_seals = fcntl.fcntl(snapshot_fd, fcntl.F_GET_SEALS)
+        if actual_seals & required_seals != required_seals:
+            raise HTTPException(
+                status_code=503,
+                detail="The verified checkpoint snapshot could not be write-sealed",
+            )
+
+        descriptor_stat = os.fstat(snapshot_fd)
+        descriptor_path = None
+        for descriptor_root in (Path("/proc/self/fd"), Path("/dev/fd")):
+            candidate = descriptor_root / str(snapshot_fd)
+            try:
+                candidate_stat = candidate.stat()
+            except OSError:
+                continue
+            if (
+                stat.S_ISREG(candidate_stat.st_mode)
+                and candidate_stat.st_dev == descriptor_stat.st_dev
+                and candidate_stat.st_ino == descriptor_stat.st_ino
+            ):
+                descriptor_path = candidate
+                break
+
+        if descriptor_path is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Immutable checkpoint snapshot has no stable descriptor path",
+            )
+        yield descriptor_path
+    except HTTPException:
+        raise
+    except (AttributeError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Verified checkpoint could not be snapshotted and sealed for inference",
+        ) from exc
+    finally:
+        os.close(snapshot_fd)
+
+
+@contextmanager
+def _checkpoint_for_inference() -> Iterator[Path]:
+    """Load only a write-sealed snapshot of the verified release checkpoint."""
+    with _checkpoint_handle() as (_path, actual, verified, stream):
+        if not verified:
+            raise HTTPException(
+                status_code=503,
+                detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+            )
+        with _sealed_checkpoint_snapshot(stream, actual) as snapshot_path:
+            yield snapshot_path
+
 
 
 def _checkpoint() -> Path:
+    """Fail closed when the configured checkpoint is not the pinned release."""
     path, _actual, verified = _checkpoint_identity()
     if not verified:
         raise HTTPException(
@@ -267,7 +379,8 @@ async def predict_api(image: Annotated[UploadFile, File(...)], device: Annotated
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
             output_dir = Path(out)
-            result = predict(image_path, _checkpoint(), output_dir, device)
+            with _checkpoint_for_inference() as checkpoint:
+                result = predict(image_path, checkpoint, output_dir, device)
             result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
         finally:
@@ -287,7 +400,8 @@ async def evaluate_api(
     with tempfile.TemporaryDirectory(prefix="bionuclei-output-") as out:
         try:
             output_dir = Path(out)
-            result = evaluate(image_path, gt_path, _checkpoint(), output_dir, device)
+            with _checkpoint_for_inference() as checkpoint:
+                result = evaluate(image_path, gt_path, checkpoint, output_dir, device)
             result["artifacts"] = _artifact_payload(output_dir, original=image_path)
             return result
         finally:
