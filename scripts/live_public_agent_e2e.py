@@ -59,6 +59,26 @@ def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
     return connect_timeout, read_timeout
 
 
+def _set_health_response_read_timeout(response, timeout: float) -> None:
+    """Clamp requests/urllib3's underlying socket timeout before each streamed read."""
+    raw_socket = getattr(
+        getattr(
+            getattr(
+                getattr(getattr(response, "raw", None), "_fp", None),
+                "fp",
+                None,
+            ),
+            "raw",
+            None,
+        ),
+        "_sock",
+        None,
+    )
+    settimeout = getattr(raw_socket, "settimeout", None)
+    if callable(settimeout):
+        settimeout(timeout)
+
+
 def _probe_api_health(
     api_base: str,
     *,
@@ -71,9 +91,8 @@ def _probe_api_health(
     """Probe health with a total monotonic deadline, including streamed response reads.
 
     Requests' read timeout is an inactivity timeout, not a total response deadline.
-    Stream one byte at a time with a short socket-read cap so a slow-trickle response
-    cannot keep the readiness gate alive indefinitely. A single blocked read may
-    overrun the deadline by at most the configured socket-read cap.
+    Before every streamed read, clamp the underlying urllib3 socket timeout to the
+    remaining monotonic budget so a slow-trickle response cannot outlive the deadline.
     """
     if budget_seconds <= 0:
         raise ValueError("health readiness budget must be positive")
@@ -108,7 +127,19 @@ def _probe_api_health(
                 raise _HealthReadinessBudgetExceeded
 
             body = bytearray()
-            for chunk in candidate.iter_content(chunk_size=1):
+            chunks = iter(candidate.iter_content(chunk_size=1))
+            while True:
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    raise _HealthReadinessBudgetExceeded
+                _set_health_response_read_timeout(
+                    candidate,
+                    min(HEALTH_READ_TIMEOUT_CAP_SECONDS, remaining),
+                )
+                try:
+                    chunk = next(chunks)
+                except StopIteration:
+                    break
                 if monotonic() >= deadline:
                     raise _HealthReadinessBudgetExceeded
                 if not chunk:

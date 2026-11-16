@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,14 @@ class _Clock:
         self.now += seconds
 
 
+class _TimeoutRecorder:
+    def __init__(self) -> None:
+        self.values: list[float] = []
+
+    def settimeout(self, value: float) -> None:
+        self.values.append(value)
+
+
 class _Response:
     def __init__(
         self,
@@ -38,6 +47,12 @@ class _Response:
         self.seconds_per_chunk = seconds_per_chunk
         self.closed = False
         self.requested_chunk_size: int | None = None
+        self.socket = _TimeoutRecorder()
+        self.raw = SimpleNamespace(
+            _fp=SimpleNamespace(
+                fp=SimpleNamespace(raw=SimpleNamespace(_sock=self.socket))
+            )
+        )
 
     def iter_content(self, chunk_size: int = 1):
         self.requested_chunk_size = chunk_size
@@ -63,6 +78,7 @@ def _health_helpers() -> dict[str, object]:
         "HEALTH_READ_TIMEOUT_CAP_SECONDS",
         "HEALTH_RESPONSE_MAX_BYTES",
         "_health_request_timeout",
+        "_set_health_response_read_timeout",
         "_probe_api_health",
         "_HealthReadinessBudgetExceeded",
         "_HealthResponseTooLarge",
@@ -178,10 +194,12 @@ def test_health_probe_stops_slow_trickle_body_at_total_deadline() -> None:
         request_exception=_ReadTimeout,
         monotonic=clock.monotonic,
         sleep=clock.sleep,
+        budget_seconds=5.0,
     )
 
     assert result is None
-    assert clock.now == pytest.approx(179.0)
+    assert clock.now == pytest.approx(5.0)
+    assert response.socket.values == [2.0, 2.0, 2.0, 2.0, 1.0]
     assert attempts[-1]["error"] == "ReadinessBudgetExceeded"
     assert request_error == "ReadinessBudgetExceeded"
     assert payload is None
