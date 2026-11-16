@@ -41,6 +41,11 @@ def test_checkpoint_validation_uses_the_same_cpu_only_runtime_constraints() -> N
     assert "--constraint deploy/render-cpu-constraints.txt" in install["run"]
     assert "torch.version.cuda is None" in install["run"]
 
+    memory = next(step for step in steps if step.get("name") == "Run real checkpoint worker with a 480 MiB hard memory limit")
+    assert "for attempt in 1 2" not in memory["run"]
+    assert "Constrained-memory validation attempt" not in memory["run"]
+    assert memory["run"].count("docker run --rm") == 1
+
     build = next(step for step in steps if step.get("name") == "Build isolated image for constrained-memory validation")
     assert "COPY . /app" in build["run"]
     assert "deploy/render-cpu-constraints.txt" in build["run"]
