@@ -123,6 +123,12 @@ def _probe_api_health(
             attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
             body_text = bytes(body).decode("utf-8", errors="replace")
             if candidate.status_code == 200:
+                # Report the latest HTTP response even when its body is invalid.
+                # A prior 503 must not survive as the apparent final status.
+                response = candidate
+                health_payload = None
+                request_error = None
+                body_excerpt = None
                 try:
                     parsed = json.loads(body_text)
                 except json.JSONDecodeError:
@@ -135,10 +141,7 @@ def _probe_api_health(
                     attempt_record["error"] = request_error
                     attempts.append(attempt_record)
                     break
-                response = candidate
                 health_payload = parsed
-                request_error = None
-                body_excerpt = None
                 attempt_record["result"] = "http_200"
                 attempts.append(attempt_record)
                 break
