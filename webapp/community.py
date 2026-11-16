@@ -78,6 +78,17 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Hash an uploaded source file with bounded memory use."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _set_job(job_id: str, **fields: object) -> None:
     fields["updated_at"] = _now().isoformat()
     assignments = ", ".join(f"{k} = ?" for k in fields)
@@ -454,24 +465,72 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
         if "Y" not in sizes or "X" not in sizes:
             raise ValueError(f"ND2 file has no Y/X image plane: sizes={sizes}")
         requested = {"C": channel, "T": time, "Z": z, "P": field, "S": 0, "V": field}
-        indexers: list[int | slice] = []
         selected: dict[str, int] = {}
         for axis in axes:
             if axis in {"Y", "X"}:
-                indexers.append(slice(None))
                 continue
             size = int(sizes[axis])
             value = int(requested.get(axis, 0))
             if value < 0 or value >= size:
                 raise ValueError(f"ND2 axis {axis} index {value} outside [0, {size - 1}]")
-            indexers.append(value)
             selected[axis] = value
-        arr = np.asarray(ndfile.asarray())
-        plane = np.squeeze(arr[tuple(indexers)])
+        # ND2File.asarray() materializes every T/Z/C/P frame.  The public
+        # analyzer consumes one selected 2-D plane, so resolve its frame index
+        # from metadata and decode only that frame.
+        legacy = bool(ndfile.is_legacy)
+        # Modern ND2 indexes channels as individual frames. Legacy ND2 stores
+        # all channels in each frame, so select C from the returned YXC array.
+        frame_indices_to_match = {
+            axis: value
+            for axis, value in selected.items()
+            if not (legacy and axis == "C")
+        }
+        frame_index = next(
+            (
+                index
+                for index, frame_indices in enumerate(ndfile.loop_indices)
+                if all(
+                    int(frame_indices.get(axis, 0)) == value
+                    for axis, value in frame_indices_to_match.items()
+                )
+            ),
+            None,
+        )
+        if frame_index is None:
+            raise ValueError(
+                f"Selected ND2 plane was not found: indices={selected}, sizes={sizes}"
+            )
+        frame = np.asarray(ndfile.read_frame(frame_index))
+        if legacy:
+            channel_index = selected.get("C", 0)
+            if frame.ndim == 3 and channel_index < frame.shape[0]:
+                # ND2File.read_frame() returns legacy channels first (C, Y, X).
+                plane = np.squeeze(frame[channel_index])
+            elif frame.ndim == 2 and channel_index == 0:
+                plane = frame
+            else:
+                raise ValueError(
+                    f"Selected legacy ND2 channel is not available: "
+                    f"channel={channel_index}, frame_shape={frame.shape}, sizes={sizes}"
+                )
+        else:
+            plane = np.squeeze(frame)
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
-        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline"}
+        return {
+            "input_format": "ND2",
+            "reader": "nd2",
+            "reader_version": getattr(nd2, "__version__", "unknown"),
+            "source_shape": list(shape),
+            "source_sizes": sizes,
+            "source_axes": axes,
+            "selected_indices": selected,
+            "selected_frame_index": frame_index,
+            "legacy_reader": legacy,
+            "selected_plane_shape": list(plane.shape),
+            "conversion": "ND2 selected frame read directly to TIFF for the 2-D BioNuclei inference pipeline",
+        }
 
 
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
@@ -540,8 +599,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
     try:
         _set_job(job_id, status="planning")
         checkpoint = _checkpoint()
-        raw = image_path.read_bytes()
-        input_sha256 = hashlib.sha256(raw).hexdigest()
+        input_sha256 = _sha256_file(image_path)
         inference_input, input_metadata = _prepare_input(image_path, root, channel=channel, time=time, z=z, field=field)
         plan = build_plan(inference_input, analysis_modules)
         output.mkdir(parents=True, exist_ok=True)

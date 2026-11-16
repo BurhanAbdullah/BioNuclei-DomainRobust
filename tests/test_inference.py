@@ -24,6 +24,20 @@ def test_normalise_is_finite_and_bounded():
     assert x.max() <= 1
 
 
+def test_normalise_does_not_mutate_float32_source() -> None:
+    image = np.array([[0.0, 1.0, 10.0, 20.0]], dtype=np.float32)
+    original = image.copy()
+
+    normalized = _normalise(image)
+
+    np.testing.assert_array_equal(image, original)
+    assert normalized.dtype == np.float32
+    assert not np.shares_memory(normalized, image)
+    assert np.isfinite(normalized).all()
+    assert float(normalized.min()) == 0.0
+    assert float(normalized.max()) == 1.0
+
+
 def test_measure_reports_instances():
     instances = np.array([[0, 1, 1], [0, 0, 2], [2, 2, 0]], dtype=np.int32)
     rows = _measure(instances)

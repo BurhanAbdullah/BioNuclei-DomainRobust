@@ -68,22 +68,29 @@ def inspect_image(path: Path) -> ImageProfile:
     image = np.asarray(tifffile.imread(path))
     if image.ndim != 2:
         raise ValueError(f"Adaptive planner requires a 2 D image; got shape {image.shape}")
-    x = image.astype(np.float64, copy=False)
-    finite_mask = np.isfinite(x)
-    finite = bool(finite_mask.all())
-    finite_values = x[finite_mask]
+    if np.issubdtype(image.dtype, np.integer):
+        # Integer microscopy images are finite by construction. Keep a flat
+        # view instead of materializing a float64 image and a second masked copy.
+        finite = True
+        finite_values = image.reshape(-1)
+    else:
+        x = image.astype(np.float64, copy=False)
+        finite_mask = np.isfinite(x)
+        finite = bool(finite_mask.all())
+        finite_values = x[finite_mask]
     if finite_values.size == 0:
         finite_values = np.array([0.0])
     dtype_info = np.iinfo(image.dtype) if np.issubdtype(image.dtype, np.integer) else None
     upper = float(dtype_info.max) if dtype_info is not None else float(np.max(finite_values))
     saturation = float(np.mean(finite_values >= upper)) if upper > 0 else 0.0
+    p01, median, p995 = np.percentile(finite_values, (1.0, 50.0, 99.5))
     return ImageProfile(
         shape=(int(image.shape[0]), int(image.shape[1])),
         dtype=str(image.dtype),
         min=float(np.min(finite_values)),
-        p01=float(np.percentile(finite_values, 1)),
-        median=float(np.median(finite_values)),
-        p995=float(np.percentile(finite_values, 99.5)),
+        p01=float(p01),
+        median=float(median),
+        p995=float(p995),
         max=float(np.max(finite_values)),
         mean=float(np.mean(finite_values)),
         std=float(np.std(finite_values)),
@@ -111,7 +118,7 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
     try:
         # Share the lock used by full inference so simultaneous jobs cannot load
         # separate U-Nets and run competing forward passes on a small CPU worker.
-        from bionuclei.inference import _INFERENCE_LOCK, _load_model
+        from bionuclei.inference import _INFERENCE_LOCK, _load_model, _trim_cpu_allocator
         checkpoint_path = Path(os.getenv("BIONUCLEI_CHECKPOINT", ""))
         if not checkpoint_path.is_file():
             return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", ("Released checkpoint is not available for the CNN gate.",))
@@ -181,6 +188,9 @@ def cnn_pattern_check(path: Path) -> CNNPatternCheck:
                 del x
                 import gc
                 gc.collect()
+                # Match the final inference cleanup: return freed PyTorch/glibc
+                # arenas before the full-resolution pass loads the model again.
+                _trim_cpu_allocator()
 
     except Exception as exc:
         return CNNPatternCheck(False, "Boundary U Net", 0.0, 0.0, 0.0, 0, "NOT_RUN", (f"CNN gate could not execute: {type(exc).__name__}.",))

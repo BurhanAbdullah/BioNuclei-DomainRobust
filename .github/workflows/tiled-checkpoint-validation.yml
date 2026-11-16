@@ -8,6 +8,8 @@ on:
       - "src/bionuclei/expert_agents.py"
       - "src/bionuclei/models.py"
       - "webapp/community.py"
+      - "webapp/community.Dockerfile"
+      - "deploy/render-cpu-constraints.txt"
       - "scripts/validate_tiled_checkpoint.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
   push:
@@ -18,6 +20,8 @@ on:
       - "src/bionuclei/expert_agents.py"
       - "src/bionuclei/models.py"
       - "webapp/community.py"
+      - "webapp/community.Dockerfile"
+      - "deploy/render-cpu-constraints.txt"
       - "scripts/validate_tiled_checkpoint.py"
       - ".github/workflows/tiled-checkpoint-validation.yml"
   workflow_dispatch:
@@ -60,60 +64,68 @@ jobs:
       - name: Install production web dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[web]'
+          python -m pip install --constraint deploy/render-cpu-constraints.txt -e '.[web]'
+          python -c 'import torch; assert torch.version.cuda is None, "Checkpoint validation must match the CPU-only Render runtime"'
 
       - name: Run real checkpoint worker and specialist evidence gate
         run: python scripts/validate_tiled_checkpoint.py
 
-      - name: Build isolated image for constrained-memory validation
+      - name: Build production community image for constrained-memory validation
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/Dockerfile.bionuclei-memory" <<'EOF'
-          FROM python:3.11-slim-bookworm
-          RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
-          WORKDIR /app
-          COPY . /app
-          RUN python -m pip install --no-cache-dir --upgrade pip && python -m pip install --no-cache-dir -e '.[web]'
-          EOF
-          docker build --file "$RUNNER_TEMP/Dockerfile.bionuclei-memory" --tag bionuclei-memory-gate .
+          docker build --file webapp/community.Dockerfile --tag bionuclei-memory-gate .
 
       - name: Run real checkpoint worker with a 480 MiB hard memory limit
         env:
           EXPECTED_SHA256: 7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92
         run: |
           set -euo pipefail
-          for attempt in 1 2; do
-            echo "Constrained-memory validation attempt ${attempt}/2"
-          docker run --rm \
-            --memory=503316480 \
-            --memory-swap=503316480 \
-            --cpus=1 \
-            --pids-limit=256 \
-            --env BIONUCLEI_CHECKPOINT=/checkpoint.pt \
-            --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
-            --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
-            bionuclei-memory-gate \
-            sh -lc '
-              set +e
-              python scripts/validate_tiled_checkpoint.py
-              worker_status=$?
-              set -e
-              if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.peak ]; then
-                memory_limit=$(cat /sys/fs/cgroup/memory.max)
-                memory_peak=$(cat /sys/fs/cgroup/memory.peak)
-              elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ] && [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then
-                memory_limit=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes)
-                memory_peak=$(cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes)
-              else
-                echo "Cannot verify cgroup memory accounting; refusing a false pass" >&2
-                exit 1
-              fi
-              case "$memory_limit" in ""|*[!0-9]*) echo "Invalid cgroup memory limit: $memory_limit" >&2; exit 1;; esac
-              case "$memory_peak" in ""|*[!0-9]*) echo "Invalid cgroup memory peak: $memory_peak" >&2; exit 1;; esac
-              printf "Cgroup memory limit: %s bytes\\n" "$memory_limit"
-              printf "Cgroup memory peak: %s bytes\\n" "$memory_peak"
-              [ "$worker_status" -eq 0 ] || exit "$worker_status"
-              [ "$memory_limit" -eq 503316480 ] || { echo "Expected an enforced 480 MiB cgroup limit" >&2; exit 1; }
-              [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
-            '
-          done
+          VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"
+          mkdir -p "$VALIDATOR_DIR"
+          cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"
+            docker run --rm \
+              --memory=503316480 \
+              --memory-swap=503316480 \
+              --cpus=1 \
+              --pids-limit=256 \
+              --env BIONUCLEI_CHECKPOINT=/checkpoint.pt \
+              --env BIONUCLEI_EXPECTED_CHECKPOINT_SHA256="$EXPECTED_SHA256" \
+              --volume "$BIONUCLEI_CHECKPOINT:/checkpoint.pt:ro" \
+              --volume "$VALIDATOR_DIR:/app/scripts:ro" \
+              bionuclei-memory-gate \
+              sh -lc '
+                set +e
+                env_status=0
+                for variable in OMP_NUM_THREADS MKL_NUM_THREADS OPENBLAS_NUM_THREADS NUMEXPR_NUM_THREADS; do
+                  value="$(printenv "$variable" 2>/dev/null || true)"
+                  echo "Production image $variable=$value"
+                  if [ "$value" != "1" ]; then
+                    env_status=1
+                  fi
+                done
+                if [ "$env_status" -eq 0 ]; then
+                  python scripts/validate_tiled_checkpoint.py
+                  worker_status=$?
+                else
+                  echo "Production image thread-pool defaults are not all set to 1" >&2
+                  worker_status=1
+                fi
+                set -e
+                if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.peak ]; then
+                  memory_limit=$(cat /sys/fs/cgroup/memory.max)
+                  memory_peak=$(cat /sys/fs/cgroup/memory.peak)
+                elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ] && [ -r /sys/fs/cgroup/memory/memory.max_usage_in_bytes ]; then
+                  memory_limit=$(cat /sys/fs/cgroup/memory.limit_in_bytes)
+                  memory_peak=$(cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes)
+                else
+                  echo "Cannot verify cgroup memory accounting; refusing a false pass" >&2
+                  exit 1
+                fi
+                case "$memory_limit" in ""|*[!0-9]*) echo "Invalid cgroup memory limit: $memory_limit" >&2; exit 1;; esac
+                case "$memory_peak" in ""|*[!0-9]*) echo "Invalid cgroup memory peak: $memory_peak" >&2; exit 1;; esac
+                printf "Cgroup memory limit: %s bytes\\n" "$memory_limit"
+                printf "Cgroup memory peak: %s bytes\\n" "$memory_peak"
+                [ "$worker_status" -eq 0 ] || exit "$worker_status"
+                [ "$memory_limit" -eq 503316480 ] || { echo "Expected an enforced 480 MiB cgroup limit" >&2; exit 1; }
+                [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
+              '
