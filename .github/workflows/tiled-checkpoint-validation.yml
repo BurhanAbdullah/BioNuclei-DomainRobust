@@ -83,8 +83,6 @@ jobs:
           VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"
           mkdir -p "$VALIDATOR_DIR"
           cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"
-          for attempt in 1 2; do
-            echo "Constrained-memory validation attempt ${attempt}/2"
             docker run --rm \
               --memory=503316480 \
               --memory-swap=503316480 \
@@ -131,4 +129,3 @@ jobs:
                 [ "$memory_limit" -eq 503316480 ] || { echo "Expected an enforced 480 MiB cgroup limit" >&2; exit 1; }
                 [ "$memory_peak" -le 492830720 ] || { echo "Cgroup peak exceeded 470 MiB safety target" >&2; exit 1; }
               '
-          done
