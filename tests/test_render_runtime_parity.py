@@ -67,9 +67,17 @@ class RenderRuntimeParityTests(unittest.TestCase):
             for line in push_section.splitlines()
             if line.strip().startswith("- ")
         ]
+        source_root = root / "src"
+        source_inputs = tuple(
+            path.relative_to(root).as_posix()
+            for path in sorted(source_root.rglob("*"))
+            if path.is_file() and "__pycache__" not in path.parts
+        )
+        self.assertTrue(source_inputs, "Render image source tree must contain tracked source files")
+
         render_inputs = (
             "webapp/community.py",
-            "src/bionuclei/inference.py",
+            *source_inputs,
             "configs/base_system.yaml",
             "pyproject.toml",
             "README.md",
