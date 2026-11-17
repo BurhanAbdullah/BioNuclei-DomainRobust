@@ -63,4 +63,4 @@ def test_sha256_file_hashes_checkpoint_bytes(tmp_path):
     path = tmp_path / "checkpoint.pt"
     path.write_bytes(b"verified checkpoint bytes")
 
-    assert sha256_file(path) == "c2b27e56a0a3e9a4a6bce0a93b3a8b1a2d4f8c5a9e7c5e4c0e3d5e3a6e8f8f9"
+    assert sha256_file(path) == "502fc47eb3b5a9e463ea127f3619c5790ce1c3433ec5bd1a2af8fcb99056378e"
