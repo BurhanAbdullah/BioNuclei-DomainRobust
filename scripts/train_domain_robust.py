@@ -39,7 +39,7 @@ def build_training_method_record(manifest, manifest_sha256, seed, init_checkpoin
     ):
         raise ValueError("initial checkpoint SHA-256 is invalid")
     return {
-        "method": "source_domain_supervised" if init_checkpoint_sha256 is None else "checkpoint_initialized_training",
+        "method": "supervised_training" if init_checkpoint_sha256 is None else "checkpoint_initialized_training",
         "training_dataset": dataset,
         "training_manifest_sha256": manifest_sha256,
         "training_image_count": len(training_images),
