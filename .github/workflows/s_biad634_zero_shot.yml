@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - 'scripts/evaluate_s_biad634.py'
+      - 'src/bionuclei/inference.py'
       - 'src/bionuclei/postprocessing.py'
       - 'scripts/metrics_instance.py'
       - 'scripts/download_s_biad634.py'

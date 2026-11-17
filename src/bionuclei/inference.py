@@ -21,6 +21,7 @@ from skimage.measure import regionprops
 from .data import decode_instance_mask
 from .metrics import boundary_f1, dice_coefficient, iou_score
 from .models import BoundaryUNet
+from .postprocessing import split_boundary_instances
 
 # Render's free instance has a tight memory budget.  Keep CPU inference
 # single-threaded and serialize model construction/inference so repeated
@@ -91,9 +92,7 @@ def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
 
 def _split_instances(logits: torch.Tensor) -> np.ndarray:
     classes = logits.argmax(dim=1).detach().cpu().numpy()[0]
-    foreground = classes != 0
-    instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
-    return instances.astype(np.int32)
+    return split_boundary_instances(classes)
 
 
 def _measure(instances: np.ndarray) -> list[dict[str, float | int]]:
