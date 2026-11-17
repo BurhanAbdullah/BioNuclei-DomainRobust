@@ -59,6 +59,10 @@ class DownloadDeadlineExceeded(TimeoutError):
     """The total BioStudies download budget was exhausted."""
 
 
+class DownloadSocketTimeoutControlUnavailable(RuntimeError):
+    """The response socket cannot enforce the remaining total download deadline."""
+
+
 def _set_response_read_timeout(response, timeout: float) -> None:
     """Clamp the underlying urllib socket timeout to the remaining total budget.
 
@@ -71,8 +75,16 @@ def _set_response_read_timeout(response, timeout: float) -> None:
         None,
     )
     settimeout = getattr(raw_socket, "settimeout", None)
-    if callable(settimeout):
+    if not callable(settimeout):
+        raise DownloadSocketTimeoutControlUnavailable(
+            "BioStudies response socket timeout control is unavailable; refusing an unbounded read"
+        )
+    try:
         settimeout(timeout)
+    except Exception as exc:
+        raise DownloadSocketTimeoutControlUnavailable(
+            "BioStudies response socket timeout control could not be applied; refusing an unbounded read"
+        ) from exc
 
 
 class CorruptDatasetArchiveError(RuntimeError):
