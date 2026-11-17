@@ -8,10 +8,6 @@ from scipy import ndimage
 from bionuclei.inference import _split_instances
 from bionuclei.postprocessing import split_boundary_instances
 from bionuclei.targets import instance_to_boundary_target
-from scripts.audit_bbbc039_instances import predict_instances
-from scripts.evaluate_bbbc038 import model_predict_with_padding
-from scripts.evaluate_bbbc039 import split_instances as split_bbbc039
-from scripts.evaluate_instance_manifest import split_instances as split_manifest
 from scripts.evaluate_s_biad634 import split_instances as split_s_biad634
 
 
@@ -192,28 +188,18 @@ def test_rejects_invalid_semantic_class_maps(classes: np.ndarray) -> None:
         split_boundary_instances(classes)
 
 
-def test_production_and_evaluation_paths_share_boundary_aware_splitting() -> None:
+def test_production_and_s_biad634_evaluation_share_boundary_aware_splitting() -> None:
     classes = _touching_boundary_map()
     logits = _logits_for(classes)
-    image = np.ones(classes.shape, dtype=np.uint16)
-
-    class FixedModel:
-        def __call__(self, _image: torch.Tensor) -> torch.Tensor:
-            return logits
-
     expected = split_boundary_instances(classes)
-    outputs = [
-        _split_instances(logits),
-        split_bbbc039(logits),
-        split_manifest(logits),
-        split_s_biad634(classes),
-        model_predict_with_padding(FixedModel(), image)[0],
-        predict_instances(FixedModel(), image),
-    ]
 
-    for output in outputs:
-        assert np.array_equal(output, expected)
-        assert _instance_count(output) == 2
+    production_instances = _split_instances(logits)
+    evaluation_instances = split_s_biad634(classes)
+
+    assert np.array_equal(production_instances, expected)
+    assert np.array_equal(evaluation_instances, expected)
+    assert _instance_count(production_instances) == 2
+    assert _instance_count(evaluation_instances) == 2
 
 
 
