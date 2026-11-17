@@ -31,6 +31,14 @@ class _TimeoutRecorder:
         self.values.append(value)
 
 
+class _RejectingTimeoutRecorder:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def settimeout(self, _value: float) -> None:
+        raise self.error
+
+
 class _Response:
     def __init__(
         self,
@@ -40,6 +48,7 @@ class _Response:
         body: bytes | None = None,
         clock: _Clock | None = None,
         seconds_per_chunk: float = 0.0,
+        socket_available: bool = True,
     ) -> None:
         self.status_code = status_code
         self._body = body if body is not None else text.encode("utf-8")
@@ -48,11 +57,12 @@ class _Response:
         self.closed = False
         self.requested_chunk_size: int | None = None
         self.socket = _TimeoutRecorder()
-        self.raw = SimpleNamespace(
-            _fp=SimpleNamespace(
-                fp=SimpleNamespace(raw=SimpleNamespace(_sock=self.socket))
+        if socket_available:
+            self.raw = SimpleNamespace(
+                _fp=SimpleNamespace(
+                    fp=SimpleNamespace(raw=SimpleNamespace(_sock=self.socket))
+                )
             )
-        )
 
     def iter_content(self, chunk_size: int = 1):
         self.requested_chunk_size = chunk_size
@@ -82,6 +92,7 @@ def _health_helpers() -> dict[str, object]:
         "_probe_api_health",
         "_HealthReadinessBudgetExceeded",
         "_HealthResponseTooLarge",
+        "_HealthSocketTimeoutControlUnavailable",
     }
     selected = [
         node
@@ -113,6 +124,75 @@ def test_health_timeout_uses_short_socket_reads_within_remaining_budget() -> Non
     assert sum(timeout_for(5.0)) <= 5.0
     with pytest.raises(ValueError, match="budget is exhausted"):
         timeout_for(0.0)
+
+
+def test_health_probe_fails_closed_without_socket_timeout_control() -> None:
+    helpers = _health_helpers()
+    response = _Response(
+        200,
+        body=b'{"status":"ok"}',
+        socket_available=False,
+    )
+
+    def get(
+        _url: str,
+        *,
+        timeout: tuple[float, float],
+        stream: bool,
+        allow_redirects: bool,
+    ) -> _Response:
+        assert stream is True
+        assert allow_redirects is False
+        return response
+
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result is None
+    assert request_error == "HealthSocketTimeoutControlUnavailable"
+    assert attempts[-1]["error"] == "HealthSocketTimeoutControlUnavailable"
+    assert payload is None
+    assert response.closed
+
+
+@pytest.mark.parametrize("error_type", [OSError, ValueError])
+def test_health_probe_fails_closed_when_socket_rejects_timeout_control(error_type) -> None:
+    helpers = _health_helpers()
+    response = _Response(200, body=b'{"status":"ok"}')
+    rejecting_socket = _RejectingTimeoutRecorder(
+        error_type("timeout control rejected")
+    )
+    response.raw._fp.fp.raw._sock = rejecting_socket
+
+    def get(
+        _url: str,
+        *,
+        timeout: tuple[float, float],
+        stream: bool,
+        allow_redirects: bool,
+    ) -> _Response:
+        assert stream is True
+        assert allow_redirects is False
+        return response
+
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result is None
+    assert request_error == "HealthSocketTimeoutControlUnavailable"
+    assert attempts[-1]["error"] == "HealthSocketTimeoutControlUnavailable"
+    assert payload is None
+    assert response.closed
 
 
 def test_health_probe_recovers_after_realistic_cold_start_retries() -> None:
