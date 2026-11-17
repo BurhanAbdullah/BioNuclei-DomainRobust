@@ -46,11 +46,33 @@ def test_checkpoint_validation_uses_the_same_cpu_only_runtime_constraints() -> N
     assert "Constrained-memory validation attempt" not in memory["run"]
     assert memory["run"].count("docker run --rm") == 1
 
-    build = next(step for step in steps if step.get("name") == "Build isolated image for constrained-memory validation")
-    assert "COPY . /app" in build["run"]
-    assert "deploy/render-cpu-constraints.txt" in build["run"]
-    assert "torch.version.cuda is None" in build["run"]
-    assert "OMP_NUM_THREADS=1" in build["run"]
+    api_build = next(
+        step for step in steps
+        if step.get("name") == "Build production API image and verify CPU-only PyTorch"
+    )
+    community_build = next(
+        step for step in steps
+        if step.get("name") == "Build production community image for constrained-memory validation"
+    )
+    assert "docker build --file webapp/Dockerfile --tag bionuclei-api-image ." in api_build["run"]
+    assert "docker build --file webapp/community.Dockerfile --tag bionuclei-memory-gate ." in community_build["run"]
+    assert steps.index(api_build) < steps.index(community_build) < steps.index(memory)
+
+    command = memory["run"]
+    assert 'VALIDATOR_DIR="$RUNNER_TEMP/bionuclei-validation-scripts"' in command
+    assert 'cp scripts/validate_tiled_checkpoint.py "$VALIDATOR_DIR/validate_tiled_checkpoint.py"' in command
+    assert '--volume "$VALIDATOR_DIR:/app/scripts:ro"' in command
+    assert "bionuclei-memory-gate" in command
+    assert "for variable in OMP_NUM_THREADS MKL_NUM_THREADS OPENBLAS_NUM_THREADS NUMEXPR_NUM_THREADS; do" in command
+    assert 'if [ "$value" != "1" ]; then' in command
+    assert command.count("docker run --rm") == 1
+    assert "--memory=503316480" in command
+    assert '[ "$memory_limit" -eq 503316480 ]' in command
+    assert '[ "$memory_peak" -le 492830720 ]' in command
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    assert "Dockerfile.bionuclei-memory" not in workflow_text
+    assert "COPY . /app" not in workflow_text
+
 
 
 def test_biomcp_and_clean_reproduction_workflows_use_cpu_only_pytorch() -> None:

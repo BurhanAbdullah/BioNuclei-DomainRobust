@@ -6,11 +6,11 @@ import json
 from bionuclei.expert_agents import run_expert_agents, training_manifest_status
 
 
-def _result(raw_max: int = 65535) -> dict:
+def _result(raw_max: int = 65535, raw_min: int = 0) -> dict:
     profile = {
         "shape": [512, 512],
         "dtype": "uint16",
-        "min": 0,
+        "min": raw_min,
         "p01": 1200,
         "median": 1200,
         "p995": 1200,
@@ -52,12 +52,16 @@ def _result(raw_max: int = 65535) -> dict:
 
 
 def test_uint16_raw_profile_reaches_intensity_agent_and_is_evidence_bound() -> None:
-    result = _result()
+    result = _result(raw_min=512)
     output = run_expert_agents(result)
     assert len(output["agents"]) == 8
 
     intensity = next(agent for agent in output["agents"] if agent["agent"] == "intensity_agent")
+    assert "Raw image min: 512" in intensity["observations"]
     assert "Raw image max: 65535" in intensity["observations"]
+    assert "Raw image dynamic range: 65023 raw intensity units." in intensity["observations"]
+    assert any(claim["reference"] == "adaptive_plan.profile.min" and claim["value"] == 512 for claim in intensity["quantitative_claims"])
+    assert any(claim["reference"] == "adaptive_plan.profile.max" and claim["value"] == 65535 for claim in intensity["quantitative_claims"])
     assert "Maximum per-instance nuclear intensity: 65535 raw intensity units." in intensity["observations"]
     assert "Raw image dtype: uint16" in intensity["observations"]
     assert "reports.intensity.max_nuclear_intensity" in intensity["evidence_references"]
@@ -78,9 +82,13 @@ def test_uint16_raw_profile_reaches_intensity_agent_and_is_evidence_bound() -> N
     ).hexdigest()
     assert intensity["evidence_sha256"] == expected
 
-    changed = run_expert_agents(_result(raw_max=65534))
+    changed = run_expert_agents(_result(raw_max=65534, raw_min=512))
     changed_intensity = next(agent for agent in changed["agents"] if agent["agent"] == "intensity_agent")
     assert changed_intensity["evidence_sha256"] != intensity["evidence_sha256"]
+
+    changed_min = run_expert_agents(_result(raw_min=511))
+    changed_min_intensity = next(agent for agent in changed_min["agents"] if agent["agent"] == "intensity_agent")
+    assert changed_min_intensity["evidence_sha256"] != intensity["evidence_sha256"]
 
 
 def test_missing_or_invalid_training_counts_remain_unknown() -> None:
