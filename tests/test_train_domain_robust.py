@@ -1,8 +1,10 @@
 import pytest
 import torch
+from pathlib import Path
 
 from scripts.train_domain_robust import (
     build_training_method_record,
+    load_checkpoint,
     resolve_device,
     sha256_file,
 )
@@ -64,3 +66,26 @@ def test_sha256_file_hashes_checkpoint_bytes(tmp_path):
     path.write_bytes(b"verified checkpoint bytes")
 
     assert sha256_file(path) == "502fc47eb3b5a9e463ea127f3619c5790ce1c3433ec5bd1a2af8fcb99056378e"
+
+
+def test_initial_checkpoint_loader_explicitly_uses_weights_only(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "initial.pt"
+    expected = {"model": {"weight": torch.tensor([1.0, 2.0])}}
+    observed = {}
+
+    def safe_load(path, *, map_location, weights_only):
+        observed.update(
+            path=Path(path),
+            map_location=map_location,
+            weights_only=weights_only,
+        )
+        return expected
+
+    monkeypatch.setattr(torch, "load", safe_load)
+
+    assert load_checkpoint(checkpoint) is expected
+    assert observed == {
+        "path": checkpoint,
+        "map_location": "cpu",
+        "weights_only": True,
+    }
