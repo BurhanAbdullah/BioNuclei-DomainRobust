@@ -18,6 +18,7 @@ _SAFE_PATHS = frozenset(
         "LICENSE",
         "README.md",
         "render.yaml",
+        "src/bionuclei/postprocessing.py",
         ".github/workflows/e6_e7_uncertainty_analysis.yml",
         ".github/workflows/e6_external_few_shot.yml",
         ".github/workflows/e6_retry_watchdog.yml",
