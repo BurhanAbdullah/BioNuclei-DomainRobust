@@ -108,7 +108,7 @@ def test_download_retries_transient_http_status(tmp_path: Path, monkeypatch: pyt
                 {},
                 io.BytesIO(b"temporary outage"),
             )
-        return io.BytesIO(valid_archive)
+        return _with_socket_timeout(io.BytesIO(valid_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -198,7 +198,7 @@ def test_download_retries_crc_invalid_archive_before_replacing_destination(
             return _with_socket_timeout(io.BytesIO(corrupt_archive))
         assert destination.read_bytes() == b"previous complete archive"
         assert _part_files(destination) == []
-        return io.BytesIO(valid_archive)
+        return _with_socket_timeout(io.BytesIO(valid_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -226,7 +226,7 @@ def test_download_stops_after_bounded_crc_invalid_archives_without_replacing_des
         nonlocal calls
         calls += 1
         assert timeout == downloader.DOWNLOAD_TIMEOUT_SECONDS
-        return io.BytesIO(corrupt_archive)
+        return _with_socket_timeout(io.BytesIO(corrupt_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
