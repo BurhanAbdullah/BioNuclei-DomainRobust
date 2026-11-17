@@ -475,3 +475,28 @@ def test_legacy_nd2_to_tiff_reads_one_frame_and_selects_channel(
     assert metadata["selected_indices"] == {"T": 1, "C": 1}
     assert metadata["selected_frame_index"] == 1
     assert metadata["legacy_reader"] is True
+
+
+def test_create_job_enforces_memoryview_nbytes_upload_limit(isolated_jobs, monkeypatch, tmp_path: Path) -> None:
+    from array import array
+
+    monkeypatch.setattr(isolated_jobs, "MAX_UPLOAD_BYTES", 8)
+    payload = memoryview(array("Q", [1, 2]))
+    assert len(payload) == 2
+    assert payload.nbytes == 16
+
+    class MemoryviewReader:
+        def __init__(self) -> None:
+            self.sent = False
+
+        def read(self, _size: int):
+            if self.sent:
+                return b""
+            self.sent = True
+            return payload
+
+    destination = tmp_path / "oversized-memoryview.tif"
+    with pytest.raises(ValueError, match="Upload exceeds 8 bytes"):
+        isolated_jobs._write_upload(MemoryviewReader(), destination)
+
+    assert not destination.exists()

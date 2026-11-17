@@ -697,7 +697,7 @@ def _write_upload(source: bytes | BinaryIO, destination: Path) -> int:
                     break
                 if not isinstance(chunk, (bytes, bytearray, memoryview)):
                     raise TypeError("Upload stream must return binary chunks")
-                chunk_size = len(chunk)
+                chunk_size = chunk.nbytes if isinstance(chunk, memoryview) else len(chunk)
                 if total + chunk_size > MAX_UPLOAD_BYTES:
                     raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
                 output.write(chunk)
