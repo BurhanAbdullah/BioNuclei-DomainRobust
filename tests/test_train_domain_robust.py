@@ -1,6 +1,11 @@
+import pytest
 import torch
 
-from scripts.train_domain_robust import resolve_device
+from scripts.train_domain_robust import (
+    build_training_method_record,
+    resolve_device,
+    sha256_file,
+)
 
 
 def test_resolve_device_auto_falls_back_to_cpu(monkeypatch):
@@ -11,3 +16,51 @@ def test_resolve_device_auto_falls_back_to_cpu(monkeypatch):
 def test_resolve_device_auto_uses_cuda_when_available(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     assert resolve_device("auto").type == "cuda"
+
+
+def test_source_training_record_uses_the_actual_manifest(tmp_path):
+    manifest = {
+        "dataset": "BBBC039v1",
+        "partitions": {"train": ["image-1.tif", "image-2.tif"]},
+    }
+
+    record = build_training_method_record(manifest, "a" * 64, 42)
+
+    assert record == {
+        "method": "source_domain_supervised",
+        "training_dataset": "BBBC039v1",
+        "training_manifest_sha256": "a" * 64,
+        "training_image_count": 2,
+        "seed": 42,
+        "init_checkpoint_sha256": None,
+    }
+    assert "adaptation_dataset" not in record
+
+
+def test_checkpoint_initialized_training_records_checkpoint_digest():
+    manifest = {
+        "dataset": "BBBC039v1",
+        "partitions": {"train": ["image-1.tif"]},
+    }
+
+    record = build_training_method_record(manifest, "a" * 64, 42, "b" * 64)
+
+    assert record["method"] == "checkpoint_initialized_training"
+    assert record["training_dataset"] == "BBBC039v1"
+    assert record["init_checkpoint_sha256"] == "b" * 64
+
+
+def test_training_method_record_rejects_missing_training_partition():
+    with pytest.raises(ValueError, match="non-empty train partition"):
+        build_training_method_record(
+            {"dataset": "BBBC039v1", "partitions": {"train": []}},
+            "a" * 64,
+            42,
+        )
+
+
+def test_sha256_file_hashes_checkpoint_bytes(tmp_path):
+    path = tmp_path / "checkpoint.pt"
+    path.write_bytes(b"verified checkpoint bytes")
+
+    assert sha256_file(path) == "c2b27e56a0a3e9a4a6bce0a93b3a8b1a2d4f8c5a9e7c5e4c0e3d5e3a6e8f8f9"
