@@ -26,3 +26,14 @@ def test_every_github_actions_workflow_parses_as_yaml() -> None:
         assert isinstance(document.get("jobs"), dict) and document["jobs"], (
             f"{path} must declare at least one job"
         )
+
+
+def test_e5_release_checkpoint_loader_disallows_pickle_globals() -> None:
+    workflow_path = Path(".github/workflows/e5_ablations.yml")
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["e5_gate"]["steps"]
+        if item.get("name") == "Verify and download immutable baseline release asset"
+    )
+    assert 'weights_only=True' in step["run"]
+    assert 'weights_only=False' not in step["run"]
