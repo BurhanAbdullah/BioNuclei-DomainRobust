@@ -68,6 +68,10 @@ def augment(x,c):
         m=y.mean(dim=(-2,-1),keepdim=True); y=torch.clamp((y-m)*random.uniform(a['contrast_min'],a['contrast_max'])+m,0,1)
     return y
 
+def load_checkpoint(path: Path):
+    """Load tensor and primitive checkpoint data without pickle globals."""
+    return torch.load(path, map_location='cpu', weights_only=True)
+
 def resolve_device(device_config):
     if device_config=='auto': return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     return torch.device(device_config)
@@ -86,7 +90,7 @@ def main():
     device=resolve_device(c['training']['device'])
     model=BoundaryUNet(in_channels=int(c['model']['in_channels']),out_channels=int(c['model']['out_channels']),base_channels=int(c['model']['base_channels'])).to(device)
     if a.init_checkpoint:
-        ckpt=torch.load(a.init_checkpoint,map_location='cpu')
+        ckpt=load_checkpoint(a.init_checkpoint)
         if 'model' not in ckpt: raise RuntimeError('Initial checkpoint does not contain a model state dict')
         model.load_state_dict(ckpt['model'], strict=True)
     loss=BoundaryAwareLoss(boundary_weight=float(c['loss']['boundary_weight']),dice_weight=float(c['loss']['dice_weight'])).to(device)
