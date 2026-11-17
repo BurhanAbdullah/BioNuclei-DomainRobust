@@ -260,6 +260,19 @@ def test_only_known_unrelated_workflows_are_exempt() -> None:
     assert is_baseline_input_change(".github/workflows/new_training_workflow.yml") is True
 
 
+def test_inference_postprocessing_is_downstream_but_model_changes_fail_closed() -> None:
+    assert is_baseline_input_change("src/bionuclei/inference.py") is False
+    assert is_baseline_input_change("src/bionuclei/postprocessing.py") is False
+    assert is_baseline_input_change("src/bionuclei/models.py") is True
+
+
+def test_zero_shot_reruns_when_shared_postprocessing_changes() -> None:
+    workflow_path = Path(".github/workflows/s_biad634_zero_shot.yml")
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    assert "src/bionuclei/inference.py" in workflow["on"]["push"]["paths"]
+    assert "src/bionuclei/postprocessing.py" in workflow["on"]["push"]["paths"]
+
+
 def test_unknown_script_changes_fail_closed() -> None:
     assert is_baseline_input_change("scripts/new_training_pipeline.py") is True
     assert is_baseline_input_change("scripts/train_bbbc039.py") is True
