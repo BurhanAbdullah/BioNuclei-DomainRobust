@@ -504,3 +504,62 @@ def test_download_enforces_one_total_deadline_against_slow_trickle(
     assert delays == []
     assert destination.read_bytes() == b"previous complete archive"
     assert _part_files(destination) == []
+
+
+
+def test_set_response_read_timeout_fails_closed_without_socket_control() -> None:
+    response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=None)))
+
+    with pytest.raises(
+        downloader.DownloadSocketTimeoutControlUnavailable,
+        match="refusing an unbounded read",
+    ):
+        downloader._set_response_read_timeout(response, 3.0)
+
+
+def test_set_response_read_timeout_fails_closed_when_socket_rejects_timeout() -> None:
+    class RejectingSocket:
+        def settimeout(self, _timeout: float) -> None:
+            raise OSError("socket is already closed")
+
+    response = SimpleNamespace(
+        fp=SimpleNamespace(raw=SimpleNamespace(_sock=RejectingSocket()))
+    )
+
+    with pytest.raises(
+        downloader.DownloadSocketTimeoutControlUnavailable,
+        match="could not be applied",
+    ):
+        downloader._set_response_read_timeout(response, 3.0)
+
+
+def test_download_does_not_replace_destination_when_socket_deadline_cannot_be_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class ResponseWithoutSocket(io.BytesIO):
+        def __init__(self) -> None:
+            super().__init__(b"")
+            self.read_calls = 0
+
+        def read1(self, size: int = -1) -> bytes:
+            self.read_calls += 1
+            return b"x"
+
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    response = ResponseWithoutSocket()
+    monkeypatch.setattr(
+        downloader.urllib.request,
+        "urlopen",
+        lambda _url, *, timeout: response,
+    )
+
+    with pytest.raises(
+        downloader.DownloadSocketTimeoutControlUnavailable,
+        match="socket timeout control is unavailable",
+    ):
+        downloader.download("https://example.test/slow-trickle.zip", destination)
+
+    assert response.read_calls == 0
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
