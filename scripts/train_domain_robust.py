@@ -98,6 +98,6 @@ def main():
             x,y=augment(x.to(device),c),y.to(device); opt.zero_grad(set_to_none=True); z=model(x); l=loss(z,y); l.backward(); opt.step(); total+=l.item()*x.size(0)
         v=total/len(loader.dataset); hist.append({'epoch':ep,'train_loss':v}); print(f'epoch={ep:03d} train_loss={v:.6f}')
         torch.save({'model':model.state_dict(),'config':c,'epochs_run':ep,**method_record,'init_checkpoint':str(a.init_checkpoint) if a.init_checkpoint else None},a.output/'last.pt')
-    (a.output/'train_history.json').write_text(json.dumps(hist,indent=2)+'\\n')
-    (a.output/'method_record.json').write_text(json.dumps(method_record,indent=2)+'\\n')
+    (a.output/'train_history.json').write_text(json.dumps(hist,indent=2)+'\n')
+    (a.output/'method_record.json').write_text(json.dumps(method_record,indent=2)+'\n')
 if __name__=='__main__': main()
