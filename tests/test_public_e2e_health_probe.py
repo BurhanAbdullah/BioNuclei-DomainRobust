@@ -31,6 +31,14 @@ class _TimeoutRecorder:
         self.values.append(value)
 
 
+
+class _RejectingTimeoutRecorder:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def settimeout(self, _value: float) -> None:
+        raise self.error
+
 class _Response:
     def __init__(
         self,
@@ -125,6 +133,40 @@ def test_health_probe_fails_closed_without_socket_timeout_control() -> None:
         body=b'{"status":"ok"}',
         socket_available=False,
     )
+
+    def get(
+        _url: str,
+        *,
+        timeout: tuple[float, float],
+        stream: bool,
+        allow_redirects: bool,
+    ) -> _Response:
+        assert stream is True
+        assert allow_redirects is False
+        return response
+
+    result, attempts, request_error, _body, payload = helpers["_probe_api_health"](
+        "https://api.example.test",
+        request_get=get,
+        request_exception=_ReadTimeout,
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result is None
+    assert request_error == "HealthSocketTimeoutControlUnavailable"
+    assert attempts[-1]["error"] == "HealthSocketTimeoutControlUnavailable"
+    assert payload is None
+    assert response.closed
+
+
+
+
+@pytest.mark.parametrize("error_type", [OSError, ValueError])
+def test_health_probe_fails_closed_when_socket_rejects_timeout_control(error_type) -> None:
+    helpers = _health_helpers()
+    response = _Response(200, body=b'{"status":"ok"}')
+    response.raw._fp.fp.raw._sock = _RejectingTimeoutRecorder(error_type("timeout control rejected"))
 
     def get(
         _url: str,
