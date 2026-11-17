@@ -34,7 +34,9 @@ else:
     )
 
 SOURCE_URL = "https://www.ebi.ac.uk/biostudies/files/S-BSST265/dataset.zip"
-DOWNLOAD_TIMEOUT_SECONDS = 120
+DOWNLOAD_TIMEOUT_SECONDS = 10
+DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 10 * 60
+DOWNLOAD_READ_CHUNK_BYTES = 64 * 1024
 MAX_DOWNLOAD_ATTEMPTS = 4
 RETRY_BASE_SECONDS = 2
 RETRY_MAX_SECONDS = 30
@@ -51,6 +53,38 @@ def sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 def _retry_delay(attempt: int) -> float:
     return min(RETRY_BASE_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_SECONDS)
+
+
+class DownloadDeadlineExceeded(TimeoutError):
+    """The total BioStudies download budget was exhausted."""
+
+
+class DownloadSocketTimeoutControlUnavailable(RuntimeError):
+    """The response socket cannot enforce the remaining total download deadline."""
+
+
+def _set_response_read_timeout(response, timeout: float) -> None:
+    """Clamp the underlying urllib socket timeout to the remaining total budget.
+
+    urlopen(timeout=...) configures an inactivity timeout once, at connection
+    creation. It does not shrink as the monotonic download deadline approaches.
+    """
+    raw_socket = getattr(
+        getattr(getattr(response, "fp", None), "raw", None),
+        "_sock",
+        None,
+    )
+    settimeout = getattr(raw_socket, "settimeout", None)
+    if not callable(settimeout):
+        raise DownloadSocketTimeoutControlUnavailable(
+            "BioStudies response socket timeout control is unavailable; refusing an unbounded read"
+        )
+    try:
+        settimeout(timeout)
+    except Exception as exc:
+        raise DownloadSocketTimeoutControlUnavailable(
+            "BioStudies response socket timeout control could not be applied; refusing an unbounded read"
+        ) from exc
 
 
 class CorruptDatasetArchiveError(RuntimeError):
@@ -75,17 +109,28 @@ def _validate_downloaded_archive(path: Path) -> None:
 
 
 def download(url: str, destination: Path) -> None:
-    """Download atomically, retrying only transient transport/server failures.
+    """Download atomically within one total monotonic budget.
 
-    A failed or interrupted transfer must never leave a partial ZIP at the
-    destination path: the evaluator opens that path immediately after download.
+    Socket inactivity timeouts bound each read, while read1() returns available
+    bytes without waiting for a full chunk. Checking the same deadline between
+    reads prevents a slow-trickle response from extending the job indefinitely.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + DOWNLOAD_TOTAL_TIMEOUT_SECONDS
 
     for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DownloadDeadlineExceeded(
+                f"BioStudies download exceeded its {DOWNLOAD_TOTAL_TIMEOUT_SECONDS}s total deadline"
+            )
+
         temporary_path: Path | None = None
         try:
-            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(
+                url,
+                timeout=min(DOWNLOAD_TIMEOUT_SECONDS, remaining),
+            ) as response:
                 headers = getattr(response, "headers", None)
                 content_length = headers.get("Content-Length") if headers is not None else None
                 if content_length:
@@ -99,6 +144,12 @@ def download(url: str, destination: Path) -> None:
                             f"({declared_size} > {MAX_ARCHIVE_BYTES} bytes)"
                         )
 
+                read_chunk = getattr(response, "read1", None)
+                if not callable(read_chunk):
+                    raise RuntimeError(
+                        "BioStudies response does not support bounded read1() streaming"
+                    )
+
                 with tempfile.NamedTemporaryFile(
                     mode="wb",
                     prefix=f".{destination.name}.",
@@ -108,7 +159,19 @@ def download(url: str, destination: Path) -> None:
                 ) as out:
                     temporary_path = Path(out.name)
                     total_bytes = 0
-                    while chunk := response.read(1024 * 1024):
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise DownloadDeadlineExceeded(
+                                f"BioStudies download exceeded its {DOWNLOAD_TOTAL_TIMEOUT_SECONDS}s total deadline"
+                            )
+                        _set_response_read_timeout(
+                            response,
+                            min(DOWNLOAD_TIMEOUT_SECONDS, remaining),
+                        )
+                        chunk = read_chunk(DOWNLOAD_READ_CHUNK_BYTES)
+                        if not chunk:
+                            break
                         total_bytes += len(chunk)
                         if total_bytes > MAX_ARCHIVE_BYTES:
                             raise ValueError(
@@ -122,6 +185,8 @@ def download(url: str, destination: Path) -> None:
             temporary_path.replace(destination)
             temporary_path = None
             return
+        except DownloadDeadlineExceeded:
+            raise
         except CorruptDatasetArchiveError as exc:
             if attempt == MAX_DOWNLOAD_ATTEMPTS:
                 raise
@@ -144,6 +209,11 @@ def download(url: str, destination: Path) -> None:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
 
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or delay >= remaining:
+            raise DownloadDeadlineExceeded(
+                f"BioStudies download exhausted its {DOWNLOAD_TOTAL_TIMEOUT_SECONDS}s total deadline during retry backoff"
+            )
         print(
             f"Transient BioStudies download failure ({reason}); "
             f"retrying in {delay:g}s (attempt {attempt}/{MAX_DOWNLOAD_ATTEMPTS}).",

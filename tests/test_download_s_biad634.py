@@ -5,6 +5,7 @@ import io
 import json
 import struct
 import sys
+from types import SimpleNamespace
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -15,16 +16,30 @@ from scripts import download_s_biad634 as downloader
 from scripts import extract_s_biad634_archive as extractor
 
 
+class _TimeoutRecorder:
+    def __init__(self) -> None:
+        self.values: list[float] = []
+
+    def settimeout(self, value: float) -> None:
+        self.values.append(value)
+
+
+def _with_socket_timeout(response):
+    response.fp = SimpleNamespace(raw=SimpleNamespace(_sock=_TimeoutRecorder()))
+    return response
+
+
 class _DisconnectAfterFirstRead(io.BytesIO):
     def __init__(self, initial: bytes) -> None:
         super().__init__(initial)
         self._reads = 0
+        self.fp = SimpleNamespace(raw=SimpleNamespace(_sock=_TimeoutRecorder()))
 
-    def read(self, size: int = -1) -> bytes:
+    def read1(self, size: int = -1) -> bytes:
         self._reads += 1
         if self._reads == 2:
             raise http.client.RemoteDisconnected("connection closed during response body")
-        return super().read(size)
+        return super().read1(size)
 
 
 def _part_files(destination: Path) -> list[Path]:
@@ -62,7 +77,7 @@ def test_download_retries_remote_disconnect_and_replaces_destination_atomically(
             return _DisconnectAfterFirstRead(b"partial transfer")
         assert destination.read_bytes() == b"previous complete archive"
         assert _part_files(destination) == []
-        return io.BytesIO(valid_archive)
+        return _with_socket_timeout(io.BytesIO(valid_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -93,7 +108,7 @@ def test_download_retries_transient_http_status(tmp_path: Path, monkeypatch: pyt
                 {},
                 io.BytesIO(b"temporary outage"),
             )
-        return io.BytesIO(valid_archive)
+        return _with_socket_timeout(io.BytesIO(valid_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -180,10 +195,10 @@ def test_download_retries_crc_invalid_archive_before_replacing_destination(
         calls += 1
         assert timeout == downloader.DOWNLOAD_TIMEOUT_SECONDS
         if calls == 1:
-            return io.BytesIO(corrupt_archive)
+            return _with_socket_timeout(io.BytesIO(corrupt_archive))
         assert destination.read_bytes() == b"previous complete archive"
         assert _part_files(destination) == []
-        return io.BytesIO(valid_archive)
+        return _with_socket_timeout(io.BytesIO(valid_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -211,7 +226,7 @@ def test_download_stops_after_bounded_crc_invalid_archives_without_replacing_des
         nonlocal calls
         calls += 1
         assert timeout == downloader.DOWNLOAD_TIMEOUT_SECONDS
-        return io.BytesIO(corrupt_archive)
+        return _with_socket_timeout(io.BytesIO(corrupt_archive))
 
     monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(downloader.time, "sleep", delays.append)
@@ -235,7 +250,7 @@ def test_download_validates_expansion_limits_before_crc_scan(
     monkeypatch.setattr(
         downloader.urllib.request,
         "urlopen",
-        lambda _url, *, timeout: io.BytesIO(oversized_archive),
+        lambda _url, *, timeout: _with_socket_timeout(io.BytesIO(oversized_archive)),
     )
     monkeypatch.setattr(
         zipfile.ZipFile,
@@ -401,7 +416,7 @@ def test_download_rejects_oversized_archive_without_replacing_existing_file(
     monkeypatch.setattr(
         downloader.urllib.request,
         "urlopen",
-        lambda _url, *, timeout: io.BytesIO(b"12345"),
+        lambda _url, *, timeout: _with_socket_timeout(io.BytesIO(b"12345")),
     )
 
     with pytest.raises(ValueError, match="compressed-size limit"):
@@ -448,3 +463,109 @@ def test_skip_extract_validates_expansion_limits_before_crc_scan(
 
     assert not (root / "download_manifest.json").exists()
     assert not (root / "extracted").exists()
+
+
+class _SlowTrickleResponse(io.BytesIO):
+    def __init__(self, clock: list[float]) -> None:
+        super().__init__(b"")
+        self.clock = clock
+        self.read_calls = 0
+        self.socket = _TimeoutRecorder()
+        self.fp = SimpleNamespace(raw=SimpleNamespace(_sock=self.socket))
+
+    def read1(self, size: int = -1) -> bytes:
+        self.read_calls += 1
+        self.clock[0] += 3
+        return b"x"
+
+
+def test_download_enforces_one_total_deadline_against_slow_trickle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    clock = [0.0]
+    delays: list[float] = []
+    response = _SlowTrickleResponse(clock)
+    calls = 0
+
+    def fake_urlopen(_url: str, *, timeout: float):
+        nonlocal calls
+        calls += 1
+        assert timeout == 10
+        return response
+
+    monkeypatch.setattr(downloader, "DOWNLOAD_TIMEOUT_SECONDS", 10)
+    monkeypatch.setattr(downloader, "DOWNLOAD_TOTAL_TIMEOUT_SECONDS", 15)
+    monkeypatch.setattr(downloader.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(downloader.time, "sleep", delays.append)
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(downloader.DownloadDeadlineExceeded, match="total deadline"):
+        downloader.download("https://example.test/slow-trickle.zip", destination)
+
+    assert calls == 1
+    assert response.read_calls == 5
+    assert response.socket.values == [10, 10, 9, 6, 3]
+    assert delays == []
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
+
+
+
+def test_set_response_read_timeout_fails_closed_without_socket_control() -> None:
+    response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=None)))
+
+    with pytest.raises(
+        downloader.DownloadSocketTimeoutControlUnavailable,
+        match="refusing an unbounded read",
+    ):
+        downloader._set_response_read_timeout(response, 3.0)
+
+
+def test_set_response_read_timeout_fails_closed_when_socket_rejects_timeout() -> None:
+    class RejectingSocket:
+        def settimeout(self, _timeout: float) -> None:
+            raise OSError("socket is already closed")
+
+    response = SimpleNamespace(
+        fp=SimpleNamespace(raw=SimpleNamespace(_sock=RejectingSocket()))
+    )
+
+    with pytest.raises(
+        downloader.DownloadSocketTimeoutControlUnavailable,
+        match="could not be applied",
+    ):
+        downloader._set_response_read_timeout(response, 3.0)
+
+
+def test_download_does_not_replace_destination_when_socket_deadline_cannot_be_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class ResponseWithoutSocket(io.BytesIO):
+        def __init__(self) -> None:
+            super().__init__(b"")
+            self.read_calls = 0
+
+        def read1(self, size: int = -1) -> bytes:
+            self.read_calls += 1
+            return b"x"
+
+    destination = tmp_path / "dataset.zip"
+    destination.write_bytes(b"previous complete archive")
+    response = ResponseWithoutSocket()
+    monkeypatch.setattr(
+        downloader.urllib.request,
+        "urlopen",
+        lambda _url, *, timeout: response,
+    )
+
+    with pytest.raises(
+        downloader.DownloadSocketTimeoutControlUnavailable,
+        match="socket timeout control is unavailable",
+    ):
+        downloader.download("https://example.test/slow-trickle.zip", destination)
+
+    assert response.read_calls == 0
+    assert destination.read_bytes() == b"previous complete archive"
+    assert _part_files(destination) == []
