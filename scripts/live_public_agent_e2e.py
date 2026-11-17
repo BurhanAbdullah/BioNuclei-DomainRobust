@@ -47,6 +47,10 @@ class _HealthResponseTooLarge(Exception):
     """Raised when the health endpoint returns an unexpectedly large body."""
 
 
+class _HealthSocketTimeoutControlUnavailable(Exception):
+    """Raised when a streamed response socket cannot be bounded safely."""
+
+
 def _health_request_timeout(remaining_seconds: float) -> tuple[float, float]:
     """Keep connect/read waits within the remaining monotonic readiness budget."""
     remaining = float(remaining_seconds)
@@ -75,8 +79,12 @@ def _set_health_response_read_timeout(response, timeout: float) -> None:
         None,
     )
     settimeout = getattr(raw_socket, "settimeout", None)
-    if callable(settimeout):
+    if not callable(settimeout):
+        raise _HealthSocketTimeoutControlUnavailable
+    try:
         settimeout(timeout)
+    except (OSError, ValueError) as exc:
+        raise _HealthSocketTimeoutControlUnavailable from exc
 
 
 def _probe_api_health(
@@ -194,6 +202,14 @@ def _probe_api_health(
             response = None
             health_payload = None
             request_error = "HealthResponseTooLarge"
+            attempt_record["error"] = request_error
+            attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
+            attempts.append(attempt_record)
+            break
+        except _HealthSocketTimeoutControlUnavailable:
+            response = None
+            health_payload = None
+            request_error = "HealthSocketTimeoutControlUnavailable"
             attempt_record["error"] = request_error
             attempt_record["elapsed_seconds"] = round(monotonic() - attempt_started, 3)
             attempts.append(attempt_record)
