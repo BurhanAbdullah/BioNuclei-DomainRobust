@@ -227,7 +227,7 @@ def test_s_biad634_checkpoint_loader_uses_weights_only(monkeypatch, tmp_path):
     def safe_load(path, *, map_location, weights_only):
         observed.update(
             {
-                "path": Path(path),
+                "path": path,
                 "map_location": map_location,
                 "weights_only": weights_only,
             }
