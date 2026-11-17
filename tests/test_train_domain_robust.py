@@ -18,7 +18,7 @@ def test_resolve_device_auto_uses_cuda_when_available(monkeypatch):
     assert resolve_device("auto").type == "cuda"
 
 
-def test_source_training_record_uses_the_actual_manifest(tmp_path):
+def test_source_training_record_uses_the_actual_manifest():
     manifest = {
         "dataset": "BBBC039v1",
         "partitions": {"train": ["image-1.tif", "image-2.tif"]},
@@ -27,7 +27,7 @@ def test_source_training_record_uses_the_actual_manifest(tmp_path):
     record = build_training_method_record(manifest, "a" * 64, 42)
 
     assert record == {
-        "method": "source_domain_supervised",
+        "method": "supervised_training",
         "training_dataset": "BBBC039v1",
         "training_manifest_sha256": "a" * 64,
         "training_image_count": 2,
