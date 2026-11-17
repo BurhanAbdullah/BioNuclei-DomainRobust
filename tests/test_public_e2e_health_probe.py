@@ -31,13 +31,13 @@ class _TimeoutRecorder:
         self.values.append(value)
 
 
-
 class _RejectingTimeoutRecorder:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
     def settimeout(self, _value: float) -> None:
         raise self.error
+
 
 class _Response:
     def __init__(
@@ -160,13 +160,14 @@ def test_health_probe_fails_closed_without_socket_timeout_control() -> None:
     assert response.closed
 
 
-
-
 @pytest.mark.parametrize("error_type", [OSError, ValueError])
 def test_health_probe_fails_closed_when_socket_rejects_timeout_control(error_type) -> None:
     helpers = _health_helpers()
     response = _Response(200, body=b'{"status":"ok"}')
-    response.raw._fp.fp.raw._sock = _RejectingTimeoutRecorder(error_type("timeout control rejected"))
+    rejecting_socket = _RejectingTimeoutRecorder(
+        error_type("timeout control rejected")
+    )
+    response.raw._fp.fp.raw._sock = rejecting_socket
 
     def get(
         _url: str,
