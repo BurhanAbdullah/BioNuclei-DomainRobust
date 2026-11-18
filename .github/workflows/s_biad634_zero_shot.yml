@@ -1,9 +1,7 @@
 name: S-BIAD634 zero-shot transfer
 
-# Release-gate rerun: execute after evaluator/data-pairing fixes.
-# Records exact repository/checkpoint provenance and requires a complete 79-image artifact.
-# Manual release-gate trigger requested 2026-08-18 after P/R/F1 integration.
-
+# Evidence-chain gate: only evaluate a successful baseline produced on the exact
+# current main SHA. Never consume a checkpoint from a PR/fork/stale main run.
 on:
   push:
     paths:
@@ -14,15 +12,16 @@ on:
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       baseline_run_id:
-        description: 'Completed BBBC039 baseline workflow run ID (optional; latest successful run is used when omitted)'
+        description: 'Completed BBBC039 baseline run on the exact current main SHA (optional)'
         required: false
 
 jobs:
   zero-shot:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    if: \${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -39,14 +38,22 @@ jobs:
           python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           python -m pip install numpy scipy scikit-image tifffile imagecodecs pyyaml
           python -m pip install -e . --no-deps
-      - name: Select baseline run
+      - name: Select and verify exact-main baseline run
         id: run
         env:
-          MANUAL_RUN_ID: ${{ inputs.baseline_run_id }}
-          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
+          MANUAL_RUN_ID: \${{ inputs.baseline_run_id }}
+          EVENT_RUN_ID: \${{ github.event.workflow_run.id }}
+          EVENT_RUN_SHA: \${{ github.event.workflow_run.head_sha }}
+          EVENT_RUN_BRANCH: \${{ github.event.workflow_run.head_branch }}
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          REPO: \${{ github.repository }}
         run: |
+          set -euo pipefail
+          CURRENT_MAIN_SHA=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/commits/main" \
+            | python -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+          CHECKOUT_SHA=$(git rev-parse HEAD)
           if [ -n "$MANUAL_RUN_ID" ]; then
             RUN_ID="$MANUAL_RUN_ID"
           elif [ -n "$EVENT_RUN_ID" ]; then
@@ -54,39 +61,79 @@ jobs:
           else
             RUN_ID=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?status=success&per_page=20" \
-              | python -c 'import json,sys; d=json.load(sys.stdin); print(next((r["id"] for r in d["workflow_runs"] if r["conclusion"]=="success"), ""))')
+              "https://api.github.com/repos/$REPO/actions/workflows/bbbc039_baseline.yml/runs?branch=main&status=success&per_page=100" \
+              | python -c 'import json,sys,os; d=json.load(sys.stdin); sha=os.environ["CURRENT_MAIN_SHA"]; print(next((str(r["id"]) for r in d["workflow_runs"] if r.get("head_branch")=="main" and r.get("conclusion")=="success" and r.get("head_sha")==sha), ""))')
           fi
           test -n "$RUN_ID"
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID" \
+            > "$RUNNER_TEMP/baseline-run.json"
+          python - "$RUNNER_TEMP/baseline-run.json" "$CURRENT_MAIN_SHA" "$CHECKOUT_SHA" "$EVENT_RUN_SHA" "$EVENT_RUN_BRANCH" <<'PY'
+          import json, sys
+          run=json.loads(open(sys.argv[1], encoding="utf-8").read())
+          current_main_sha, checkout_sha, event_sha, event_branch=sys.argv[2:]
+          expected_path=".github/workflows/bbbc039_baseline.yml"
+          checks={
+              "baseline branch is main": run.get("head_branch")=="main",
+              "baseline conclusion is success": run.get("conclusion")=="success",
+              "baseline workflow path is exact": run.get("path")==expected_path,
+              "baseline SHA equals current main": run.get("head_sha")==current_main_sha,
+              "evaluation checkout equals current main": checkout_sha==current_main_sha,
+              "workflow_run event SHA matches baseline": not event_sha or run.get("head_sha")==event_sha,
+              "workflow_run event branch is main": not event_branch or event_branch=="main",
+          }
+          for name,ok in checks.items():
+              print(f"{name}: {'PASS' if ok else 'FAIL'}")
+          if not all(checks.values()):
+              raise SystemExit("Refusing to evaluate a non-main or stale baseline checkpoint")
+          print(f"Verified exact-main baseline run {run['id']} at {current_main_sha}")
+          PY
+          BASELINE_SHA=$(python -c 'import json; print(json.load(open("'"$RUNNER_TEMP/baseline-run.json"))["head_sha"])')
+          BASELINE_BRANCH=$(python -c 'import json; print(json.load(open("'"$RUNNER_TEMP/baseline-run.json"))["head_branch"])')
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using baseline run $RUN_ID"
+          echo "baseline_sha=$BASELINE_SHA" >> "$GITHUB_OUTPUT"
+          echo "baseline_branch=$BASELINE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Using exact-main baseline run $RUN_ID at $BASELINE_SHA"
+        env:
+          CURRENT_MAIN_SHA: \${{ github.sha }}
       - name: Download baseline artifact
         uses: actions/download-artifact@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ steps.run.outputs.run_id }}
-          name: bbbc039-baseline-${{ steps.run.outputs.run_id }}
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          run-id: \${{ steps.run.outputs.run_id }}
+          name: bbbc039-baseline-\${{ steps.run.outputs.run_id }}
           path: baseline_artifact
       - name: Locate checkpoint
         run: |
+          set -euo pipefail
           test -f baseline_artifact/outputs/bbbc039_baseline/last.pt
           cp baseline_artifact/outputs/bbbc039_baseline/last.pt baseline_artifact/last.pt
       - name: Record evaluation provenance
         run: |
+          set -euo pipefail
           mkdir -p outputs/s_biad634_zero_shot
+          CHECKPOINT_SHA256=$(sha256sum baseline_artifact/last.pt | awk '{print $1}')
+          EVALUATION_SHA=$(git rev-parse HEAD)
           python - <<'PY'
           import json, os
           from pathlib import Path
           out = {
               'repository': os.environ.get('GITHUB_REPOSITORY'),
-              'commit': os.environ.get('GITHUB_SHA'),
-              'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
+              'evaluation_commit': os.environ.get('EVALUATION_SHA'),
               'baseline_run_id': os.environ.get('BASELINE_RUN_ID'),
+              'baseline_run_sha': os.environ.get('BASELINE_RUN_SHA'),
+              'baseline_branch': os.environ.get('BASELINE_BRANCH'),
+              'checkpoint_sha256': os.environ.get('CHECKPOINT_SHA256'),
           }
           Path('outputs/s_biad634_zero_shot/provenance.json').write_text(json.dumps(out, indent=2) + '\n')
           PY
         env:
-          BASELINE_RUN_ID: ${{ steps.run.outputs.run_id }}
+          BASELINE_RUN_ID: \${{ steps.run.outputs.run_id }}
+          BASELINE_RUN_SHA: \${{ steps.run.outputs.baseline_sha }}
+          BASELINE_BRANCH: \${{ steps.run.outputs.baseline_branch }}
+          CHECKPOINT_SHA256: \${{ env.CHECKPOINT_SHA256 }}
+          EVALUATION_SHA: \${{ github.sha }}
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Run zero-shot transfer evaluation
@@ -114,7 +161,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: s-biad634-zero-shot-${{ github.run_id }}
+          name: s-biad634-zero-shot-\${{ github.run_id }}
           path: |
             outputs/s_biad634_zero_shot/
             data/raw/S-BIAD634/download_manifest.json
