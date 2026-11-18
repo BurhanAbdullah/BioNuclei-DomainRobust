@@ -6,8 +6,21 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class _UniqueKeyBaseLoader(yaml.BaseLoader):
+    """Reject duplicate YAML mapping keys instead of silently accepting the last one."""
+
+    def construct_mapping(self, node, deep=False):
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise ValueError(f"duplicate YAML mapping key: {key!r}")
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
 def _workflow(path):
-    return yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    return yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyBaseLoader)
 
 
 def test_zero_shot_only_consumes_main_baseline_runs():
@@ -28,6 +41,9 @@ def test_zero_shot_only_consumes_main_baseline_runs():
         if step.get("name") == "Select and verify exact-main baseline run"
     )
     script = select["run"]
+    assert select["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}"
+    assert select["env"]["REPO"] == "${{ github.repository }}"
+    assert select["env"]["CURRENT_MAIN_SHA"] == "${{ github.sha }}"
     assert "status=success" not in script
     for required in (
         "commits/main",
