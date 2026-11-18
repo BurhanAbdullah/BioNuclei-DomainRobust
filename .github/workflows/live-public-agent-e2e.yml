@@ -9,14 +9,27 @@ on:
     paths:
       - "webapp/**"
       - "src/bionuclei/**"
+      - "configs/**"
+      - "pyproject.toml"
+      - "README.md"
+      - "docs/RESEARCH_PROTOCOL.md"
+      - "docs/DATASETS.md"
       - "docs/bionuclei-app.html"
       - "docs/assets/bionuclei-analyzer.js"
       - "docs/assets/bionuclei-specialist-verification.js"
       - "scripts/live_public_agent_e2e.py"
+      - "scripts/render_runtime_parity.py"
+      - "render.yaml"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
       - "scripts/live_public_agent_e2e.py"
+      - "scripts/render_runtime_parity.py"
+      - "tests/test_render_runtime_parity.py"
+      - "webapp/community.Dockerfile"
+      - "webapp/Dockerfile"
+      - "render.yaml"
+      - ".github/workflows/live-public-agent-e2e.yml"
 
 permissions:
   contents: read
@@ -28,7 +41,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Pull requests validate the harness offline and never contact the public service.
+  validate-harness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile public E2E and parity helper
+        run: python -m py_compile scripts/live_public_agent_e2e.py scripts/render_runtime_parity.py
+      - name: Test Docker-aware runtime path classification
+        run: python -m unittest discover -s tests -p 'test_render_runtime_parity.py' -v
+
   public-upload-to-agent:
+    if: ${{ github.event_name != 'pull_request' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
