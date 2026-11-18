@@ -24,6 +24,7 @@ def test_zero_shot_only_consumes_main_baseline_runs():
         if step.get("name") == "Select and verify exact-main baseline run"
     )
     script = select["run"]
+    assert "status=success" not in script
     for required in (
         "commits/main",
         "head_branch",
@@ -32,6 +33,7 @@ def test_zero_shot_only_consumes_main_baseline_runs():
         "CURRENT_MAIN_SHA",
         "bbbc039_baseline.yml",
         "Refusing to evaluate",
+        "conclusion",
     ):
         assert required in script, required
 
