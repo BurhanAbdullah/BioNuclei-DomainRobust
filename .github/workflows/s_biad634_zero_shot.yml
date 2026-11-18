@@ -83,8 +83,16 @@ jobs:
               raise SystemExit("Refusing to evaluate a non-main or stale baseline checkpoint")
           print(f"Verified exact-main baseline run {run['id']} at {current_main_sha}")
           PY
-          BASELINE_SHA=$(python -c 'import json; print(json.load(open("'"$RUNNER_TEMP/baseline-run.json"))["head_sha"])')
-          BASELINE_BRANCH=$(python -c 'import json; print(json.load(open("'"$RUNNER_TEMP/baseline-run.json"))["head_branch"])')
+          BASELINE_SHA=$(python - "$RUNNER_TEMP/baseline-run.json" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding="utf-8"))["head_sha"])
+          PY
+          )
+          BASELINE_BRANCH=$(python - "$RUNNER_TEMP/baseline-run.json" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding="utf-8"))["head_branch"])
+          PY
+          )
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "baseline_sha=$BASELINE_SHA" >> "$GITHUB_OUTPUT"
           echo "baseline_branch=$BASELINE_BRANCH" >> "$GITHUB_OUTPUT"
