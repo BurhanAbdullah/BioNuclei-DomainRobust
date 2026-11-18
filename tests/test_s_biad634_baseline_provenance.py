@@ -16,8 +16,11 @@ def test_zero_shot_only_consumes_main_baseline_runs():
     assert triggers["push"]["branches"] == ["main"]
     assert triggers["workflow_run"]["branches"] == ["main"]
     job_condition = workflow["jobs"]["zero-shot"]["if"]
+    assert "github.event_name == 'push'" in job_condition
+    assert "github.event_name == 'workflow_dispatch'" in job_condition
+    assert "github.ref == 'refs/heads/main'" in job_condition
+    assert "github.event.workflow_run.conclusion == 'success'" in job_condition
     assert "github.event.workflow_run.head_branch == 'main'" in job_condition
-    assert "github.event_name == 'push'" not in job_condition
 
     select = next(
         step for step in workflow["jobs"]["zero-shot"]["steps"]
