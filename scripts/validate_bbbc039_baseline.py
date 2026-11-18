@@ -34,6 +34,7 @@ _SAFE_PATHS = frozenset(
         "scripts/metrics_instance.py",
         "scripts/public_e2e_schedule_watchdog.py",
         "scripts/validate_bbbc039_baseline.py",
+        "scripts/verify_bbbc039_checkpoint.py",
     }
 )
 

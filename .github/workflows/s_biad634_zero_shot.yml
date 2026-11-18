@@ -14,6 +14,7 @@ on:
       - 'scripts/metrics_instance.py'
       - 'scripts/download_s_biad634.py'
       - 'scripts/validate_bbbc039_baseline.py'
+      - 'scripts/verify_bbbc039_checkpoint.py'
       - '.github/workflows/s_biad634_zero_shot.yml'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
@@ -90,6 +91,11 @@ jobs:
         run: |
           test -s baseline_artifact/outputs/bbbc039_baseline/last.pt
           cp baseline_artifact/outputs/bbbc039_baseline/last.pt baseline_artifact/last.pt
+      - name: Verify baseline checkpoint training recipe
+        run: |
+          python scripts/verify_bbbc039_checkpoint.py \
+            --checkpoint baseline_artifact/last.pt \
+            --config configs/bbbc039_baseline.yaml
       - name: Complete evaluation provenance
         run: |
           python - <<'PY'
