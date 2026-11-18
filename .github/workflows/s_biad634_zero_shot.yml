@@ -1,14 +1,8 @@
 name: S-BIAD634 zero-shot transfer
 
-# Evidence-chain gate: only evaluate a successful baseline produced on the exact
-# current main SHA. Never consume a checkpoint from a PR/fork/stale main run.
+# Consume only a successful BBBC039 baseline from the exact current main SHA.
+# PR/fork/stale-main checkpoints are deliberately rejected.
 on:
-  push:
-    paths:
-      - 'scripts/evaluate_s_biad634.py'
-      - 'scripts/metrics_instance.py'
-      - 'scripts/download_s_biad634.py'
-      - '.github/workflows/s_biad634_zero_shot.yml'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
@@ -21,7 +15,7 @@ on:
 
 jobs:
   zero-shot:
-    if: \${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -41,12 +35,12 @@ jobs:
       - name: Select and verify exact-main baseline run
         id: run
         env:
-          MANUAL_RUN_ID: \${{ inputs.baseline_run_id }}
-          EVENT_RUN_ID: \${{ github.event.workflow_run.id }}
-          EVENT_RUN_SHA: \${{ github.event.workflow_run.head_sha }}
-          EVENT_RUN_BRANCH: \${{ github.event.workflow_run.head_branch }}
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          REPO: \${{ github.repository }}
+          MANUAL_RUN_ID: ${{ inputs.baseline_run_id }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           CURRENT_MAIN_SHA=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
@@ -96,13 +90,13 @@ jobs:
           echo "baseline_branch=$BASELINE_BRANCH" >> "$GITHUB_OUTPUT"
           echo "Using exact-main baseline run $RUN_ID at $BASELINE_SHA"
         env:
-          CURRENT_MAIN_SHA: \${{ github.sha }}
+          CURRENT_MAIN_SHA: ${{ github.sha }}
       - name: Download baseline artifact
         uses: actions/download-artifact@v4
         with:
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          run-id: \${{ steps.run.outputs.run_id }}
-          name: bbbc039-baseline-\${{ steps.run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.run.outputs.run_id }}
+          name: bbbc039-baseline-${{ steps.run.outputs.run_id }}
           path: baseline_artifact
       - name: Locate checkpoint
         run: |
@@ -113,8 +107,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p outputs/s_biad634_zero_shot
-          CHECKPOINT_SHA256=$(sha256sum baseline_artifact/last.pt | awk '{print $1}')
-          EVALUATION_SHA=$(git rev-parse HEAD)
+          export CHECKPOINT_SHA256=$(sha256sum baseline_artifact/last.pt | awk '{print $1}')
+          export EVALUATION_SHA=$(git rev-parse HEAD)
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -129,11 +123,9 @@ jobs:
           Path('outputs/s_biad634_zero_shot/provenance.json').write_text(json.dumps(out, indent=2) + '\n')
           PY
         env:
-          BASELINE_RUN_ID: \${{ steps.run.outputs.run_id }}
-          BASELINE_RUN_SHA: \${{ steps.run.outputs.baseline_sha }}
-          BASELINE_BRANCH: \${{ steps.run.outputs.baseline_branch }}
-          CHECKPOINT_SHA256: \${{ env.CHECKPOINT_SHA256 }}
-          EVALUATION_SHA: \${{ github.sha }}
+          BASELINE_RUN_ID: ${{ steps.run.outputs.run_id }}
+          BASELINE_RUN_SHA: ${{ steps.run.outputs.baseline_sha }}
+          BASELINE_BRANCH: ${{ steps.run.outputs.baseline_branch }}
       - name: Download and inventory S-BIAD634
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Run zero-shot transfer evaluation
@@ -161,7 +153,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: s-biad634-zero-shot-\${{ github.run_id }}
+          name: s-biad634-zero-shot-${{ github.run_id }}
           path: |
             outputs/s_biad634_zero_shot/
             data/raw/S-BIAD634/download_manifest.json
