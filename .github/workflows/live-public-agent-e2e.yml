@@ -56,7 +56,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_render_runtime_parity.py' -v
 
   public-upload-to-agent:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: ${{ github.event_name != 'pull_request' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
