@@ -2,6 +2,7 @@ name: BBBC039 baseline experiment
 
 on:
   push:
+    branches: [main]
     paths:
       - 'src/**'
       - 'scripts/train_bbbc039.py'
@@ -10,6 +11,10 @@ on:
       - 'scripts/build_bbbc039_split.py'
       - 'scripts/download_bbbc039.py'
       - 'scripts/verify_bbbc039.py'
+      - 'scripts/evaluate_s_biad634.py'
+      - 'scripts/metrics_instance.py'
+      - 'scripts/download_s_biad634.py'
+      - '.github/workflows/s_biad634_zero_shot.yml'
       - 'configs/bbbc039_baseline.yaml'
       - 'pyproject.toml'
       - '.github/workflows/bbbc039_baseline.yml'
