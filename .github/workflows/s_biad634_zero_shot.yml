@@ -3,13 +3,6 @@ name: S-BIAD634 zero-shot transfer
 # Consume only a successful BBBC039 baseline from the exact current main SHA.
 # PR/fork/stale-main checkpoints are deliberately rejected.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/evaluate_s_biad634.py'
-      - 'scripts/metrics_instance.py'
-      - 'scripts/download_s_biad634.py'
-      - '.github/workflows/s_biad634_zero_shot.yml'
   workflow_run:
     workflows: ["BBBC039 baseline experiment"]
     types: [completed]
@@ -22,7 +15,7 @@ on:
 
 jobs:
   zero-shot:
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
