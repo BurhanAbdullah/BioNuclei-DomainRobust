@@ -384,7 +384,7 @@ def test_checkpoint_recipe_guard_rejects_the_observed_main_baseline_39988978232(
 
 
 def test_checkpoint_verifier_is_downstream_and_runs_before_zero_shot_evaluation() -> None:
-    from scripts.verify_bbbc039_baseline import is_baseline_input_change
+    from scripts.validate_bbbc039_baseline import is_baseline_input_change
 
     workflow_path = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "s_biad634_zero_shot.yml"
     workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
