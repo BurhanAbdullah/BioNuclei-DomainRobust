@@ -41,6 +41,7 @@ jobs:
           EVENT_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          CURRENT_MAIN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           CURRENT_MAIN_SHA=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
@@ -97,8 +98,6 @@ jobs:
           echo "baseline_sha=$BASELINE_SHA" >> "$GITHUB_OUTPUT"
           echo "baseline_branch=$BASELINE_BRANCH" >> "$GITHUB_OUTPUT"
           echo "Using exact-main baseline run $RUN_ID at $BASELINE_SHA"
-        env:
-          CURRENT_MAIN_SHA: ${{ github.sha }}
       - name: Download baseline artifact
         uses: actions/download-artifact@v4
         with:
