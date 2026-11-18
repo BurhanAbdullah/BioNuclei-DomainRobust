@@ -20,6 +20,7 @@ on:
       - "scripts/live_public_agent_e2e.py"
       - "scripts/render_runtime_parity.py"
       - "render.yaml"
+      - ".dockerignore"
       - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
@@ -28,6 +29,9 @@ on:
       - "tests/test_render_runtime_parity.py"
       - "webapp/community.Dockerfile"
       - "webapp/Dockerfile"
+      - ".dockerignore"
+      - "webapp/Dockerfile.dockerignore"
+      - "webapp/community.Dockerfile.dockerignore"
       - "render.yaml"
       - ".github/workflows/live-public-agent-e2e.yml"
 

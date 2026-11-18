@@ -25,6 +25,9 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "webapp/community_app.py",
             "webapp/community.Dockerfile",
             "webapp/Dockerfile",
+            ".dockerignore",
+            "webapp/Dockerfile.dockerignore",
+            "webapp/community.Dockerfile.dockerignore",
             "src/bionuclei/inference.py",
             "configs/base_system.yaml",
             "pyproject.toml",
@@ -82,6 +85,9 @@ class RenderRuntimeParityTests(unittest.TestCase):
             "docs/RESEARCH_PROTOCOL.md",
             "docs/DATASETS.md",
             "render.yaml",
+            ".dockerignore",
+            "webapp/Dockerfile.dockerignore",
+            "webapp/community.Dockerfile.dockerignore",
         )
         for path in render_inputs:
             with self.subTest(path=path):
