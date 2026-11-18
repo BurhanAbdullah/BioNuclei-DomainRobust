@@ -13,10 +13,11 @@ def _workflow(path):
 def test_zero_shot_only_consumes_main_baseline_runs():
     workflow = _workflow(ROOT / ".github/workflows/s_biad634_zero_shot.yml")
     triggers = workflow["on"]
-    assert "push" not in triggers
+    assert triggers["push"]["branches"] == ["main"]
     assert triggers["workflow_run"]["branches"] == ["main"]
     job_condition = workflow["jobs"]["zero-shot"]["if"]
     assert "github.event.workflow_run.head_branch == 'main'" in job_condition
+    assert "github.event_name == 'push'" not in job_condition
 
     select = next(
         step for step in workflow["jobs"]["zero-shot"]["steps"]
