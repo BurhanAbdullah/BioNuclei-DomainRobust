@@ -9,6 +9,16 @@ from scripts.render_runtime_parity import is_non_runtime_path
 
 
 class RenderRuntimeParityTests(unittest.TestCase):
+    def test_public_upload_job_is_restricted_to_upstream_main(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
+        expected = (
+            "    if: ${{ github.event_name != 'pull_request' "
+            "&& github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' "
+            "&& github.ref == 'refs/heads/main' }}"
+        )
+        self.assertIn(expected, workflow)
+
     def test_render_build_inputs_remain_parity_gated(self) -> None:
         runtime_paths = (
             "webapp/community.py",
