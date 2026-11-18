@@ -354,3 +354,50 @@ def test_zero_shot_checkpoint_loader_uses_weights_only(monkeypatch, tmp_path):
         "map_location": "cpu",
         "weights_only": True,
     }
+
+
+def test_checkpoint_recipe_guard_rejects_the_observed_main_baseline_39988978232() -> None:
+    from scripts.verify_bbbc039_checkpoint import validate_checkpoint_metadata
+
+    config_path = Path(__file__).resolve().parents[1] / "configs" / "bbbc039_baseline.yaml"
+    expected_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    observed_checkpoint = {
+        "config": expected_config,
+        "seed": 42,
+        "epochs_run": 20,
+    }
+
+    # Artifact 12521621402 (run 39988978232) records epochs_run=20 while
+    # the committed recipe specifies 100. It must not be accepted as canonical.
+    with pytest.raises(ValueError, match="epochs_run does not match"):
+        validate_checkpoint_metadata(observed_checkpoint, expected_config)
+
+    canonical_checkpoint = {
+        "config": expected_config,
+        "seed": 42,
+        "epochs_run": expected_config["training"]["epochs"],
+    }
+    assert validate_checkpoint_metadata(canonical_checkpoint, expected_config) == {
+        "seed": 42,
+        "epochs_run": 100,
+    }
+
+
+def test_checkpoint_verifier_is_downstream_and_runs_before_zero_shot_evaluation() -> None:
+    from scripts.verify_bbbc039_baseline import is_baseline_input_change
+
+    workflow_path = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "s_biad634_zero_shot.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    paths = set(workflow["on"]["push"]["paths"])
+    assert "scripts/verify_bbbc039_checkpoint.py" in paths
+    assert is_baseline_input_change("scripts/verify_bbbc039_checkpoint.py") is False
+
+    steps = workflow["jobs"]["zero-shot"]["steps"]
+    locate = next(step for step in steps if step.get("name") == "Locate checkpoint")
+    verify = next(step for step in steps if step.get("name") == "Verify baseline checkpoint training recipe")
+    provenance = next(step for step in steps if step.get("name") == "Complete evaluation provenance")
+    evaluate = next(step for step in steps if step.get("name") == "Run zero-shot transfer evaluation")
+
+    assert "--checkpoint baseline_artifact/last.pt" in verify["run"]
+    assert "--config configs/bbbc039_baseline.yaml" in verify["run"]
+    assert steps.index(locate) < steps.index(verify) < steps.index(provenance) < steps.index(evaluate)
