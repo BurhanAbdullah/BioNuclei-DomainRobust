@@ -33,6 +33,12 @@ on:
       - "docs/assets/bionuclei-ui-guard.js"
       - ".github/workflows/community_analyzer_validation.yml"
   workflow_dispatch:
+    inputs:
+      allow_live_render:
+        description: 'Allow read-only live Render checks when manually dispatched on main'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -153,6 +159,7 @@ jobs:
 
   live:
     name: Live Render endpoint
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' && inputs.allow_live_render == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
