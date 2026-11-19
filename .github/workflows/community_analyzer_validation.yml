@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       allow_live_render:
-        description: 'Allow read-only live Render checks when manually dispatched on main'
+        description: 'Allow live Render checks, including ephemeral guest-session creation, when manually dispatched on main'
         required: false
         default: false
         type: boolean
