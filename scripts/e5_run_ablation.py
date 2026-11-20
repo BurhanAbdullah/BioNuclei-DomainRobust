@@ -10,7 +10,7 @@ manifest is missing/empty, so provenance cannot be recorded for an accidental
 or incomplete dataset inventory.
 """
 from __future__ import annotations
-import argparse, hashlib, json, subprocess, sys
+import argparse, hashlib, json, os, subprocess, sys
 from pathlib import Path
 import yaml
 
@@ -39,6 +39,14 @@ def require_manifest(path: Path, label: str) -> None:
 def run(cmd):
     print('+', ' '.join(map(str, cmd)), flush=True)
     subprocess.run(cmd, check=True)
+
+
+def workflow_identity():
+    return {
+        'commit': os.environ.get('GITHUB_SHA'),
+        'workflow_run_id': os.environ.get('GITHUB_RUN_ID'),
+        'ref': os.environ.get('GITHUB_REF'),
+    }
 
 
 def main():
@@ -90,6 +98,7 @@ def main():
         if metrics.get('n_images') != 79 or len(metrics.get('per_image', [])) != 79:
             raise RuntimeError(f'{name}: incomplete target evaluation')
         provenance = {
+            **workflow_identity(),
             'experiment': f'e5_{name}', 'variant': name, 'seed': int(cfg['seed']),
             'epochs': int(a.epochs), 'source_split_manifest_sha256': sha256(a.manifest),
             'source_download_manifest_sha256': sha256(source_download_manifest),
