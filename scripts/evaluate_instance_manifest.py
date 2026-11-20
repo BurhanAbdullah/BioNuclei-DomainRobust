@@ -62,7 +62,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    checkpoint = torch.load(args.checkpoint, map_location="cpu")
+    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     cfg = checkpoint["config"]
     model = BoundaryUNet(
         in_channels=int(cfg["model"]["in_channels"]),
