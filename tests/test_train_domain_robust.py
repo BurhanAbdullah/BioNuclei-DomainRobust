@@ -94,3 +94,10 @@ def test_e5_gate_validates_source_training_method_record():
         "target_data_used_for_training",
     ):
         assert required in script
+
+
+def test_expensive_research_workflows_only_auto_run_on_main():
+    root = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    for name in ("e4_domain_robust.yml", "e5_ablations.yml"):
+        workflow = yaml.load((root / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        assert workflow["on"]["push"]["branches"] == ["main"]
