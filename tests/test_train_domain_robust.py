@@ -152,8 +152,12 @@ def test_e5_gate_requires_exact_commit_and_run_identity():
     gate = next(step for step in workflow["jobs"]["e5_gate"]["steps"] if step.get("name") == "Verify all preregistered variants and provenance")
     assert gate["env"]["EXPECTED_COMMIT"] == "${{ github.sha }}"
     assert gate["env"]["EXPECTED_RUN_ID"] == "${{ github.run_id }}"
-    assert "p['commit']==expected_commit" in gate["run"]
-    assert "p['workflow_run_id']==expected_run_id" in gate["run"]
+    gate_script = gate["run"].replace(" ", "")
+    assert "verify_variant_evidence(root,name,expected_commit,expected_run_id)" in gate_script
+    helper_path = Path(__file__).resolve().parents[1] / "scripts" / "e5_run_ablation.py"
+    helper = helper_path.read_text(encoding="utf-8")
+    assert "assert provenance['commit'] == expected_commit" in helper
+    assert "assert provenance['workflow_run_id'] == expected_run_id" in helper
 
 
 def test_e5_epochs_are_fixed_to_preregistered_protocol():
