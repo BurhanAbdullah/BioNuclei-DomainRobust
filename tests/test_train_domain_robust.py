@@ -154,3 +154,11 @@ def test_e5_gate_requires_exact_commit_and_run_identity():
     assert gate["env"]["EXPECTED_RUN_ID"] == "${{ github.run_id }}"
     assert "p['commit']==expected_commit" in gate["run"]
     assert "p['workflow_run_id']==expected_run_id" in gate["run"]
+
+
+def test_e5_epochs_are_fixed_to_preregistered_protocol():
+    workflow_path = Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'e5_ablations.yml'
+    workflow = yaml.load(workflow_path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    assert 'epochs' not in workflow.get('workflow_dispatch', {}).get('inputs', {})
+    variant_step = next(step for step in workflow['jobs']['e5_variant']['steps'] if step.get('name') == 'Run preregistered E5 variant')
+    assert variant_step['env']['EPOCHS'] == '20'
