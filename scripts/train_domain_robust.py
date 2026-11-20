@@ -10,6 +10,14 @@ from bionuclei.losses import BoundaryAwareLoss
 from bionuclei.models import BoundaryUNet
 from bionuclei.targets import instance_to_boundary_target
 
+
+def load_initial_checkpoint(path: Path) -> dict[str, object]:
+    """Load a tensor-only initial checkpoint without executing pickle payloads."""
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("model"), dict):
+        raise RuntimeError("Initial checkpoint does not contain a model state dict")
+    return checkpoint
+
 def seed_everything(seed):
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic=True; torch.backends.cudnn.benchmark=False
@@ -50,7 +58,7 @@ def main():
     device=resolve_device(c['training']['device'])
     model=BoundaryUNet(in_channels=int(c['model']['in_channels']),out_channels=int(c['model']['out_channels']),base_channels=int(c['model']['base_channels'])).to(device)
     if a.init_checkpoint:
-        ckpt=torch.load(a.init_checkpoint,map_location='cpu')
+        ckpt=load_initial_checkpoint(a.init_checkpoint)
         if 'model' not in ckpt: raise RuntimeError('Initial checkpoint does not contain a model state dict')
         model.load_state_dict(ckpt['model'], strict=True)
     loss=BoundaryAwareLoss(boundary_weight=float(c['loss']['boundary_weight']),dice_weight=float(c['loss']['dice_weight'])).to(device)
