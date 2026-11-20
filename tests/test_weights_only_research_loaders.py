@@ -13,6 +13,7 @@ EVALUATORS = (
     "scripts/evaluate_bbbc038.py",
     "scripts/evaluate_instance_manifest.py",
     "scripts/audit_bbbc039_instances.py",
+    "scripts/evaluate_s_biad634.py",
 )
 E6_WORKFLOWS = (
     ".github/workflows/e6_25pct_recovery.yml",
