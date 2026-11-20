@@ -199,7 +199,7 @@ jobs:
             'source_release_asset_digest':'sha256:7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92',
             'checkpoint_sha256':sha256(ckpt),
             'config_sha256':sha256(Path('configs/bbbc039_baseline.yaml')),
-            'source_split_manifest_sha256':sha256(Path('data/manifests/bbbc039_official_split.json'),
+            'source_split_manifest_sha256':sha256(Path('data/manifests/bbbc039_official_split.json')),
             'target_manifest_sha256':sha256(Path('data/raw/S-BIAD634/download_manifest.json')),
             'decoder':'bionuclei.masks.decode_instance_mask',
             'evaluator':'scripts/evaluate_s_biad634.py',
