@@ -2,6 +2,8 @@ name: E4 domain-robust method
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'scripts/train_domain_robust.py'
       - 'scripts/evaluate_s_biad634.py'
