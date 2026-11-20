@@ -161,6 +161,64 @@ jobs:
           assert d.get('instance_iou_threshold') == 0.5
           print('Verified 79-image zero-shot metrics artifact including instance precision/recall/F1.')
           PY
+      - name: Bind target dataset and metrics to provenance
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          manifest_path = Path("data/raw/S-BIAD634/download_manifest.json")
+          metrics_path = Path("outputs/s_biad634_zero_shot/metrics.json")
+          provenance_path = Path("outputs/s_biad634_zero_shot/provenance.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+          provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+          dataset = manifest.get("dataset")
+          archive_sha256 = manifest.get("archive_sha256")
+          files = manifest.get("files")
+          if not isinstance(dataset, str) or "S-BIAD634" not in dataset:
+              raise SystemExit("Target download manifest does not identify S-BIAD634")
+          if not isinstance(archive_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", archive_sha256):
+              raise SystemExit("Target download manifest has no valid archive SHA-256")
+          if not isinstance(files, list) or not files:
+              raise SystemExit("Target download manifest has no file inventory")
+          if metrics.get("n_images") != 79 or len(metrics.get("per_image", [])) != 79:
+              raise SystemExit("Refusing to bind incomplete S-BIAD634 metrics")
+          if metrics.get("instance_iou_threshold") != 0.5:
+              raise SystemExit("Unexpected instance IoU matching threshold")
+          provenance.update({
+              "target_dataset": dataset,
+              "target_manifest_sha256": sha256(manifest_path),
+              "target_archive_sha256": archive_sha256,
+              "target_manifest_file_count": len(files),
+              "metrics_sha256": sha256(metrics_path),
+              "evaluator_sha256": sha256(Path("scripts/evaluate_s_biad634.py")),
+              "instance_metrics_sha256": sha256(Path("scripts/metrics_instance.py")),
+              "baseline_config_sha256": sha256(Path("configs/bbbc039_baseline.yaml")),
+              "baseline_checkpoint_verifier_sha256": sha256(Path("scripts/verify_bbbc039_checkpoint.py")),
+              "target_data_used_for_training": False,
+              "n_target_images": metrics["n_images"],
+              "instance_iou_threshold": metrics["instance_iou_threshold"],
+          })
+          provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps({
+              "target_dataset": dataset,
+              "target_manifest_sha256": provenance["target_manifest_sha256"],
+              "target_archive_sha256": archive_sha256,
+              "metrics_sha256": provenance["metrics_sha256"],
+              "evaluator_sha256": provenance["evaluator_sha256"],
+              "target_data_used_for_training": False,
+              "n_target_images": metrics["n_images"],
+          }, sort_keys=True))
+          PY
       - name: Upload zero-shot results
         if: always()
         uses: actions/upload-artifact@v4
