@@ -35,7 +35,6 @@ def test_initial_checkpoint_rejects_unsupported_pickle_payload(tmp_path):
     checkpoint_path = tmp_path / "unsafe.pt"
     torch.save({"model": {}, "payload": _UnsafeCheckpointPayload()}, checkpoint_path)
 
-
     with pytest.raises(pickle.UnpicklingError):
         load_initial_checkpoint(checkpoint_path)
 
@@ -43,7 +42,6 @@ def test_initial_checkpoint_rejects_unsupported_pickle_payload(tmp_path):
 def test_initial_checkpoint_requires_model_state_dict(tmp_path):
     checkpoint_path = tmp_path / "missing-model.pt"
     torch.save({"metadata": {"seed": 7}}, checkpoint_path)
-
 
     with pytest.raises(RuntimeError, match="model state dict"):
         load_initial_checkpoint(checkpoint_path)
