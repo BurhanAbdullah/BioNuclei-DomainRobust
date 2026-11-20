@@ -23,11 +23,6 @@ on:
       - 'docs/PROGRESS.md'
       - 'pyproject.toml'
   workflow_dispatch:
-    inputs:
-      epochs:
-        description: 'Matched E5 source-training epochs'
-        required: false
-        default: '20'
 
 jobs:
   e5_variant:
@@ -63,7 +58,7 @@ jobs:
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Run preregistered E5 variant
         env:
-          EPOCHS: ${{ inputs.epochs || '20' }}
+          EPOCHS: '20'
         run: |
           PYTHONPATH="$PWD" python scripts/e5_run_ablation.py \
             --config configs/domain_robust.yaml \
