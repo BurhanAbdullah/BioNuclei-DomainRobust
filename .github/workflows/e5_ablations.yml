@@ -132,13 +132,18 @@ jobs:
           merge-multiple: true
           path: .
       - name: Verify all preregistered variants and provenance
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           python - <<'PY'
-          import hashlib, json
+          import hashlib, json, os
           from pathlib import Path
           root=Path('outputs/e5')
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
           assert required <= {p.name for p in root.iterdir() if p.is_dir()}
+          expected_commit=os.environ['EXPECTED_COMMIT']
+          expected_run_id=os.environ['EXPECTED_RUN_ID']
           source_manifest=json.loads(Path('data/manifests/bbbc039_official_split.json').read_text())
           for name in required:
               v=root/name
@@ -151,6 +156,8 @@ jobs:
               assert all(k in d['mean'] and k in d['median'] for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'))
               p=json.loads((v/'provenance.json').read_text())
               method_record=json.loads((v/'checkpoint'/'method_record.json').read_text())
+              assert p['commit']==expected_commit
+              assert p['workflow_run_id']==expected_run_id
               assert p['target_data_used_for_training'] is False
               assert p['n_target_images']==79
               for k in ('target_manifest_sha256','source_split_manifest_sha256','config_sha256','checkpoint_sha256'):
