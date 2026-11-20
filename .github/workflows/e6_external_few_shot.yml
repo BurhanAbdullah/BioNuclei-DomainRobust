@@ -152,7 +152,7 @@ jobs:
           test -f e4_artifact/outputs/e4_domain_robust/last.pt
           python - <<'PY'
           import torch, yaml
-          ckpt=torch.load('e4_artifact/outputs/e4_domain_robust/last.pt', map_location='cpu')
+          ckpt=torch.load('e4_artifact/outputs/e4_domain_robust/last.pt', map_location='cpu', weights_only=True)
           assert 'config' in ckpt and 'model' in ckpt
           yaml.safe_dump(ckpt['config'], open('e4_config.yaml','w'), sort_keys=False)
           PY
