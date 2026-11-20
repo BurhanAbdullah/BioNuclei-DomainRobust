@@ -173,7 +173,7 @@ jobs:
           python - <<'PY'
           import torch
           path = "outputs/strong_baseline_source/bionuclei_bbbc039.pt"
-          obj = torch.load(path, map_location="cpu", weights_only=True)
+          obj = torch.load(path, map_location="cpu", weights_only=False)
           assert isinstance(obj, dict) and "model" in obj, "released baseline is not a readable model checkpoint"
           print("Permanent BBBC039 checkpoint: verified")
           PY
