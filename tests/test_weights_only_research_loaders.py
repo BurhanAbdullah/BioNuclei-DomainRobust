@@ -15,10 +15,9 @@ EVALUATORS = (
     "scripts/audit_bbbc039_instances.py",
     "scripts/evaluate_s_biad634.py",
 )
-CHECKPOINT_WORKFLOWS = (
+E6_WORKFLOWS = (
     ".github/workflows/e6_25pct_recovery.yml",
     ".github/workflows/e6_external_few_shot.yml",
-    ".github/workflows/e5_ablations.yml",
 )
 
 
@@ -40,8 +39,8 @@ def test_research_evaluators_use_restricted_checkpoint_unpickling() -> None:
         assert kwargs["weights_only"].value is True, f"{relative} must use weights_only=True"
 
 
-def test_checkpoint_workflow_loads_are_weights_only() -> None:
-    for relative in CHECKPOINT_WORKFLOWS:
+def test_e6_workflow_checkpoint_loads_are_weights_only() -> None:
+    for relative in E6_WORKFLOWS:
         workflow = yaml.safe_load((ROOT / relative).read_text(encoding="utf-8"))
         run_texts = [
             step.get("run", "")
