@@ -137,16 +137,27 @@ jobs:
           root=Path('outputs/e5')
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
           assert required <= {p.name for p in root.iterdir() if p.is_dir()}
+          source_manifest=json.loads(Path('data/manifests/bbbc039_official_split.json').read_text())
           for name in required:
               v=root/name
               d=json.loads((v/'evaluation'/'metrics.json').read_text())
               assert d['n_images']==79 and len(d['per_image'])==79
               assert all(k in d['mean'] and k in d['median'] for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'))
               p=json.loads((v/'provenance.json').read_text())
+              method_record=json.loads((v/'checkpoint'/'method_record.json').read_text())
               assert p['target_data_used_for_training'] is False
               assert p['n_target_images']==79
               for k in ('target_manifest_sha256','source_split_manifest_sha256','config_sha256','checkpoint_sha256'):
                   assert p.get(k)
+              assert method_record['method']=='source_manifest_training'
+              assert method_record['training_dataset']==source_manifest.get('dataset')
+              assert method_record['source_split_manifest_sha256']==p['source_split_manifest_sha256']
+              assert method_record['config_sha256']==p['config_sha256']
+              assert method_record['initialization']=='random_initialization'
+              assert method_record['init_checkpoint'] is None
+              assert method_record['init_checkpoint_sha256'] is None
+              assert 'adaptation_dataset' not in method_record
+              assert 'target_data_used_for_training' not in method_record
           print('all preregistered E5 variants complete')
           PY
       - name: Verify and download immutable baseline release asset
