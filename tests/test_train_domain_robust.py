@@ -83,27 +83,18 @@ def test_training_metadata_hashes_initial_checkpoint(tmp_path):
     assert metadata["source_download_manifest_sha256"] is None
 
 
-def test_e5_gate_validates_source_training_method_record():
-    workflow_path = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "e5_ablations.yml"
-    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
-    gate_steps = workflow["jobs"]["e5_gate"]["steps"]
-    verification = next(step for step in gate_steps if step.get("name") == "Verify all preregistered variants and provenance")
-    script = verification["run"]
-    for required in (
-        "method_record.json",
-        "source_manifest_training",
-        "training_dataset",
-        "source_split_manifest_sha256",
-        "source_download_manifest.json",
-        "source_download_manifest_sha256",
-        "method_record_sha256",
-        "config_sha256",
-        "random_initialization",
-        "adaptation_dataset",
-        "target_data_used_for_training",
-    ):
-        assert required in script
-
+def test_e5_gate_validates_per_variant_hashes_and_shared_protocol():
+    workflow_path = Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'e5_ablations.yml'
+    workflow = yaml.load(workflow_path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    gate = next(step for step in workflow['jobs']['e5_gate']['steps'] if step.get('name') == 'Verify all preregistered variants and provenance')
+    assert gate['env']['EXPECTED_COMMIT'] == '${{ github.sha }}'
+    assert gate['env']['EXPECTED_RUN_ID'] == '${{ github.run_id }}'
+    for required in ('verify_variant_evidence', 'source_split_identity', 'source_acquisition_identity', 'target_manifest_identity', 'shared_training_identity'):
+        assert required in gate['run']
+    helper_path = Path(__file__).resolve().parents[1] / 'scripts' / 'e5_run_ablation.py'
+    helper = helper_path.read_text(encoding='utf-8')
+    for required in ('source_split_manifest.json', 'target_download_manifest.json', 'metrics_sha256', 'checkpoint_sha256', 'method_record_sha256', 'random_initialization'):
+        assert required in helper
 
 def test_expensive_research_workflows_only_auto_run_on_main():
     root = Path(__file__).resolve().parents[1] / ".github" / "workflows"
