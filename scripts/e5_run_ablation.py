@@ -176,6 +176,7 @@ def main():
             'evaluator': 'scripts/evaluate_s_biad634.py',
             'metrics_file': str(eval_out / 'metrics.json'),
             'metrics_sha256': sha256(eval_out / 'metrics.json'),
+            'metrics_sha256': sha256(eval_out / 'metrics.json'),
         }
         (out / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
     print(f'E5 completed variants: {", ".join(names)}')
