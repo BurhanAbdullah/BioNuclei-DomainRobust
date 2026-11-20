@@ -2,6 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 import torch
 import yaml
 
@@ -109,3 +110,28 @@ def test_expensive_research_workflows_only_auto_run_on_main():
     for name in ("e4_domain_robust.yml", "e5_ablations.yml"):
         workflow = yaml.load((root / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         assert workflow["on"]["push"]["branches"] == ["main"]
+
+
+def test_training_metadata_rejects_mismatched_source_acquisition_dataset(tmp_path):
+    config = {"experiment": "e4_domain_robust", "seed": 42}
+    manifest = {"dataset": "BBBC039v1", "partitions": {"train": ["image_1.tif"]}}
+    config_path = tmp_path / "config.yaml"
+    manifest_path = tmp_path / "split.json"
+    source_download_manifest_path = tmp_path / "download_manifest.json"
+    config_path.write_text("experiment: e4_domain_robust\\nseed: 42\\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    source_download_manifest_path.write_text(
+        json.dumps({"dataset": "S-BIAD634", "archives": {}}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="identify different datasets"):
+        build_training_metadata(
+            config,
+            manifest,
+            config_path,
+            manifest_path,
+            tmp_path / "BBBC039",
+            None,
+            epochs=20,
+            source_download_manifest_path=source_download_manifest_path,
+        )
