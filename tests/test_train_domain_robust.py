@@ -118,7 +118,7 @@ def test_training_metadata_rejects_mismatched_source_acquisition_dataset(tmp_pat
     config_path = tmp_path / "config.yaml"
     manifest_path = tmp_path / "split.json"
     source_download_manifest_path = tmp_path / "download_manifest.json"
-    config_path.write_text("experiment: e4_domain_robust\\nseed: 42\\n", encoding="utf-8")
+    config_path.write_text("experiment: e4_domain_robust\nseed: 42\n", encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     source_download_manifest_path.write_text(
         json.dumps({"dataset": "S-BIAD634", "archives": {}}), encoding="utf-8"
