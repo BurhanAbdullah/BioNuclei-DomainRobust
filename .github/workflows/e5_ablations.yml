@@ -7,6 +7,8 @@ name: E5 ablations and strong baseline
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'scripts/train_domain_robust.py'
       - 'scripts/evaluate_s_biad634.py'
@@ -21,11 +23,6 @@ on:
       - 'docs/PROGRESS.md'
       - 'pyproject.toml'
   workflow_dispatch:
-    inputs:
-      epochs:
-        description: 'Matched E5 source-training epochs'
-        required: false
-        default: '20'
 
 jobs:
   e5_variant:
@@ -61,7 +58,7 @@ jobs:
         run: python scripts/download_s_biad634.py --data-root data/raw/S-BIAD634
       - name: Run preregistered E5 variant
         env:
-          EPOCHS: ${{ inputs.epochs || '20' }}
+          EPOCHS: '20'
         run: |
           PYTHONPATH="$PWD" python scripts/e5_run_ablation.py \
             --config configs/domain_robust.yaml \
@@ -130,24 +127,37 @@ jobs:
           merge-multiple: true
           path: .
       - name: Verify all preregistered variants and provenance
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           python - <<'PY'
-          import json
+          import os
           from pathlib import Path
+          from scripts.e5_run_ablation import verify_variant_evidence
           root=Path('outputs/e5')
           required={'full_frozen_e4','no_intensity_randomization','no_contrast'}
           assert required <= {p.name for p in root.iterdir() if p.is_dir()}
+          expected_commit=os.environ['EXPECTED_COMMIT']
+          expected_run_id=os.environ['EXPECTED_RUN_ID']
+          shared_source_split=None
+          shared_source_acquisition=None
+          shared_target_manifest=None
+          shared_training_identity=None
           for name in required:
-              v=root/name
-              d=json.loads((v/'evaluation'/'metrics.json').read_text())
-              assert d['n_images']==79 and len(d['per_image'])==79
-              assert all(k in d['mean'] and k in d['median'] for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'))
-              p=json.loads((v/'provenance.json').read_text())
-              assert p['target_data_used_for_training'] is False
-              assert p['n_target_images']==79
-              for k in ('target_manifest_sha256','source_split_manifest_sha256','config_sha256','checkpoint_sha256'):
-                  assert p.get(k)
-          print('all preregistered E5 variants complete')
+              evidence=verify_variant_evidence(root,name,expected_commit,expected_run_id)
+              source_split_identity,source_acquisition_identity,target_manifest_identity,training_identity=evidence
+              if shared_source_split is None:
+                  shared_source_split=source_split_identity
+                  shared_source_acquisition=source_acquisition_identity
+                  shared_target_manifest=target_manifest_identity
+                  shared_training_identity=training_identity
+              else:
+                  assert source_split_identity==shared_source_split, 'E5 variants use different source splits'
+                  assert source_acquisition_identity==shared_source_acquisition, 'E5 variants use different source acquisitions'
+                  assert target_manifest_identity==shared_target_manifest, 'E5 variants use different target acquisitions'
+                  assert training_identity==shared_training_identity, 'E5 variants use different seeds or epochs'
+          print('all preregistered E5 variants complete and cross-bound')
           PY
       - name: Verify and download immutable baseline release asset
         env:

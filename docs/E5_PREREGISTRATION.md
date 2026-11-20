@@ -46,8 +46,10 @@ Every E5 run must retain:
 - exact commit SHA;
 - configuration and seed;
 - source split manifest hash;
+- source download/acquisition manifest with archive SHA-256 values, plus the manifest SHA-256 (retained per variant);
 - target manifest hash;
 - checkpoint SHA-256;
+- per-variant `method_record.json` and its SHA-256, cross-checked against the run provenance;
 - decoder/evaluator revision;
 - complete per-image metrics for all 79 target images;
 - aggregate metrics and image-level uncertainty;
