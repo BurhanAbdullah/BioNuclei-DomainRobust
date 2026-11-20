@@ -26,6 +26,7 @@ on:
         description: 'Matched E5 source-training epochs'
         required: false
         default: '20'
+
 jobs:
   e5_variant:
     name: E5 ${{ matrix.variant }}
@@ -62,14 +63,14 @@ jobs:
         env:
           EPOCHS: ${{ inputs.epochs || '20' }}
         run: |
-          PYTHONPATH="$PWD" python scripts/e5_run_ablation.py \\
-            --config configs/domain_robust.yaml \\
-            --manifest data/manifests/bbbc039_official_split.json \\
-            --target-manifest data/raw/S-BIAD634/download_manifest.json \\
-            --source-root data/raw/BBBC039 \\
-            --target-root data/raw/S-BIAD634 \\
-            --output outputs/e5 \\
-            --epochs "$EPOCHS" \\
+          PYTHONPATH="$PWD" python scripts/e5_run_ablation.py \
+            --config configs/domain_robust.yaml \
+            --manifest data/manifests/bbbc039_official_split.json \
+            --target-manifest data/raw/S-BIAD634/download_manifest.json \
+            --source-root data/raw/BBBC039 \
+            --target-root data/raw/S-BIAD634 \
+            --output outputs/e5 \
+            --epochs "$EPOCHS" \
             --variant "${{ matrix.variant }}"
       - name: Verify variant completeness
         run: |
@@ -176,15 +177,15 @@ jobs:
           assert isinstance(obj, dict) and "model" in obj, "released baseline is not a readable model checkpoint"
           print("Permanent BBBC039 checkpoint: verified")
           PY
-          PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \\
-            --checkpoint "$CKPT" \\
-            --data-root data/raw/S-BIAD634 \\
+          PYTHONPATH="$PWD" python scripts/evaluate_s_biad634.py \
+            --checkpoint "$CKPT" \
+            --data-root data/raw/S-BIAD634 \
             --output outputs/strong_baseline_target
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
           def sha256(p):
-            h=hashlib.sha256(); h.update(p.read_bytes()); return h.hexdigest()
+              h=hashlib.sha256(); h.update(p.read_bytes()); return h.hexdigest()
           m=json.loads(Path('outputs/strong_baseline_target/metrics.json').read_text())
           assert m['n_images']==79 and len(m['per_image'])==79
           ckpt=Path('outputs/strong_baseline_source/bionuclei_bbbc039.pt')
