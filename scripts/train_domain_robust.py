@@ -32,13 +32,20 @@ def build_training_metadata(
     dataset = manifest.get("dataset")
     if not isinstance(dataset, str) or not dataset.strip():
         dataset = data_root.name or "unknown"
+    source_download_manifest_sha256 = None
+    if source_download_manifest_path is not None:
+        source_download_manifest = json.loads(source_download_manifest_path.read_text())
+        source_download_dataset = source_download_manifest.get("dataset")
+        if not isinstance(source_download_dataset, str) or not source_download_dataset.strip():
+            raise ValueError("Source acquisition manifest must identify its dataset")
+        if source_download_dataset != dataset:
+            raise ValueError("Source split and source acquisition manifests identify different datasets")
+        source_download_manifest_sha256 = sha256_file(source_download_manifest_path)
     return {
         "method": "source_manifest_training",
         "training_dataset": dataset,
         "source_split_manifest_sha256": sha256_file(manifest_path),
-        "source_download_manifest_sha256": (
-            sha256_file(source_download_manifest_path) if source_download_manifest_path else None
-        ),
+        "source_download_manifest_sha256": source_download_manifest_sha256,
         "config_sha256": sha256_file(config_path),
         "seed": int(config["seed"]),
         "epochs": int(epochs),
