@@ -1,6 +1,11 @@
-import torch
+import hashlib
+import json
+from pathlib import Path
 
-from scripts.train_domain_robust import resolve_device
+import torch
+import yaml
+
+from scripts.train_domain_robust import build_training_metadata, resolve_device
 
 
 def test_resolve_device_auto_falls_back_to_cpu(monkeypatch):
@@ -11,3 +16,81 @@ def test_resolve_device_auto_falls_back_to_cpu(monkeypatch):
 def test_resolve_device_auto_uses_cuda_when_available(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     assert resolve_device("auto").type == "cuda"
+
+
+def test_training_metadata_matches_source_manifest_and_config(tmp_path):
+    config = {"experiment": "e5_full_frozen_e4", "seed": 42}
+    manifest = {"dataset": "BBBC039v1", "partitions": {"train": ["image_1.tif"]}}
+    config_path = tmp_path / "config.yaml"
+    manifest_path = tmp_path / "split.json"
+    config_path.write_text("experiment: e5_full_frozen_e4\nseed: 42\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    metadata = build_training_metadata(
+        config,
+        manifest,
+        config_path,
+        manifest_path,
+        tmp_path / "BBBC039",
+        None,
+        epochs=20,
+    )
+
+    assert metadata["method"] == "source_manifest_training"
+    assert metadata["training_dataset"] == "BBBC039v1"
+    assert metadata["source_split_manifest_sha256"] == hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    assert metadata["config_sha256"] == hashlib.sha256(config_path.read_bytes()).hexdigest()
+    assert metadata["initialization"] == "random_initialization"
+    assert metadata["init_checkpoint"] is None
+    assert metadata["init_checkpoint_sha256"] is None
+    assert "adaptation_dataset" not in metadata
+    assert "target_data_used_for_training" not in metadata
+
+
+def test_training_metadata_hashes_initial_checkpoint(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    manifest_path = tmp_path / "split.json"
+    checkpoint_path = tmp_path / "initial.pt"
+    config = {"experiment": "fine_tune", "seed": 7}
+    manifest = {"dataset": "BBBC039v1", "partitions": {"train": ["image_1.tif"]}}
+    config_path.write_text("experiment: fine_tune\nseed: 7\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    checkpoint_path.write_bytes(b"initial checkpoint bytes")
+
+    metadata = build_training_metadata(
+        config,
+        manifest,
+        config_path,
+        manifest_path,
+        tmp_path / "BBBC039",
+        checkpoint_path,
+        epochs=3,
+    )
+
+    assert metadata["method"] == "source_manifest_training"
+    assert metadata["initialization"] == "checkpoint_finetuning"
+    assert metadata["init_checkpoint"] == str(checkpoint_path)
+    assert metadata["init_checkpoint_sha256"] == hashlib.sha256(
+        checkpoint_path.read_bytes()
+    ).hexdigest()
+
+
+def test_e5_gate_validates_source_training_method_record():
+    workflow_path = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "e5_ablations.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    gate_steps = workflow["jobs"]["e5_gate"]["steps"]
+    verification = next(step for step in gate_steps if step.get("name") == "Verify all preregistered variants and provenance")
+    script = verification["run"]
+    for required in (
+        "method_record.json",
+        "source_manifest_training",
+        "training_dataset",
+        "source_split_manifest_sha256",
+        "config_sha256",
+        "random_initialization",
+        "adaptation_dataset",
+        "target_data_used_for_training",
+    ):
+        assert required in script
