@@ -7,6 +7,8 @@ name: E5 ablations and strong baseline
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'scripts/train_domain_robust.py'
       - 'scripts/evaluate_s_biad634.py'
