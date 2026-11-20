@@ -206,7 +206,7 @@ jobs:
               "n_target_images": metrics["n_images"],
               "instance_iou_threshold": metrics["instance_iou_threshold"],
           })
-          provenance_path.write_text(json.dumps(provenance, indent=2) + "\\n", encoding="utf-8")
+          provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
           print(json.dumps({
               "target_dataset": dataset,
               "target_manifest_sha256": provenance["target_manifest_sha256"],
