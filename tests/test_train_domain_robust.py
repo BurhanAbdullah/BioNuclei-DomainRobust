@@ -93,6 +93,11 @@ def test_e5_gate_validates_per_variant_hashes_and_shared_protocol():
         assert required in gate['run']
     helper_path = Path(__file__).resolve().parents[1] / 'scripts' / 'e5_run_ablation.py'
     helper = helper_path.read_text(encoding='utf-8')
+    runner_path = Path(__file__).resolve().parents[1] / 'scripts' / 'e5_run_ablation.py'
+    runner = runner_path.read_text(encoding='utf-8')
+    assert runner.count("'metrics_sha256': sha256(eval_out / 'metrics.json')") == 1
+    for required in ('source_split_manifest.json', 'source_download_manifest.json', 'target_download_manifest.json'):
+        assert required in runner
     for required in ('source_split_manifest.json', 'target_download_manifest.json', 'metrics_sha256', 'checkpoint_sha256', 'method_record_sha256', 'random_initialization'):
         assert required in helper
 
