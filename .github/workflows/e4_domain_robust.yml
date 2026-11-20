@@ -56,6 +56,7 @@ jobs:
             --config configs/domain_robust.yaml \
             --manifest data/manifests/bbbc039_official_split.json \
             --data-root data/raw/BBBC039 \
+            --source-download-manifest data/raw/BBBC039/download_manifest.json \
             --output outputs/e4_domain_robust \
             --epochs "$EPOCHS"
       - name: Download and inventory S-BIAD634
@@ -69,7 +70,7 @@ jobs:
       - name: Enforce complete target evaluation and provenance
         run: |
           python - <<'PY'
-          import json, os
+          import hashlib, json, os
           from pathlib import Path
           p=Path('outputs/e4_s_biad634/metrics.json')
           d=json.loads(p.read_text())
@@ -77,7 +78,24 @@ jobs:
           assert len(d.get('per_image',[]))==79
           for k in ('dice','iou','precision','recall','f1_score','aji','boundary_f1'):
               assert k in d.get('mean',{}) and k in d.get('median',{})
-          out={'method':'source_only_intensity_domain_randomization','commit':os.environ['GITHUB_SHA'],'workflow_run_id':os.environ['GITHUB_RUN_ID'],'n_target_images':d['n_images'],'metrics_file':str(p)}
+          source_download_manifest_path=Path('data/raw/BBBC039/download_manifest.json')
+          source_split_manifest_path=Path('data/manifests/bbbc039_official_split.json')
+          config_path=Path('configs/domain_robust.yaml')
+          checkpoint_path=Path('outputs/e4_domain_robust/last.pt')
+          method_record_path=Path('outputs/e4_domain_robust/method_record.json')
+          source_manifest=json.loads(source_split_manifest_path.read_text())
+          source_download_manifest=json.loads(source_download_manifest_path.read_text())
+          method_record=json.loads(method_record_path.read_text())
+          digest=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          source_download_sha=digest(source_download_manifest_path)
+          assert source_download_manifest['dataset']==source_manifest['dataset']
+          assert method_record['training_dataset']==source_manifest['dataset']
+          assert method_record['source_split_manifest_sha256']==digest(source_split_manifest_path)
+          assert method_record['source_download_manifest_sha256']==source_download_sha
+          assert method_record['config_sha256']==digest(config_path)
+          assert method_record['initialization']=='random_initialization'
+          assert method_record['init_checkpoint_sha256'] is None
+          out={'method':'source_only_intensity_domain_randomization','commit':os.environ['GITHUB_SHA'],'workflow_run_id':os.environ['GITHUB_RUN_ID'],'n_target_images':d['n_images'],'metrics_file':str(p),'training_dataset':method_record['training_dataset'],'source_split_manifest_sha256':method_record['source_split_manifest_sha256'],'source_download_manifest_sha256':source_download_sha,'config_sha256':method_record['config_sha256'],'checkpoint_sha256':digest(checkpoint_path),'method_record_sha256':digest(method_record_path)}
           Path('outputs/e4_s_biad634/provenance.json').write_text(json.dumps(out,indent=2)+'\n')
           print(json.dumps(d['mean'],indent=2))
           PY

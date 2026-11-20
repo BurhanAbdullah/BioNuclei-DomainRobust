@@ -54,6 +54,12 @@ def main():
     a = p.parse_args()
     require_manifest(a.manifest, 'source split')
     require_manifest(a.target_manifest, 'target')
+    source_download_manifest = a.source_root / 'download_manifest.json'
+    require_manifest(source_download_manifest, 'source acquisition')
+    source_manifest = json.loads(a.manifest.read_text())
+    download_manifest = json.loads(source_download_manifest.read_text())
+    if source_manifest.get('dataset') != download_manifest.get('dataset'):
+        raise RuntimeError('Source split and source acquisition manifests identify different datasets')
     base = yaml.safe_load(a.config.read_text())
     variants = {
         'full_frozen_e4': lambda c: None,
@@ -69,10 +75,13 @@ def main():
         cfg_path = a.output / f'{name}.yaml'
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
         out = a.output / name
+        out.mkdir(parents=True, exist_ok=True)
+        (out / 'source_download_manifest.json').write_bytes(source_download_manifest.read_bytes())
         train_out = out / 'checkpoint'
         eval_out = out / 'evaluation'
         run([sys.executable, 'scripts/train_domain_robust.py', '--config', str(cfg_path),
              '--manifest', str(a.manifest), '--data-root', str(a.source_root),
+             '--source-download-manifest', str(source_download_manifest),
              '--output', str(train_out), '--epochs', str(a.epochs)])
         ckpt = train_out / 'last.pt'
         run([sys.executable, 'scripts/evaluate_s_biad634.py', '--checkpoint', str(ckpt),
@@ -83,6 +92,8 @@ def main():
         provenance = {
             'experiment': f'e5_{name}', 'variant': name, 'seed': int(cfg['seed']),
             'epochs': int(a.epochs), 'source_split_manifest_sha256': sha256(a.manifest),
+            'source_download_manifest_sha256': sha256(source_download_manifest),
+            'method_record_sha256': sha256(train_out / 'method_record.json'),
             'target_manifest_sha256': sha256(a.target_manifest),
             'config_sha256': sha256(cfg_path), 'checkpoint_sha256': sha256(ckpt),
             'decoder': 'bionuclei.masks.decode_instance_mask',

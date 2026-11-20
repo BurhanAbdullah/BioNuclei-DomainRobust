@@ -23,6 +23,8 @@ def test_training_metadata_matches_source_manifest_and_config(tmp_path):
     manifest = {"dataset": "BBBC039v1", "partitions": {"train": ["image_1.tif"]}}
     config_path = tmp_path / "config.yaml"
     manifest_path = tmp_path / "split.json"
+    source_download_manifest_path = tmp_path / "download_manifest.json"
+    source_download_manifest_path.write_text(json.dumps({"dataset": "BBBC039v1", "archives": {}}), encoding="utf-8")
     config_path.write_text("experiment: e5_full_frozen_e4\nseed: 42\n", encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
@@ -34,6 +36,7 @@ def test_training_metadata_matches_source_manifest_and_config(tmp_path):
         tmp_path / "BBBC039",
         None,
         epochs=20,
+        source_download_manifest_path=source_download_manifest_path,
     )
 
     assert metadata["method"] == "source_manifest_training"
@@ -42,6 +45,7 @@ def test_training_metadata_matches_source_manifest_and_config(tmp_path):
         manifest_path.read_bytes()
     ).hexdigest()
     assert metadata["config_sha256"] == hashlib.sha256(config_path.read_bytes()).hexdigest()
+    assert metadata["source_download_manifest_sha256"] == hashlib.sha256(source_download_manifest_path.read_bytes()).hexdigest()
     assert metadata["initialization"] == "random_initialization"
     assert metadata["init_checkpoint"] is None
     assert metadata["init_checkpoint_sha256"] is None
@@ -75,6 +79,7 @@ def test_training_metadata_hashes_initial_checkpoint(tmp_path):
     assert metadata["init_checkpoint_sha256"] == hashlib.sha256(
         checkpoint_path.read_bytes()
     ).hexdigest()
+    assert metadata["source_download_manifest_sha256"] is None
 
 
 def test_e5_gate_validates_source_training_method_record():
@@ -88,6 +93,9 @@ def test_e5_gate_validates_source_training_method_record():
         "source_manifest_training",
         "training_dataset",
         "source_split_manifest_sha256",
+        "source_download_manifest.json",
+        "source_download_manifest_sha256",
+        "method_record_sha256",
         "config_sha256",
         "random_initialization",
         "adaptation_dataset",

@@ -27,6 +27,7 @@ def build_training_metadata(
     data_root: Path,
     init_checkpoint: Path | None,
     epochs: int,
+    source_download_manifest_path: Path | None = None,
 ) -> dict[str, object]:
     dataset = manifest.get("dataset")
     if not isinstance(dataset, str) or not dataset.strip():
@@ -35,6 +36,9 @@ def build_training_metadata(
         "method": "source_manifest_training",
         "training_dataset": dataset,
         "source_split_manifest_sha256": sha256_file(manifest_path),
+        "source_download_manifest_sha256": (
+            sha256_file(source_download_manifest_path) if source_download_manifest_path else None
+        ),
         "config_sha256": sha256_file(config_path),
         "seed": int(config["seed"]),
         "epochs": int(epochs),
@@ -79,7 +83,7 @@ def resolve_device(device_config):
 
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--config',type=Path,required=True); p.add_argument('--manifest',type=Path,required=True); p.add_argument('--data-root',type=Path,required=True); p.add_argument('--output',type=Path,required=True); p.add_argument('--epochs',type=int,default=None); p.add_argument('--init-checkpoint',type=Path,default=None); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('--config',type=Path,required=True); p.add_argument('--manifest',type=Path,required=True); p.add_argument('--data-root',type=Path,required=True); p.add_argument('--output',type=Path,required=True); p.add_argument('--epochs',type=int,default=None); p.add_argument('--init-checkpoint',type=Path,default=None); p.add_argument('--source-download-manifest',type=Path,default=None); a=p.parse_args()
     c=yaml.safe_load(a.config.read_text()); seed_everything(int(c['seed'])); m=json.loads(a.manifest.read_text()); names=m['partitions']['train']
     root=a.data_root; images=[resolve(root,n,'image') for n in names]; masks=[resolve(root,n,'mask') for n in names]
     configured_workers=int(c['training']['num_workers'])
@@ -93,7 +97,7 @@ def main():
         if 'model' not in ckpt: raise RuntimeError('Initial checkpoint does not contain a model state dict')
         model.load_state_dict(ckpt['model'], strict=True)
     epochs=int(a.epochs or c['training']['epochs'])
-    metadata=build_training_metadata(c,m,a.config,a.manifest,a.data_root,a.init_checkpoint,epochs)
+    metadata=build_training_metadata(c,m,a.config,a.manifest,a.data_root,a.init_checkpoint,epochs,source_download_manifest_path=a.source_download_manifest)
     loss=BoundaryAwareLoss(boundary_weight=float(c['loss']['boundary_weight']),dice_weight=float(c['loss']['dice_weight'])).to(device)
     opt=torch.optim.AdamW(model.parameters(),lr=float(c['training']['learning_rate']),weight_decay=float(c['training']['weight_decay']))
     a.output.mkdir(parents=True,exist_ok=True); hist=[]
