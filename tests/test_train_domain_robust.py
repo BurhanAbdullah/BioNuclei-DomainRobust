@@ -135,3 +135,26 @@ def test_training_metadata_rejects_mismatched_source_acquisition_dataset(tmp_pat
             epochs=20,
             source_download_manifest_path=source_download_manifest_path,
         )
+
+
+def test_e5_provenance_records_workflow_commit_and_run(monkeypatch):
+    from scripts.e5_run_ablation import workflow_identity
+
+    monkeypatch.setenv("GITHUB_SHA", "abc123commit")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123456789")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    assert workflow_identity() == {
+        "commit": "abc123commit",
+        "workflow_run_id": "123456789",
+        "ref": "refs/heads/main",
+    }
+
+
+def test_e5_gate_requires_exact_commit_and_run_identity():
+    workflow_path = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "e5_ablations.yml"
+    workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    gate = next(step for step in workflow["jobs"]["e5_gate"]["steps"] if step.get("name") == "Verify all preregistered variants and provenance")
+    assert gate["env"]["EXPECTED_COMMIT"] == "${{ github.sha }}"
+    assert gate["env"]["EXPECTED_RUN_ID"] == "${{ github.run_id }}"
+    assert "p['commit']==expected_commit" in gate["run"]
+    assert "p['workflow_run_id']==expected_run_id" in gate["run"]
