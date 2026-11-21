@@ -535,3 +535,21 @@ Deadline risk remains **high** for 2027-01-01. Next safe task is refresh #94 CI 
 
 Tracker head `d8984dda6f1cdc8085eb291c5efb32b40fe33aa7`; its CI run `44938634115`, job `136950720578`, was still in dependency installation with pytest pending at the last refresh. No artifact was attached. Earlier tracker CI does not validate this commit.
 
+
+
+## Checkpoint stack and last-known public E2E artifact re-verification — 2026-11-22
+
+### PR #105 / #146 evidence refresh
+
+- PR #105 head `1d4726b430da933180d2c2744ec564a442c09b96` (base main). Associated CI run `43421687985`, job `131872961675`: 158 passed, 1 skipped. Community validation `43421687953`, job `131872961979`: 4 passed; live Render job `131872964071` skipped. Tiled worker `43421687940`, job `131876422471`, succeeded with two attempts; checkpoint SHA remained the pin. Peaks were 463,335,424 and 455,524,352 bytes against 503,316,480-byte limit and 492,830,720-byte safety ceiling. These runs predate PR #105's 19-Nov update and their run metadata does not expose tested head SHA; do not treat them as proof of latest-head validation.
+- PR #146 head `7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433` is stacked on #105. Associated CI `44900605180`, job `136835494093`: 163 passed, 1 skipped. Worker `44900605055`, job `136836858514`, succeeded twice; pinned checkpoint SHA before/after matched; peaks 450,338,816 and 442,347,520 bytes, below the 470-MiB ceiling and 480-MiB hard limit. Community contract `44900605117` job `136835493892`: 4 passed; failure cleanup `44900605141` job `136835494233`: 18 passed; web adapter `44900605104` job `136835494045`: 163 passed, 1 skipped; MCP smoke `44900605104` job `136835494146`: 2 passed. Live Render validation was skipped. No artifacts were attached. All of these are runner/CI evidence, not public inference; run-to-head SHA correlation is not visible in the returned metadata.
+- **Stack dependency to verify before merge:** PR #105's patch imports/uses `_checkpoint_for_inference` in `webapp/community.py`, but its `webapp/app.py` patch does not introduce that helper. PR #146's `webapp/app.py` patch does introduce `_checkpoint_for_inference`. Treat #105 as dependent on #146; do not merge #105 alone. The file-fetch API also returned the main blob SHA for `webapp/community.py` at #105's commit despite the PR patch showing changes, so exact-file retrieval is inconsistent and the integration review remains incomplete.
+
+### E2E #294 artifact re-download
+
+The last-known exact-main E2E #294 run `44920455705`, job `136895133329`, was retrieved again. Artifact `14713328852` was downloaded, unpacked, and parsed successfully; archive SHA-256 `7668c9bce879827cfb2d876acc3f64025adec4f44516c82b773c4cf04d244c37` matched the workflow log. Extracted JSON SHA-256: `6fabd1636c3263c86c1c78b433829cea1cffc33c6f669f85ffa55ac5b7b4bbe3`. It confirms health HTTP 200 after four ReadTimeout attempts but stale `api_health_request_error=ReadTimeout`, Render SHA `bb6a9d27537e12b85768c7fead1467253b2423ba`, parity false, and five runtime/config mismatches. `guest_token_seen=false`, `job_id_seen=false`, `cleanup_attempted=false`; upload/inference never started. This is the last-known run, not a freshly enumerated latest-main run.
+- Last-known watchdog #124 run `44843387759`, job `136657079593`, accepted a dispatch because exact-main E2E age was 11,111 seconds; it did not check deployed SHA/checkpoint identity. No artifacts. Main watchdog safety gap remains until #92 is merged and runtime is independently verified.
+
+### Tracker CI
+
+Commit `3cfd0742385ae8ac8987140546cb38089c11257a` was verified as the tracker file's latest previous revision. Its CI run `44938877172` was in progress at last refresh; a subsequent tracker update will require another exact-head check.
