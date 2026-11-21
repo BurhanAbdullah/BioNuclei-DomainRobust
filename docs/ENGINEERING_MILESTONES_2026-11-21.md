@@ -769,3 +769,54 @@ Fresh GitHub REST pull-request listing returned **99 open PRs** (one populated p
 | [#81](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/pull/81) | ci: add manual recovery trigger for public E2E watchdog | `fix/manual-public-e2e-watchdog-20261024` | `6f08c97c2bc6dbb6fa1dfd5c90cce684c3776689` | `main` | `d4a653e94501e8b9f1ec9de09ff71720f90ab340` | no | 2026-10-24T10:44:06Z |
 | [#80](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/pull/80) | ci: exercise optional MCP SDK in test suite | `ci/exercise-mcp-sdk-in-ci` | `abf750e2bbea8cc5a449305790ead63ebf0979ba` | `main` | `d4a653e94501e8b9f1ec9de09ff71720f90ab340` | no | 2026-10-24T08:42:49Z |
 | [#37](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/pull/37) | Move production analyzer compute to Modal GPU | `fix/modal-production-analyzer` | `4b8fe089c4d5151efb7811f67c058456ff8012fc` | `main` | `7fa2a23e5825fe3c0b7f927d763557f9781ba08a` | no | 2026-09-26T17:20:46Z |
+
+
+## M0 safety, upload-memory, and dataset-extraction PR audit — 2026-11-22 01:07 IST
+
+The next audit batch covered checkpoint health, health-probe deadlines, upload-memory handling, and E5 target-dataset extraction/download limits. Full patches and exact-head run/job metadata were fetched; relevant source was inspected and complete test job logs were retrieved. Runner artifacts were empty for these runs.
+
+### Runtime and health stack
+
+- **#144** head `b17312ea25c1d8d6219393a78f3cd5b3bdb19f66`, base main: immutable checkpoint digest/health contract in both API health endpoints and explicit opt-in for live Render validation. CI **43691513066**, job **132742965543**: **154 passed, 1 skipped**. Web/MCP validation **43691513079** (jobs 132742965671/132742965860/132742965890) succeeded; Community validation **43691513059**, job 132742965527 succeeded; live Render job **132742966357 skipped**. No deployment proof.
+- **#145** head `9f30e9cdd267fa567a51356e2a2327d2d90bd622`, base #133 head `44da1ed99f47354ea345f1244e68f23faca7a6c0`: monotonic total health-readiness budget with streamed response reads, bounded socket inactivity timeout, response-size limit and closed responses. CI **43852262947**, job **133247533744**: **157 passed, 1 skipped**. E2E harness **43852263046**, job **133247534525** succeeded; public upload job **133247537660 skipped**.
+- **#163** head `423a29c42dbd0d2a6bd285c7cb203a495644b0f5`, base #145 head: fails closed if the underlying socket timeout cannot be enforced, rather than silently claiming a total deadline. CI **44097200020**, job **134087354782**: **160 passed, 1 skipped**. Harness **44097202532**, job **134087366293**: **15 passed**; public upload job **134087369490 skipped**. #145/#163 are not live deployment evidence.
+
+### E5 download and archive-safety stack
+
+- **#137** head `6d043e82127659a93669de45b621185e22fd006b`, base #135 head `e79b392a6d360b194f987235d24315eecec1eeb4`: share one verified target dataset artifact across E5 variants. CI **43617774032**, job **132516499255**: **154 passed, 1 skipped**.
+- **#138** head `540dec1a8c85ef636f4947bc5d620fe8c0615621`, base #137: bounded retries for transient BioStudies transport/HTTP failures with temporary file + atomic replace. CI **43710921090**, job **132802056505**: **160 passed, 1 skipped**.
+- **#139** head `1fd0de5f7660148ba1341c6087c1fdcc7c3143d5`, base #138: inventory-only `--skip-extract` for shared target artifact, delegating extraction to manifest-verifying extractor. CI **43641056498**, job **132588506988**: **162 passed, 1 skipped**.
+- **#140** head `dc42500e447c297682a4f7296833af952b40ee56`, base #139: validates ZIP entry/path/type/duplicate and per-file/total expansion limits before CRC scanning or extraction; limits 600 MiB archive, 512 entries, 64 MiB/member, 768 MiB total. CI **43727201964**, job **132851635754**: **172 passed, 1 skipped**.
+- **#158** head `b00a0558a51bc3daa5ddd42808268d5038c26d7a`, base #140: ten-minute monotonic total download deadline with bounded streaming reads/retries. CI **44051271731**, job **133929411739**: **176 passed, 1 skipped**.
+
+The chain must be integrated in order #137 → #138 → #139 → #140 → #158. #139 alone still performs CRC scanning before the path/size checks; #140 is the safety follow-up and should not be dropped or merged separately from its parent.
+
+### Upload-memory and uint16 evidence stack
+
+- **#160** head `a99fa75820e854363fe42eb7bad439dc4599e1a1`, base main: incremental source hashing, reduced integer-image QC/normalization copies. CI **43944175091**, job **133569276511**: **154 passed, 1 skipped**; analyzer/MCP/web/failure-cleanup validation succeeded; checkpoint worker **43944175257**, job **133571225523** succeeded with 8 specialists and cgroup peak **281,657,344 bytes** (runner-only).
+- **#161** head `0cbf1d115131c92919f6677f474e89a789b3ce47`, base #160: stream FastAPI spooled upload to job storage in bounded 1 MiB reads, enforce size during copy, clean partial directories, copy in threadpool. CI **43991350039**, job **133732431732**: **159 passed, 1 skipped**; validation succeeded; checkpoint worker **43991349979**, job **133732431915**: 8 specialists, peak **280,932,352 bytes** (runner-only).
+- **#171** head `63e697137a0e61d1427cfe52f61433a41f664f6e`, base main: tests raw uint16 min/max/dynamic range in checkpoint-worker and intensity-specialist evidence. CI **44627587406**, job **135925420136**: **146 passed, 1 skipped**. Checkpoint worker **44627587381**, job **135939719395** failed the 470 MiB safety target: hard cgroup limit 503,316,480 bytes and peak reached **503,316,480 bytes**. It completed the 8 specialists and reported raw_min=512, raw_dynamic_range=65023 before memory-gate failure; no artifacts were retained.
+- **#172** head `982a04d44c9d23775cc1588e5be8d52814d2d9b5`, base main: build the production community image and apply thread-pool limits for the constrained-memory worker. CI **44649655608**, job **136001048765**: **149 passed, 1 skipped**; web/MCP/community validation passed. Worker **44649655475**, job **136002932667** succeeded; cgroup peaks **447,467,520** and **436,334,592 bytes**, below 470 MiB (492,830,720 bytes). Eight specialist outputs completed. Runner-only, no public inference.
+
+### Safe checkpoint deserialization and recipe
+
+- **#174** head `cd3a14a7c7d994a6d41004cf78c3f63f2af003f4`, base main: optional initial checkpoint load uses `weights_only=True`, validates model state. CI **44747521522**, job **136326561315**: **148 passed, 1 skipped**.
+- **#175** head `2b3afbe9ebeaa312734f6e78098934480589360d`, base main: weights-only loads in research evaluators and E6 workflow checkpoint reads. CI **44814708387**, job **136559915307**: **147 passed, 1 skipped**.
+- **#165** head `2cd2c19878cdec12aac96d75fbac18800f440857`, base main: E5 release checkpoint verifier uses `weights_only=True`. CI **44068204912**, job **133987309242**: **146 passed, 1 skipped**.
+- **#167** head `430fb3fa8d8dc48fec4f78f6923238e5831103fd`, base #162 head: rejects baseline checkpoint metadata that disagrees with committed recipe, including observed 20-epoch artifact vs canonical 100-epoch config. CI **44226925512**, job **134542237067**: **182 passed, 1 skipped**.
+- **#164** head `38276e72f74fc082f99d802a9aec96ca3e763e58`, base #151 head: records actual E5 source-training provenance instead of incorrectly classifying source-only runs as target-adaptation/few-shot. CI **44087904433**, job **134055080657**: **173 passed, 1 skipped**. No fresh E5 research run on this exact head.
+
+All listed PR CI jobs were successful at their exact head SHAs; artifacts were empty except logs. Checkpoint-worker results are runner evidence only. Node.js 20 deprecation warnings appear in GitHub Actions logs because actions are being forced to Node.js 24; this is maintenance risk, not a test failure.
+
+### Integration and milestone disposition
+
+- #144 health contract, #133/#145/#163 health readiness/deadline stack, and #92 watchdog gate are complementary. Live Render health/SHA/checkpoint identity is still unverified.
+- #137–#140/#158 download chain is additive and must be reconciled in dependency order; no dataset artifacts were retained in PR runs.
+- #160/#161 upload memory changes are stacked and both checkpoint-worker runs succeeded under runner cgroup accounting; no public upload occurred.
+- #171's memory failure was reproduced in complete logs and addressed by #172's production-image/thread-limits worker success, but neither is deployed.
+- #174/#175/#165 safe loaders overlap distinct checkpoint-loading sites; combine rather than cherry-pick only one.
+- M0 remains **partial/not accepted**. The 99 exact head/base snapshot is in the tracker, but full diff/check/log/artifact audits for all 99 open PRs are not complete. M1–M7 remain unaccepted; no live Render/public E2E/research/BioMCP proof.
+
+### Next safe action
+
+Continue M0 with remaining PR audit batches, then build a clean additive integration branch only after the baseline is reproducible. No merges/deploys or public E2E dispatch without explicit authorization and independently verified deployed runtime/checkpoint.
