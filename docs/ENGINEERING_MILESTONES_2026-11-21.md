@@ -225,3 +225,26 @@ This batch adds concrete dependency/security review to the prioritized baseline,
 
 Continue M0 in the next batch with the parity/checkpoint branch dependencies and research provenance PRs (#149/#169/#173/#177), focusing on stale stacked bases and exact baseline/checkpoint identity. Avoid merging duplicates or advancing M1 before the baseline exit criteria are met.
 
+## M0 research-provenance PR audit — 2026-11-21 20:39 IST
+
+This batch reviewed exact-head workflow/script/test changes and historical CI logs for PRs #149, #169, #173, #177, and #176. The scientific runs/artifacts are not fresh current-main reproduction evidence.
+
+- **#149 baseline provenance validator** — head `2757687746e96ddb283c062379399edbcbe1a203`, base main. Reviewed `scripts/validate_bbbc039_baseline.py`, `scripts/evaluate_s_biad634.py`, workflow, and tests. The validator checks repository/workflow/run identity, main branch, success/event, baseline SHA, GitHub compare ancestry/merge-base/head, non-truncated commit/file lists, changed training-input paths (unknown paths fail closed), and exact non-expired baseline artifact identity/digest. Historical CI [43743535495](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43743535495) passed **160 tests, 1 skipped**.
+- **#169 exact-main baseline/checkpoint recipe** — head `6183cf907381880204e94640e2fb4db989cf07e7`, base main. Reviewed baseline and zero-shot workflow, checkpoint verifier, and training-recipe tests. The baseline workflow is main-triggered and uses 100 epochs by default; checkpoint metadata must match committed config/seed/epoch recipe. Zero-shot selection requires the exact current-main run and checkout and verifies the recipe with weights-only checkpoint loading. Historical CI [44664121649](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44664121649) passed **152 tests, 1 skipped**.
+- **#173 E5 training provenance** — head `5819fe1cda8b63327099b32450502f60cf049678`, base main. Reviewed `e5_run_ablation.py`, `train_domain_robust.py`, E5 workflow, preregistration and tests. Each variant hashes source split/acquisition, target manifest, config, checkpoint, method record and metrics; checks target data is not used for training, 79 target metrics, fixed seed/epochs, and cross-variant source/target/training identity. Source/target acquisition canonicalization removes download timestamps only. Historical CI [44822792979](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44822792979) passed **155 tests, 1 skipped**.
+- **#177 S-BIAD634 target provenance** — head `b7f5c347ca056fdae397e851f2de116de696b520`, stacked on #169 head `6183cf907381880204e94640e2fb4db989cf07e7`. Reviewed workflow and test. It binds target dataset identity, download manifest/archive digest, file inventory, 79-image metrics, evaluator/instance-metrics scripts, baseline config/verifier, and asserts the provenance binding happens after evaluation and before artifact upload. Historical CI [44832437317](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44832437317) passed **153 tests, 1 skipped**.
+- **#176 E5 test-helper follow-up** — head `989dba4488f58debc5d9f6c8844769387e475680`, based on `b7cd8867a42479d6617bd0b5358c831345dd2aaf`, not the current #173 head `5819fe1cda8b63327099b32450502f60cf049678`. Historical CI [44795654485](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44795654485) passed **155 tests, 1 skipped**; however, the stale stacked base must be reconciled before relying on it as the final integrated revision.
+- **Dependency/duplication finding:** #149 and #169 both modify the zero-shot workflow but provide different complementary baseline-integrity mechanisms; #177 is stacked on #169. #173 is a main-based training-provenance branch; #176 is stale relative to its parent. Reconcile these in one clean integration and rerun CI instead of merging overlapping PRs independently. No scientific result was re-created here.
+
+### M0 disposition
+
+This source/CI batch improves the prioritized baseline, but M0 is **not accepted**. All 99 PRs have not been fully audited; complete Actions pagination and fresh signature verification are unavailable. Exact-main research artifacts have not been freshly generated.
+
+### Tracker-head verification
+
+The tracker branch now points to commit `7f51531486696d76219b49e1a58d73085eb394e6`. The connector returned no PR-associated workflow run for this new commit and no legacy commit status. The earlier green tracker CI [44915954649](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44915954649) was on prior head `874a25e37d0a384a74b13eb581d1643a9afe9a97`, not this updated head. The new tracker commit therefore has **no verified exact-head CI result**.
+
+### Next safe action
+
+Continue M0 by auditing the remaining open-PR inventory and reconciling the overlapping research-provenance stacks. Keep M1 changes and public E2E blocked until M0 is complete and runtime SHA/checkpoint pin are independently verified.
+
