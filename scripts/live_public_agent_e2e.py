@@ -24,9 +24,9 @@ from pypdf import PdfReader
 from playwright.sync_api import sync_playwright
 
 try:
-    from scripts.e2e_health_state import clear_recovered_health_errors
+    from scripts.e2e_health_state import record_health_response, record_health_request_error
 except ModuleNotFoundError:  # Support direct execution of the E2E script.
-    from e2e_health_state import clear_recovered_health_errors
+    from e2e_health_state import record_health_response, record_health_request_error
 
 SITE_URL = os.environ.get(
     "BIONUCLEI_PUBLIC_SITE_URL",
@@ -273,21 +273,24 @@ def main() -> None:
                         attempt_record["error"] = "ReadinessBudgetExceeded"
                         health_attempts.append(attempt_record)
                         state["api_health_attempts"] = health_attempts
-                        state["api_health_request_error"] = "ReadinessBudgetExceeded"
+                        record_health_request_error(state, "ReadinessBudgetExceeded")
                         health_response = None
                         break
+                    record_health_response(
+                        state,
+                        health_response.status_code,
+                        health_response.text[:240],
+                    )
                     if health_response.status_code == 200:
-                        clear_recovered_health_errors(state)
                         attempt_record["result"] = "http_200"
                         health_attempts.append(attempt_record)
                         state["api_health_attempts"] = health_attempts
                         break
-                    attempt_record["body_excerpt"] = health_response.text[:240]
-                    state["api_health_body"] = health_response.text[:240]
+                    attempt_record["body_excerpt"] = state["api_health_body"]
                 except requests.RequestException as exc:
                     attempt_record["error"] = type(exc).__name__
                     attempt_record["elapsed_seconds"] = round(time.monotonic() - attempt_started, 3)
-                    state["api_health_request_error"] = type(exc).__name__
+                    record_health_request_error(state, type(exc).__name__)
                 health_attempts.append(attempt_record)
                 state["api_health_attempts"] = health_attempts
                 remaining = deadline - time.monotonic()
