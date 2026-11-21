@@ -304,3 +304,67 @@ M0 remains incomplete. This batch added prioritized source and runner evidence b
 
 The completion note above was added after run 44918465097 finished. Its successful test result applies to commit `af4dab4cc7337bbb59163f54dc6db1f4ca233c8a`, not the current tracker commit created by this note. The connector still does not expose Actions check-run listing for this current head.
 
+## Fresh Actions pagination and exact-main runtime audit — 2026-11-21 22:16 IST
+
+This update refreshes the accessible GitHub Actions pagination and latest exact-main runtime evidence. No Render workspace/service was inspected and no public E2E was manually dispatched.
+
+### Main identity and signature
+
+- Main SHA: `d4a653e94501e8b9f1ec9de09ff71720f90ab340`.
+- GitHub REST commit object was freshly fetched. Signature verification: `verified=true`, `reason=valid`, verified at `2026-10-24T07:08:31Z`. This signed commit is unchanged.
+- Open PR inventory: **99**, refreshed from `GET /pulls?state=open&per_page=100&page=1`; exact head/base metadata returned for all 99. Full patch/check/log/artifact review of every PR remains incomplete.
+
+### Actions pagination
+
+- Branch=main: total_count **2,500**; pages 1–10 returned 100 each; page 11 returned 0. **1,000 records accessible** in this query; total_count exceeds accessible results. Page 1 contains newest main runs, including E2E #294 and watchdog below.
+- Event=schedule: total_count **596**; pages 1–5 returned 100 each, page 6 returned 96, page 7 returned 0. **596 records enumerated**.
+- Exact current-main SHA: total_count **490**; pages 1–4 returned 100 each, page 5 returned 90, page 6 returned 0. **490 records enumerated**.
+
+These are fresh REST inventories with page counts and boundaries; the branch=main query is truncated by the accessible-page boundary and is not a complete 2,500-run audit.
+
+### Latest exact-main E2E #294 — failed safely before upload
+
+- Run **44920455705**, job **136895133329**, main SHA above; workflow_dispatch, completed failure.
+- Site preflight HTTP 200. Health attempts 1–4 timed out; attempt 5 returned HTTP 200. The final state still retained `api_health_request_error=ReadTimeout`.
+- Current-main GitHub commit API returned HTTP 200 in this run; the earlier 403 was not reproduced.
+- Render branch main, deployed SHA `bb6a9d27537e12b85768c7fead1467253b2423ba`; comparison HTTP 200, status `ahead`, parity false. Runtime-diff list includes three non-shipped script paths plus genuine shipped mismatches `webapp/community.py` and `webapp/community_app.py`.
+- `guest_token_seen=false`, `job_id_seen=false`, `cleanup_attempted=false`; no upload, inference, specialists, report or deletion verification occurred.
+
+Failure artifact **14713328852**:
+- ZIP size 1,052 bytes, SHA-256 `7668c9bce879827cfb2d876acc3f64025adec4f44516c82b773c4cf04d244c37` (matches the upload log digest).
+- Extracted `live-agent-e2e-failure.json`, 2,807 bytes, SHA-256 `6fabd1636c3263c86c1c78b433829cea1cffc33c6f669f85ffa55ac5b7b4bbe3`; ZIP unpack and JSON parsing succeeded.
+
+### Watchdog #? — dispatch accepted
+
+- Run **44920438929**, job **136895080077**, scheduled watchdog succeeded.
+- Complete job log: latest E2E age **15,372 seconds**; it accepted a dispatch of the existing E2E workflow for current main.
+- The current-main watchdog uses freshness/SHA logic only; it does not preflight deployed Render SHA or checkpoint verification. This is a concrete M1 safety gap. The dispatched E2E #294 failed the unchanged parity guard before upload.
+- No watchdog artifact was attached.
+
+### Release monitor #370 — monitor healthy, release blocked
+
+- Run **44916557550**, job **136883314106**, completed successfully as a monitor.
+- Artifact **14711388375**, ZIP 1,199 bytes, SHA-256 `42552f5bbdbf2e7101e52dd4566085869a64ae396ddbe179952ddd658e61b5d0` (matches the upload log).
+- Extracted `release_status.json`, 2,765 bytes, SHA-256 `42a4e6fe1a7733b622bfb27b65e9587887650795da14e1e7f234a1fa7450de2`; parsed successfully.
+- Status `BLOCKED`, `release_ready=false`. Frozen E4 checkpoint artifact **12183110279** lookup returned HTTP 404. E6/E7/uncertainty artifacts remain linked to old source run IDs; clean reproduction is also old, not exact-main freshness evidence.
+
+### PR #178 tracker validation
+
+- PR head remains `3d4a8e3c0c28b1d315b06319c44fd6329ea543a4`, base exact main.
+- CI run **44918701139**, job **136889777268**, exact-head successful; `145 passed, 1 skipped`.
+- This validates the tracker head as documentation/test CI only, not application runtime or scientific reproduction.
+
+### M0 and M1 disposition
+
+M0 remains **not accepted**: Actions pagination is now reproducible within the accessible boundary, and 99 open PR head/base SHAs were refreshed, but complete PR patches/checks/logs/artifacts and the truncated branch=main run history are not audited.
+
+M1 remains **not accepted**: main still has the PR-trigger public upload-job risk (PR #103's main-only guard is verified on its branch, not main); the watchdog lacks a deployed-runtime/checkpoint pre-dispatch gate; Render runtime is stale; the exact main health contract does not prove immutable checkpoint verification. The two shipped webapp mismatches remain behind the strict parity guard.
+
+### Evidence tiers and next action
+
+- **Repository/API evidence:** main SHA/signature, Actions page counts, PR metadata, workflow source.
+- **CI evidence:** #178 tests passed on its exact PR head.
+- **Runner artifact evidence:** E2E failure/release-monitor artifacts were downloaded, unpacked, hashed and parsed; neither proves inference.
+- **Public inference:** **not demonstrated**.
+
+Next safe task: finish the prioritized PR audit (#103/#92/#105/#146/#150 and provenance stacks), then reconcile a clean additive runtime branch. Keep public upload blocked by stale runtime/checkpoint and parity. No merge/deploy authorization is assumed. Deadline risk remains **high**.
