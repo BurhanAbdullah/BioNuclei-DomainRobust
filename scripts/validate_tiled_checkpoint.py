@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import shutil
 import tempfile
 import time
 import zipfile
@@ -50,6 +52,222 @@ def build_fixture(path: Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def resolve_revision_provenance(
+    event_name: str,
+    workflow_sha: str,
+    event_payload: dict[str, object] | None = None,
+) -> dict[str, str | None]:
+    """Distinguish the PR source/base commits from the commit actually tested.
+
+    On pull_request events GitHub sets GITHUB_SHA to the synthetic merge
+    commit. The event payload carries the source head and target base SHAs.
+    For push/workflow_dispatch, GITHUB_SHA is both the source and tested SHA.
+    """
+    if not _GIT_SHA_RE.fullmatch(workflow_sha):
+        raise ValueError("GITHUB_SHA must be a full lowercase 40-character commit SHA")
+
+    if event_name == "pull_request":
+        if not isinstance(event_payload, dict):
+            raise ValueError("pull_request event payload is required for revision provenance")
+        pull_request = event_payload.get("pull_request")
+        if not isinstance(pull_request, dict):
+            raise ValueError("pull_request event payload is missing pull_request metadata")
+        head = pull_request.get("head")
+        base = pull_request.get("base")
+        head_sha = head.get("sha") if isinstance(head, dict) else None
+        base_sha = base.get("sha") if isinstance(base, dict) else None
+        if not isinstance(head_sha, str) or not _GIT_SHA_RE.fullmatch(head_sha):
+            raise ValueError("pull_request event payload has no valid source head SHA")
+        if not isinstance(base_sha, str) or not _GIT_SHA_RE.fullmatch(base_sha):
+            raise ValueError("pull_request event payload has no valid target base SHA")
+        return {
+            "event_name": event_name,
+            "head_sha": head_sha,
+            "base_sha": base_sha,
+            "tested_sha": workflow_sha,
+        }
+
+    return {
+        "event_name": event_name or "unknown",
+        "head_sha": workflow_sha,
+        "base_sha": None,
+        "tested_sha": workflow_sha,
+    }
+
+
+def validation_revision_provenance() -> dict[str, str | None]:
+    """Resolve exact source and tested revisions from the GitHub Actions event."""
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    workflow_sha = os.environ.get("GITHUB_SHA", "")
+    event_payload = None
+    if event_name == "pull_request":
+        event_path = os.environ.get("GITHUB_EVENT_PATH", "").strip()
+        if not event_path:
+            raise ValueError("GITHUB_EVENT_PATH is required for pull_request provenance")
+        try:
+            event_payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("cannot read pull_request event payload for revision provenance") from exc
+        if not isinstance(event_payload, dict):
+            raise ValueError("pull_request event payload must be a JSON object")
+    return resolve_revision_provenance(event_name, workflow_sha, event_payload)
+
+
+def persist_validation_evidence(
+    evidence_dir: Path,
+    temporary_root: Path,
+    archive_path: Path,
+    result_path: Path,
+    specialist_path: Path,
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    """Persist only verified derived outputs outside disposable worker storage."""
+    output_dir = evidence_dir.expanduser().resolve()
+    temp_root = temporary_root.resolve()
+    require(
+        output_dir != temp_root and temp_root not in output_dir.parents,
+        "Validation evidence must be stored outside disposable job storage",
+    )
+    require(manifest.get("source_image_excluded") is True,
+            "Refusing to persist evidence without verified source-image exclusion")
+    require(manifest.get("checkpoint_unchanged") is True,
+            "Refusing to persist evidence without checkpoint integrity verification")
+    require(manifest.get("specialist_count") == 8,
+            "Refusing to persist evidence without all eight specialists")
+    require(manifest.get("public_inference") is False,
+            "Runner evidence must never be labeled as public inference")
+
+    if output_dir.exists():
+        require(output_dir.is_dir() and not any(output_dir.iterdir()),
+                "Validation evidence directory must be empty")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    sources = {
+        "analysis-results.zip": archive_path,
+        "results.json": result_path,
+        "expert_agents.json": specialist_path,
+    }
+    file_entries: dict[str, dict[str, object]] = {}
+    for name, source in sources.items():
+        require(source.is_file() and source.stat().st_size > 0,
+                f"Cannot persist missing or empty validation output: {name}")
+        destination = output_dir / name
+        shutil.copyfile(source, destination)
+        source_digest = sha256_file(source)
+        copied_digest = sha256_file(destination)
+        require(copied_digest == source_digest,
+                f"Persisted validation output failed SHA-256 readback: {name}")
+        file_entries[name] = {
+            "sha256": copied_digest,
+            "size_bytes": destination.stat().st_size,
+        }
+
+    payload = {**manifest, "files": file_entries}
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "manifest_sha256": sha256_file(manifest_path),
+        "files": file_entries,
+    }
+
+
+_REQUIRED_RESULT_ARCHIVE_ENTRIES = frozenset({
+    "results/analysis_report.html",
+    "results/analysis_report.json",
+    "results/analysis_report.pdf",
+    "results/measurements.csv",
+    "results/results.json",
+    "results/expert_agents.json",
+    "results/nuclei_analysis.csv",
+    "results/segmentation_mask.tif",
+    "results/overlay.tif",
+    "results/provenance.json",
+})
+_FORBIDDEN_SOURCE_BASENAMES = frozenset({
+    "input.tif",
+    "input.tiff",
+    "input.nd2",
+    "input_plane.tif",
+})
+
+
+def validate_result_archive(
+    archive_path: Path,
+    source_filename: str,
+    source_sha256: str,
+) -> list[str]:
+    """Require complete outputs and exclude the source by name and exact bytes."""
+    require(
+        bool(re.fullmatch(r"[0-9a-f]{64}", source_sha256)),
+        "source SHA-256 must be a lowercase 64-character hex digest",
+    )
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            entries = archive.infolist()
+            seen_names: set[str] = set()
+            duplicate_names: set[str] = set()
+            for entry in entries:
+                if entry.filename in seen_names:
+                    duplicate_names.add(entry.filename)
+                seen_names.add(entry.filename)
+            require(
+                not duplicate_names,
+                f"ZIP contains duplicate entries: {sorted(duplicate_names)}",
+            )
+            names = seen_names
+            missing = sorted(_REQUIRED_RESULT_ARCHIVE_ENTRIES - names)
+            require(not missing, f"ZIP missing required artifacts: {missing}")
+
+            by_name = {entry.filename: entry for entry in entries}
+            empty = sorted(
+                name
+                for name in _REQUIRED_RESULT_ARCHIVE_ENTRIES
+                if by_name[name].file_size <= 0
+            )
+            require(not empty, f"ZIP contains empty required artifacts: {empty}")
+            corrupt = archive.testzip()
+            require(corrupt is None, f"ZIP contains a corrupt entry: {corrupt}")
+
+            forbidden = set(_FORBIDDEN_SOURCE_BASENAMES)
+            source_basename = source_filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if source_basename:
+                forbidden.add(source_basename)
+            leaked = sorted(
+                name
+                for name in names
+                if name.replace("\\", "/").rsplit("/", 1)[-1].lower() in forbidden
+            )
+            require(not leaked, f"ZIP contains the uploaded source image or extracted source plane: {leaked}")
+
+            # Filename checks cannot detect a source image renamed to an arbitrary
+            # archive member. Compare every member's uncompressed bytes to the
+            # exact uploaded fixture digest without loading large files at once.
+            byte_matches: list[str] = []
+            for entry in entries:
+                if entry.is_dir():
+                    continue
+                digest = hashlib.sha256()
+                with archive.open(entry, "r") as member:
+                    for chunk in iter(lambda: member.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                if digest.hexdigest() == source_sha256:
+                    byte_matches.append(entry.filename)
+            require(
+                not byte_matches,
+                f"ZIP contains uploaded source image bytes under an arbitrary filename: {byte_matches}",
+            )
+            return sorted(names)
+    except zipfile.BadZipFile as exc:
+        raise AssertionError("Result archive is not a valid ZIP") from exc
 
 
 def main() -> None:
@@ -178,6 +396,7 @@ def main() -> None:
                 "analysis_report.html",
                 "analysis_report.json",
                 "analysis_report.pdf",
+                "provenance.json",
             ]
             for name in required_files:
                 path = community.get_file(job_id, owner, name)
@@ -185,28 +404,7 @@ def main() -> None:
                         f"Required scientific artifact is missing or empty: {name}")
 
             archive_path = community.get_archive(job_id, owner)
-            with zipfile.ZipFile(archive_path) as archive:
-                names = set(archive.namelist())
-                required_zip = {
-                    "results/analysis_report.html",
-                    "results/analysis_report.pdf",
-                    "results/results.json",
-                    "results/expert_agents.json",
-                    "results/nuclei_analysis.csv",
-                    "results/segmentation_mask.tif",
-                    "results/overlay.tif",
-                }
-                require(required_zip.issubset(names),
-                        f"ZIP missing required artifacts: {sorted(required_zip - names)}")
-                forbidden = {
-                    "input.tif",
-                    "input.tiff",
-                    "input.nd2",
-                    "input_plane.tif",
-                    fixture.name,
-                }
-                require(not any(Path(name).name in forbidden for name in names),
-                        "ZIP contains the uploaded source image or extracted source plane")
+            names = set(validate_result_archive(archive_path, fixture.name, fixture_sha))
 
             job_dir = community._job_dir(job_id)
             require(not (job_dir / "input.tif").exists(),
@@ -215,28 +413,49 @@ def main() -> None:
             require(after_sha == before_sha,
                     f"Checkpoint bytes changed during analysis: before={before_sha}, after={after_sha}")
 
-            print(json.dumps({
-                "status": "PASS",
-                "job_id": job_id,
-                "job_timeline": timeline,
-                "fixture_sha256": fixture_sha,
-                "checkpoint_sha256_before": before_sha,
-                "checkpoint_sha256_after": after_sha,
-                "image_shape": profile.get("shape"),
-                "image_dtype": profile.get("dtype"),
-                "raw_min": profile.get("min"),
-                "raw_max": profile.get("max"),
-                "raw_dynamic_range": profile.get("max") - profile.get("min"),
-                "measured_max_nuclear_intensity": intensity.get("max_nuclear_intensity"),
-                "specialist_count": len(agents),
-                "specialists": [
-                    {"agent": a.get("agent"), "status": a.get("status"), "evidence_sha256": a.get("evidence_sha256")}
-                    for a in agents
-                ],
-                "zip_artifacts": sorted(names),
-                "source_image_excluded": True,
-                "checkpoint_unchanged": True,
-            }, indent=2, sort_keys=True))
+            evidence_dir_raw = os.environ.get("BIONUCLEI_VALIDATION_EVIDENCE_DIR", "").strip()
+            if evidence_dir_raw:
+                evidence_manifest = {
+                    "schema_version": 2,
+                    "evidence_scope": "github_actions_checkpoint_validation_runner_only_not_public_inference",
+                    "run_id": os.environ.get("GITHUB_RUN_ID"),
+                    "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+                    **validation_revision_provenance(),
+                    "fixture_sha256": fixture_sha,
+                    "checkpoint_sha256_before": before_sha,
+                    "checkpoint_sha256_after": after_sha,
+                    "image_shape": profile.get("shape"),
+                    "image_dtype": profile.get("dtype"),
+                    "raw_min": profile.get("min"),
+                    "raw_max": profile.get("max"),
+                    "raw_dynamic_range": profile.get("max") - profile.get("min"),
+                    "measured_max_nuclear_intensity": intensity.get("max_nuclear_intensity"),
+                    "specialist_count": len(agents),
+                    "specialists": [
+                        {
+                            "agent": agent.get("agent"),
+                            "status": agent.get("status"),
+                            "evidence_sha256": agent.get("evidence_sha256"),
+                        }
+                        for agent in agents
+                    ],
+                    "zip_entries": sorted(names),
+                    "source_image_excluded": True,
+                    "checkpoint_unchanged": True,
+                    "public_upload_attempted": False,
+                    "public_inference": False,
+                }
+                persisted = persist_validation_evidence(
+                    Path(evidence_dir_raw),
+                    root,
+                    archive_path,
+                    result_path,
+                    artifact_path,
+                    evidence_manifest,
+                )
+                print(json.dumps({"validation_evidence_persisted": persisted}, indent=2, sort_keys=True))
+
+
         finally:
             if job_id:
                 try:
