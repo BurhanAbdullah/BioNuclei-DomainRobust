@@ -86,3 +86,52 @@ Exact-head CI could not be retrieved: the PR-head workflow-run lookup returned a
 ## Deadline risk and next action
 
 The 2027-01-01 target remains **high risk**. Prioritize verifying CI for updated PR #150, then review the existing fail-closed watchdog/checkpoint stack (#92/#105/#146) against the exact current sources. Keep automated public E2E dispatch paused in the PR branch. Do not inspect Render or merge/deploy without authorization.
+
+## Fresh audit — 2026-11-22 04:14 IST
+
+This follow-up supersedes the latest-run/Actions-page snapshot above only where new evidence is listed. The full PR audit remains incomplete.
+
+### Main identity
+
+- Main remains `d4a653e94501e8b9f1ec9de09ff71720f90ab340`.
+- Fresh commit API verification: `verified=true`, `reason=valid`; `verified_at=2026-10-24T07:08:31Z`. This is the current unchanged commit, freshly re-fetched and verified.
+
+### Actions pagination refreshed
+
+- Branch `main`: pages 1–10 returned 100 records each; page 11 returned 0. API `total_count=2500`, but only 1,000 records were returned by the accessible page sequence; do not treat this as a complete 2,500-run inventory.
+- Event `schedule`: pages 1–5 returned 100 records each, page 6 returned 99; `total_count=599`. All populated pages were refreshed.
+- Exact current-main SHA: pages 1–4 returned 100 each, page 5 returned 94; `total_count=494`. All populated pages were refreshed.
+- Open PR listing: 99 PRs returned on the first page. Exact head/base metadata was refreshed; complete diff/check/log/artifact review of all 99 is not complete.
+
+### Latest exact-main E2E and watchdog
+
+- E2E #299, run [44950482311](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44950482311), event `workflow_dispatch`, exact main, failed in job `136987088691`. The full 47,163-character job log and artifact were inspected.
+- Render reports branch `main`, SHA `bb6a9d27537e12b85768c7fead1467253b2423ba`, while current main is `d4a653e94501e8b9f1ec9de09ff71720f90ab340`. Runtime parity is false; the diagnostic lists five paths: three scripts not copied to the image and the genuine shipped mismatches `webapp/community.py` and `webapp/community_app.py`.
+- Health attempts 1–4 timed out; attempt 5 returned HTTP 200. Diagnostic still has `api_health_request_error=ReadTimeout`. `checkpoint_available=true` is not checkpoint digest verification. `guest_token_seen=false`, `job_id_seen=false`, `cleanup_attempted=false`; upload/inference was not reached.
+- Failure artifact #14724819791 was downloaded, ZIP integrity checked, extracted and JSON parsed. ZIP SHA-256: `332a292c6ed8036a8d7ef0351594cf5362b2c09aa0e69de151c978e559f7f677`. Extracted JSON SHA-256: `dc4274f9c1e4be1bacea2a8380e8442d7c5dde44f0436f1c267c7ca854789559`. JSON size 2,807 bytes; no image was present.
+- Watchdog #127, run [44950471453](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44950471453), job `136987053452`, succeeded. Full log records E2E age `6338` seconds and an accepted dispatch. Main still has the scheduled watchdog and E2E triggers; PR #150's pause is unmerged. This is a concrete safety blocker requiring merge authorization, not a reason to dispatch manually.
+
+### PR #150 exact-head CI
+
+- Head `2a4f94493a33f47d91315c6646365daf3bc89534`, base current main.
+- CI run [44953480644](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953480644), job `136996350200`: **153 passed, 1 skipped, 21 subtests passed**.
+- Offline E2E validation run [44953480581](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953480581), job `136996350049`: passed; public upload job `136996351197` skipped.
+- Watchdog validation run [44953480651](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953480651), job `136996350389`: passed.
+- These are PR CI/offline-harness results, not public upload/inference evidence.
+
+### PR #178 baseline tracker validation
+
+- PR #178 exact head `90bbf8af0374ad5f5c1830e3abd0643f5174512f`, base current main. Existing baseline docs were reread at this head before this update.
+- CI run [44953702964](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953702964), job `136997036694`: **145 passed, 1 skipped**. A second test run [44953697267](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953697267), job `136997019393`, also reported **145 passed, 1 skipped**. These checks validate the current pre-update PR head only; new-head CI is pending after this documentation update.
+
+### Evidence tier and gate
+
+- **Repository/API:** exact main and signature verification, Actions page metadata, PR metadata and patches.
+- **CI/runner:** E2E #299 preflight failure, watchdog dispatch, PR #150 CI, and PR #178 CI. No public inference.
+- **Public upload/inference:** none. **Deployment:** not inspected.
+- **M0:** still partial; Actions populated pages refreshed, but full per-PR diff/check/log/artifact audit is unfinished.
+- **M1:** not accepted; stale runtime, parity, watchdog dispatch and checkpoint pin are unresolved on deployed main.
+- **M2–M7:** not accepted.
+- **Deadline:** high risk for 2027-01-01; integration and authorized deployment/public validation remain critical-path blockers.
+
+Next safe work: audit the existing #103 authenticated API and #92 fail-closed gate at exact heads, and reconcile the #105/#146 checkpoint stack without merging or touching Render. Do not manually dispatch public E2E while runtime identity is stale/unverified.
