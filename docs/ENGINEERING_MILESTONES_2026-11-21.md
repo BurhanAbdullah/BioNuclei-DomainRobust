@@ -368,3 +368,51 @@ M1 remains **not accepted**: main still has the PR-trigger public upload-job ris
 - **Public inference:** **not demonstrated**.
 
 Next safe task: finish the prioritized PR audit (#103/#92/#105/#146/#150 and provenance stacks), then reconcile a clean additive runtime branch. Keep public upload blocked by stale runtime/checkpoint and parity. No merge/deploy authorization is assumed. Deadline risk remains **high**.
+
+## Prioritized runtime-stack exact-head review — 2026-11-21 22:16 IST
+
+Full patches were fetched for #92, #103, #105, #146, and #150; their relevant source/workflow/test changes were reviewed. Exact head/base metadata, associated workflow runs, job steps, logs, and artifact lists were refreshed for this selected stack. This is not a full 99-PR audit.
+
+### #92 — watchdog pre-dispatch health/SHA/checkpoint gate
+
+- Head 838b89d51cae3db2171bc67b0c2389c043b34122, base main d4a653e94501e8b9f1ec9de09ff71720f90ab340.
+- CI run 43437830508, job 131927398126: 165 passed, 1 skipped, 7 subtests passed.
+- Watchdog validation run 43437830689, job 131927398351, succeeded. Tests exercise current/stale/unverified runtime, checkpoint pin, API server time, bounded health retry, and dispatch decisions. Recovery-dispatch job 131927400708 was skipped on PR validation.
+- Source review confirms pre-dispatch health requires main branch, healthy status, available and verified checkpoint, expected immutable digest, and valid 40-character Render SHA. Dispatch decisions compare deployed SHA to current main. Missing health/server time fails closed.
+- Artifact lists for both runs: empty. Runner/PR validation only.
+
+### #103 — public-upload main-only guard and authenticated GitHub REST checks
+
+- Head 5372d812304eb3612dc7890e1f03ee9361e5c423, base main.
+- CI 41231538021, job 124626597239: 148 passed, 1 skipped.
+- E2E validation 41231537964: offline harness compile succeeded; public-upload job 124626868453 skipped. Artifacts: none.
+- Full patch confirms PRs compile offline; public upload is restricted to upstream main; GitHub REST commit/compare requests use a read-only Bearer token, which is not sent to Render.
+- Guard/auth fix remains unmerged; current main workflow still has the PR-trigger public-upload risk.
+
+### #105 — immutable checkpoint health pin
+
+- Head 1d4726b430da933180d2c2744ec564a442c09b96, base main.
+- CI 43421687985, job 131872961675: 158 passed, 1 skipped.
+- Tiled checkpoint validation 43421687940, job 131876422471: succeeded. Download/digest check, community startup health pin, real checkpoint worker, and constrained-memory validation steps passed. Worker log shows two 480 MiB-capped attempts with peaks 463,335,424 and 455,524,352 bytes, under the 470 MiB safety ceiling. It built an isolated validation image, not the production community image.
+- Community/API validation run 43421687953 and BioMCP/web validation 43421688067 also succeeded; public E2E run 43421688000 was skipped.
+- Patch review confirms health reports actual checkpoint digest and verification status; inference fails closed on mismatch. Environment digest override must still match the source-controlled release pin. All PR artifacts: none.
+
+### #146 — sealed verified checkpoint snapshot
+
+- Head 7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433, base PR #105 head 1d4726b430da933180d2c2744ec564a442c09b96.
+- CI 44900605180, job 136835494093: 163 passed, 1 skipped.
+- Checkpoint worker 44900605055, job 136836858514, succeeded. It builds the production community image; two 480 MiB-capped attempts peaked at 450,338,816 and 442,347,520 bytes, below the 470 MiB ceiling. Checkpoint SHA remained unchanged and all eight specialists completed.
+- Patch review confirms inference consumes a second SHA-256-verified anonymous memfd snapshot with write/grow/shrink/seal protections, rather than the mutable pathname. Artifacts: none. Runner evidence only.
+
+### #150 — Docker-input-aware runtime parity
+
+- Head ed314fca17ba7a5dd7848c39e8410b27dea46185, base main.
+- CI 44210719937, job 134488047196: 152 passed, 1 skipped, 29 subtests passed.
+- Offline harness run 44210719925, job 134488047613, succeeded with seven classifier/workflow tests; public upload job 134488049712 skipped. Artifacts: none.
+- Full patch review confirms only paths proven not copied into the Render images are excluded, unknown paths fail closed, Docker COPY/ADD inputs are allowlisted, and runtime build inputs trigger the parity workflow. Real webapp/community.py and webapp/community_app.py mismatches remain gated.
+
+### Integration finding
+
+These PRs are complementary, not individually mergeable as one tested stack. #103 and #150 overlap the E2E workflow/script; #105 introduces the health checkpoint contract; #146 is stacked on #105; #92 requires that health contract and suppresses dispatch when Render is stale/unverified. The safe sequence is a fresh additive integration branch with all required tests, not piecemeal merges or force-pushes. No merge was performed.
+
+M0 remains **not accepted**: this is a prioritized stack audit, not complete full-patch/check/log/artifact review for all 99 open PRs. M1 is not accepted; selected PR green CI/runner evidence does not prove the live Render revision or public inference.
