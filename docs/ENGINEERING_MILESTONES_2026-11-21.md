@@ -172,3 +172,17 @@ Four additional high-priority PRs were reviewed by fetching their full patches, 
 ### M0 remaining
 
 The current evidence prioritizes the runtime safety PR stack, but complete full-patch review and linked-run/artifact review for all 99 open PRs is not finished. M0 exit is still withheld. The next batch should complete full diffs and dependencies for #82/#102/#144/#105, then audit the remaining PR inventory in bounded batches; do not claim the whole baseline is complete.
+
+
+## M0 configuration-contract audit — 2026-11-21 20:11 IST
+
+A fresh source read of main confirms a configuration/reporting mismatch that must be resolved in the runtime-health integration:
+- Main `render.yaml` blob `7386c0f7ef5d562e83583071a89f47b8f7d2b7c7` configures `BIONUCLEI_RESULT_RETENTION_HOURS=24` for the community service.
+- Main `webapp/community_app.py` blob `900bc126a139b7bcb2d2b8204d90ff9482ab061f` still says results expire after one hour in `/` and hardcodes `result_retention_hours: 1` in `/health`. Actual Render service settings were not inspected.
+- PR #105's checkpoint health contract also hardcodes one hour. PR #141 (head `00318ed4da86e4eaa4d5e4d3262436d83a93053`, base #105) reads `community_service.DEFAULT_RESULT_RETENTION_HOURS` for both root and health, with tests. Its check-runs are green, but live Render is skipped. PR #101 (main-based) independently implements the same configured-retention reporting fix; avoid merging both copies without reconciliation.
+- PR #144 is another main-based draft health-contract/live-check opt-in branch; compare it against #105 before integration rather than merging overlapping stacks.
+- PR #105 already has a comment documenting the retention mismatch and #146 sealed-checkpoint dependency. The current #146 head is `7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433`, stacked on #105; its runner validation is green, but neither branch is deployed.
+
+### M0 disposition
+
+The configuration mismatch and the overlapping #101/#141/#144/#105/#146 branches are now prioritized in the baseline. M0 remains incomplete because the 99-PR inventory has not received exhaustive full-patch, exact-head-check, linked-run/log/artifact review. No milestone advancement is authorized by these partial audits.
