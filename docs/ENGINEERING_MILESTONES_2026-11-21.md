@@ -156,3 +156,19 @@ Actions pagination has now been reproduced to the accessible boundary for branch
 ### Next safe task
 
 Continue the M0 open-PR audit in prioritized batches, beginning with PRs that can unblock M1 (#103, #92, #105, #146, parity stack #82/#102 and health contract #144). Keep public E2E blocked; do not inspect/deploy Render without authorization.
+
+
+## M0 prioritized PR audit batch — 2026-11-21 20:11 IST
+
+Four additional high-priority PRs were reviewed by fetching their full patches, exact head/base metadata, check-runs, and test job logs. Patch excerpts and targeted implementation/tests were inspected; a complete line-by-line review of every patch in the 99-PR inventory is not yet complete.
+
+- **#82** head `5f30a00e5e3910d87ee19420c0293af668d2c531`, base current main. Runtime parity classifier excludes only paths not copied to Render images; unknown paths fail closed. Historical CI #40859980050 green; PR E2E #40659838318 harness passed, public-upload skipped. Test log #123400457669: 149 passed, 1 skipped, 20 subtests.
+- **#102** head `d75c94ef1cf88eea2b6149cdb849f7407eecb90`, base #82 head `5f30a00e5e3910d87ee19420c0293af668d2c531`. Adds Docker COPY/ADD source allowlist protection to parity exclusions. Historical CI #41207553946 green; PR E2E #41207553941 harness passed, upload skipped. Test log #124555631353: 150 passed, 1 skipped, 20 subtests.
+- **#144** head `b17312ea25c1d8d6219393a78f3cd5b3bdb19f66`, base main. Adds checkpoint-health contract and explicit opt-in for live Render checks. Historical CI #43691513066 green; live Render job skipped. Test log #132742965543: 154 passed, 1 skipped.
+- **#105** head `1d4726b430da933180d2c2744ec564a442c09b96`, base main. Immutable checkpoint pin and health verification, main-only E2E guard, health identity tests; historical CI #44517779139 green. Test log #135538172496: 158 passed, 1 skipped. Checkpoint worker #43421687940 succeeded, but is runner evidence only; public E2E and live Render checks were skipped.
+- PR #146 remains stacked on #105 and must be integrated in dependency order. #92/#103 have green historical checks but remain unmerged. These are source/test results only; no deployed-runtime verification.
+- After the tracker commit `b16f0a5a8eeec164a76ea6dbac401c6462ff7655`, PR #178 CI runs #44915702198 and #44915698560 were observed **in progress**. Earlier run #44910585294 passed on the prior tracker commit; it is not evidence for this new commit.
+
+### M0 remaining
+
+The current evidence prioritizes the runtime safety PR stack, but complete full-patch review and linked-run/artifact review for all 99 open PRs is not finished. M0 exit is still withheld. The next batch should complete full diffs and dependencies for #82/#102/#144/#105, then audit the remaining PR inventory in bounded batches; do not claim the whole baseline is complete.
