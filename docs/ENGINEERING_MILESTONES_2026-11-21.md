@@ -820,3 +820,50 @@ All listed PR CI jobs were successful at their exact head SHAs; artifacts were e
 ### Next safe action
 
 Continue M0 with remaining PR audit batches, then build a clean additive integration branch only after the baseline is reproducible. No merges/deploys or public E2E dispatch without explicit authorization and independently verified deployed runtime/checkpoint.
+
+
+## M0 instance reconstruction, source-free artifacts, and upload/download hardening audit — 2026-11-22 01:07 IST
+
+This batch refreshes the shared instance-reconstruction stack, runtime-parity trigger PRs, CPU-only production-image checks, upload-memory changes, retention contract, source-free checkpoint evidence, and bounded dataset downloads. Exact PR heads/bases and linked run metadata were checked; targeted patches and full job logs were inspected.
+
+### Instance postprocessing and parity-trigger stack
+
+- **#151** head `4eaa237d2efb0363c57b90442c7c2532af42889`, base #149 head: reconstruct S-BIAD634 instances from class-1 interior markers, assign class-2 boundary pixels to nearest watershed basins, preserve boundary-only components. Its check-runs API has successful tests/E5/comparator/train-evaluate checks, but combined status remains `pending` due missing status contexts. E5 gate run **43755404962** was a push on this PR head, not main; E4 run **43755404932** also used this PR head.
+- **#154** head `59eec2f737f6f150fa6b6054e7f987779970dede`, base #151: makes interior-marker labeling 4-connected to prevent diagonal marker merge. CI **43776908789** success (job/log count not refreshed in this batch).
+- **#155** head `435d536b004a606dccfa4b9405c78a55cda10577`, base #154 head: production postprocessor also uses 4-connected interior markers; records head/base provenance for checkpoint worker. CI **43963645035** success; worker **43963645067**, job **133637262345**, success; artifact **14274973922**, 39,505 bytes, SHA-256 `4b4a09a9f61a50a39bc2ff03443aea1949b796e8511bf302247fdfeb8accba8a`. The downloaded artifact parses, has `source_image_excluded=true`, `public_inference=false`, `public_upload_attempted=false`, eight specialists, raw min 512/max 65535/range 65023, and unchanged checkpoint SHA before/after. Schema v1 `tested_sha=null`, so it cannot identify the tested merge SHA. It is runner-only, not public inference.
+- **#156** head `7efa089b79853ba69b3ac6bc533b14225565a13b`, base #150 head: root/Dockerfile-specific ignore files trigger parity E2E/harness. CI **43777379136**, job **133006642101**: 151 passed, 1 skipped, 35 subtests passed. Harness **43777379203**, job **133006642760**: six parity tests passed; public upload job **133006643549 skipped**.
+- **#157** head `cb7bbc925982424025d8ccf9975e256e4c838090`, base #156 head: includes CPU constraints file in parity inputs and tests. CI **43812971280**, job **133118534322**: 152 passed, 1 skipped, 63 subtests passed. Harness **43812971363**, job **133118535326**: seven parity tests passed; public upload job **133118536885 skipped**.
+
+### CPU-only images, memory and retention
+
+- **#166** head `3434ee582ac5facaa67970d15d2d44c70b60632f`, base #123 head: builds actual API/community Dockerfiles under constrained-memory validation and checks CPU-only PyTorch. CI **44141936511**, job **134246750428**: 149 passed, 1 skipped. Worker **44141936486**, job **134246750531**: eight specialists, source image excluded, peak **281,235,456 bytes** under 480 MiB. Runner-only; no artifacts.
+- **#170** head `7a7e0e58ae88c690971b429ad0323871af925f71`, base #105 head: root/health retention report reflects configured retention rather than hardcoded one hour. CI **44517890895**, job **135538559654**: 160 passed, 1 skipped. Worker **44517890949**, job **135538559571**: eight specialists, source excluded, peaks **453,238,784** and **442,748,928 bytes**, under the 470 MiB safety target. Runner-only.
+- **#148** head `044067122abf872a7dc19f15217d3ffbb15ef8ab`, base `19fb384440cdc5c1b9a17eedda36eca035ae878`: persists a source-free derived-output ZIP and schema-v2 manifest outside disposable worker storage. CI **43710335968**, job **132800295403**: 172 passed, 1 skipped, 1 duplicate-ZIP-entry fixture warning. Worker **43710335959**, job **132801901765** success; artifact **14160438411**, 39,095 bytes.
+  - ZIP SHA-256: `c1d4d2908ae6b853edd8edb050b85d2fb67ec2a621c9a3c2aacd659b7e9d8543`; extracted manifest SHA-256 `909bbda9d422a269fb4880f9d198527e783957de847c5fe3c8a9c71dbffa00f4`; inner `analysis-results.zip` SHA-256 `025efe96c1c095eaee98f25a192abafc01401a4aa575940ad0f0c5b86c89cda5`.
+  - Manifest identifies PR head `044067...`, base `19fb...`, tested SHA `5346271bc046c800a2862e76b1f12719147396c6`, checkpoint SHA before/after `7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92`, raw range 512–65535, eight completed specialists, source excluded, and public upload/inference false. Inner ZIP contains only derived reports, measurements, overlay, mask and metadata; source TIFF is absent. Downloaded, unpacked and parsed; runner-only evidence.
+
+### Upload-memory, total-download deadlines, and source provenance
+
+- **#160** head `a99fa75820e854363fe42eb7bad439dc4599e1a1`, base main: incremental source hashing, integer-image QC and reduced float temporary copies. CI **43944175091**, job **133569276511**: 154 passed, 1 skipped. Worker **43944175257**, job **133571225523**: eight specialists, peak **281,657,344 bytes**.
+- **#161** head `0cbf1d115131c92919f6677f474e89a789b3ce47`, base #160: streamed upload in fixed 1 MiB disk-copy chunks with bounded size and partial cleanup. CI **43991350039**, job **133732431732**: 159 passed, 1 skipped. Worker **43991349979**, job **133732431915**: eight specialists, peak **280,932,352 bytes**.
+- **#158** head `b00a0558a51bc3daa5ddd42808268d5038c26d7a`, base #140: total monotonic deadline and bounded reads for the BioStudies downloader. CI **44051271731**, job **133929411739**: 176 passed, 1 skipped.
+- **#164** head `38276e72f74fc082f99d802a9aec96ca3e763e58`, base #151 head: actual source-training provenance. CI **44087904433**, job **134055080657**: 173 passed, 1 skipped. No fresh E5 research run on this head.
+- **#163** head `423a29c42dbd0d2a6bd285c7cb203a495644b0f5`, base #145 head: fails closed when socket deadline cannot be enforced. CI **44097200020**, job **134087354782**: 160 passed, 1 skipped. Harness **44097202532**, job **134087366293**: 15 passed; public upload job **134087369490 skipped**.
+
+### PR-run scientific artifacts inspected (not current-main reproduction)
+
+
+E4/E5 push run **43755404932 / 43755404962** was on #151 head `4eaa237d2efb0363c57b90442c7c2532af42889`, not current main. Downloaded and parsed both artifacts:
+
+- E4 archive `e4-domain-robust-43755404932.zip`, 7,127,155 bytes, SHA-256 `f6823a8e9f4fa8b6166e631484109255990552d0dd457b586693261e0055c753`. The config and train history show **20 epochs**. The checkpoint method record incorrectly says `few_shot_external_fluorescence` / `adaptation_dataset=Aitslab_bioimaging1`, while E4 provenance says `source_only_intensity_domain_randomization`; it does not bind config/checkpoint/split/acquisition hashes. The exact PR-run output is historical, not a current-main release artifact.
+- E5 gate artifact **14188093824**, 21,371,107 bytes, SHA-256 `c0a5dacaf98ceb12e0b4e12ebc0a0a39da8badef11ef2cbcfafcdf8334f6ea2` (26 files; no source images). The three variant provenance files have `commit=null`, `workflow_run_id=null`, `source_download_manifest_sha256=null`, `method_record_sha256=null`, and `metrics_sha256=null`; checkpoint, config, source split and target manifest hashes are present. Method records repeat the E4/E5 misclassification and `init_checkpoint=null`. These gaps are precisely why #173/#164 source provenance work is not yet accepted; a fresh run on exact current main after integration is still required.
+
+### Evidence classification and M0 status
+
+All checkpoint workers, PR harnesses and PR scientific artifacts above are **runner/PR evidence only**; none proves public inference. PR upload jobs were skipped. The E4/E5 artifacts are from a PR branch, not main. The source-free checkpoint artifact was checked for source image paths, and its manifest flags were parsed, but it is not a live privacy/deletion verification.
+
+M0 remains **partial/not accepted**: the complete 99-PR metadata snapshot exists, and prioritized source/CI/artifact batches are reviewed, but full diff/check/log/artifact audits for every open PR remain incomplete. M1–M7 are not accepted. No deployment or public upload.
+
+### Next safe action
+
+Continue M0 through remaining open PR batches; reconcile the overlapping postprocessing/baseline provenance stacks and upload/checkpoint/privacy stacks on fresh additive branches only after the baseline is complete. No merges or deployment without authorization; public E2E remains blocked by stale/unverified runtime and checkpoint identity.
