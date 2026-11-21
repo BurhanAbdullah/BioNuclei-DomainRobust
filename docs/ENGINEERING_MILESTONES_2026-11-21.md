@@ -451,3 +451,25 @@ Fresh repository metadata/search still resolves main to `d4a653e94501e8b9f1ec9de
 ### M0 disposition
 
 This audit adds verified exact-head CI and patch evidence for three selected PRs. M0 remains incomplete: the 99-PR inventory is not fully reviewed patch/check/log/artifact-by-artifact, main Actions pagination is inaccessible, and signature verification is unavailable in the current connector. Prioritize closing these inventory gaps and avoiding duplicate PRs. M1 remains blocked on runtime integration and authorized live SHA/checkpoint verification; M2–M7 are not accepted.
+
+
+## Tracker follow-up — current PR head and validation visibility — 2026-11-21
+
+The tracker branch now points to commit `69369978ce7f8d4b33ee28dc886947712f9e5479` (blob `5bc7a4753568a23a87ee3a3362fdd2b56b019f8b`). The push succeeded and the PR head/base metadata refreshed. The commit-scoped workflow-run lookup and combined-status endpoint returned empty for this new head; therefore its CI is **not yet verified**, not assumed green. The prior `99dc8e...` tracker commit's CI (run **44926908678**, job **136914885944**, 145 passed/1 skipped) remains valid only for that earlier commit.
+
+### CI dependency finding
+
+Main CI installs `.[test,web]` at the current main SHA; it does not install the `mcp` extra. PR #80 changes the install to `.[test,web,mcp]`. PR #80's exact-head run **40079114233**, job **120828754444**, succeeded (**147 passed, 1 skipped**). Its separate validation run **40079114201** succeeded: MCP smoke job **120828754710** installed the MCP extra, constructed the server, and ran the focused protocol tests (**3 passed**). This is a useful CI coverage fix, but still runner evidence; it does not establish interoperability with a real external BioMCP client/service.
+
+### Safe checkpoint-loading PRs
+
+- PR #174 exact head `cd3a14a7c7d994a6d41004cf78c3f63f2af003f4`, main-based. CI run **44747521522**, job **136326561315**, **148 passed, 1 skipped**. Reviewed patch: restricted `weights_only=True` loading for initial checkpoints, shape checks, and rejection tests.
+- PR #175 exact head `2b3afbe9ebeaa312734f6f78098934480589360d`, main-based. CI run **44814708387**, job **136559915307**, **147 passed, 1 skipped**. Reviewed patch: restricted deserialization in five evaluators and two E6 workflow checkpoint reads; AST/YAML regression checks.
+- Both are CI evidence and have not been merged; no model or scientific artifact was modified.
+
+### Current baseline priority
+
+1. Preserve and review existing PRs; do not duplicate #80, #174, or #175.
+2. Complete remaining PR patch/check/log/artifact audit and refresh accessible Actions evidence.
+3. M1 runtime stack integration still requires exact-main CI plus the authorized deployed SHA/checkpoint identity gate. Render and public E2E remain uninspected/unperformed in this run.
+4. M0 remains partial. M2–M7 remain unaccepted.
