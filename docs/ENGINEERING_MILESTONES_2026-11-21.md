@@ -613,3 +613,52 @@ The stack remains dependent: #146 is stacked on #105; #92 requires the health/ch
 ### Next safe action
 
 Continue M0 with prioritized PR audit batches and source-baseline provenance review. Then reconcile #103/#92/#105/#146/#150 on a fresh additive branch with exact-head tests. Public E2E stays blocked until deployment SHA and checkpoint identity are independently verified. No merge or deployment without explicit authorization.
+
+
+## M0 scientific-provenance PR audit batch — 2026-11-22 01:07 IST
+
+A second M0 audit batch focused on scientific-baseline provenance and target-evaluation consistency. Exact PR heads/bases, complete patches, exact-head CI run/job metadata, job logs, and artifact lists were refreshed. Targeted source sections were inspected; the full 99-PR line-by-line audit is still not complete.
+
+
+### PR dependency graph and overlapping changes
+
+
+- **#149** head `2757687746e96ddb283c062379399edbcbe1a203` (main-based): adds main-branch baseline provenance validation, ancestry/changed-input checks, artifact identity/digest checks, and restricted checkpoint loading in the evaluator. CI run **43743535495**, job **132901721159**: **160 passed, 1 skipped**.
+- **#152** head `3bc3a58db11133adba6794f9b44a7da14a88c415`, stacked on #149 head. Rejects manual BBBC039 baseline runs with unrecorded inputs.
+- **#153** head `ea904133e7fbe8923bbedb3ec64987202655a2f`, stacked on #152. Selects only reproducible successful push baselines; #162 is based on this stack.
+- **#168** head `1ce0b31d0b227169abab6851bf4aa53a32529495` (main-based): aligns BBBC039 workflow default and fallback training epochs with the committed 100-epoch config. CI **44264892049**, job **134666855040**: **146 passed, 1 skipped**. Its baseline workflow edit overlaps #169 and appears redundant if #169's 100-epoch change is retained.
+- **#169** head `6183cf907381880204e94640e2fb4db989cf07e7` (main-based): main-only baseline, exact-current-main selection, checkpoint config/seed/epoch verification; also changes the baseline default from 20 to 100. CI **44664121649**, job **136049155583**: **152 passed, 1 skipped**.
+- **#177** head `b7f5c347ca056fdae397e851f2de116de696b520`, stacked on #169: binds target dataset archive/manifest, metrics, evaluator and baseline recipe hashes to transfer provenance. CI **44832437317**, job **136620442200**: **153 passed, 1 skipped**.
+- **#162** head `9a43ef504135b81da7526350769266a5428827d7`, stacked on #153: adds shared boundary-aware instance postprocessing for production inference and the S-BIAD634 evaluator, adds 4-connected foreground/interior marker reconstruction and watershed boundary assignment, retains boundary-only components, and expands validation. CI **44153721127**, job **134288695841**: **180 passed, 1 skipped**.
+- **#173** head `5819fe1cda8b63327099b32450502f60cf049678` (main-based): records source split/acquisition/config/checkpoint/method-record/metrics provenance and cross-binds E5 variants. CI **44822792979**, job **136587683179**: **155 passed, 1 skipped**.
+
+All six CI runs were refreshed against the exact PR head SHA; each run's job log was inspected. Artifact lists were empty. These are PR/runner tests, not current-main research reproduction.
+
+### Scientific stack integration findings
+
+- #149/#152/#153/#162 form one baseline-provenance + target-postprocessing stack. #169/#177 form a parallel exact-main-baseline + target-provenance stack. Both edit the S-BIAD634 workflow; #149's ancestry/input guard and artifact digest checks should be reconciled with #169's exact-current-main checkpoint-recipe validation, rather than dropping either safeguard.
+- #162 adds `src/bionuclei/postprocessing.py` to the downstream-safe baseline-change allowlist, correctly distinguishing evaluation postprocessing from source-training inputs. This is needed when the shared postprocessor changes and the source checkpoint remains valid.
+- #168 and #169 both align baseline workflow defaults with the 100-epoch config; avoid merging duplicate workflow edits separately.
+- #173's latest head still runs `train_domain_robust.py` without `--init-checkpoint` for the `full_frozen_e4` variant and records `random_initialization`. The existing PR discussion already flags this protocol-label/implementation mismatch; it remains unresolved and must be clarified against the preregistration before accepting E5 claims.
+- #173's `verify_variant_evidence` and inline E5 gate use `assert` for runtime provenance/metrics checks (source line 74 onward, workflow gate lines 139 onward). Python optimization (`-O` / `PYTHONOPTIMIZE`) strips assertions. I posted review comment **6007756509** on exact head requesting explicit fail-closed checks, cross-validation of method-record seed/epochs, and checkpoint metadata (`epochs_run`, config, training_metadata). No source code change was made in response to that finding this run.
+
+### Exact-head CI summary
+
+| PR | Run | Test result | Evidence tier |
+|---|---|---|---|
+| #149 | 43743535495 | 160 passed, 1 skipped | PR CI |
+| #168 | 44264892049 | 146 passed, 1 skipped | PR CI |
+| #173 | 44822792979 | 155 passed, 1 skipped | PR CI |
+| #162 | 44153721127 | 180 passed, 1 skipped | PR CI |
+| #169 | 44664121649 | 152 passed, 1 skipped | PR CI |
+| #177 | 44832437317 | 153 passed, 1 skipped | PR CI |
+
+### M0 disposition
+
+The scientific-provenance stack is now better mapped and prioritized, but M0 remains **partial/not accepted** because the complete patch/check/log/artifact audit of all 99 open PRs is still unfinished. The Actions run-list is fully enumerated only to accessible pagination boundaries: schedule 597, exact-main SHA 491; main-branch run history is capped at 1,000 records despite 2,500 total.
+
+M1 is still **not accepted** (runtime/parity/watchdog/auth/checkpoint stack not integrated and live deployment identity not independently verified). M2–M7 remain unaccepted. No fresh E4/E5 scientific reproduction was run or accepted.
+
+### Next safe action
+
+Continue M0 with remaining prioritized PRs and dependency mapping; then, after M0 exit is reproducible, create a clean additive integration branch for the baseline provenance/postprocessing stack and run exact-head CI. Do not merge or inspect/deploy Render without authorization; public E2E remains blocked until deployed SHA and checkpoint pin are verified.
