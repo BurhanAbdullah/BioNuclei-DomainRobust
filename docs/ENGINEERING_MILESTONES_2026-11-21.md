@@ -130,3 +130,29 @@ This update records evidence retrieved through the GitHub connector. Actions inv
 - Deadline risk remains **high**: roughly 40 calendar days to 2027-01-01, with M0/M1 incomplete and M2–M7 unaccepted.
 
 **Next safe task:** verify PR #103 and #92 exact-head jobs and reconcile the fail-closed stack without merging or dispatching public E2E. Keep the current main PR-trigger risk documented until a safe fix reaches main.
+
+
+## Fresh Actions pagination and artifact audit — 2026-11-21 20:11 IST
+
+This run refreshed the GitHub REST run inventory and downloaded/parsed the latest E2E and release-monitor failure artifacts. Browser control still requires the originating browser context and is unavailable here.
+
+- Main SHA: `d4a653e94501e8b9f1ec9de09ff71720f90ab340`; commit API returned `verification.verified=true`, reason `valid`, verified at `2026-10-24T07:08:31Z`. The signed commit is still the current main; this is a fresh API verification of that unchanged SHA.
+- Branch=main Actions runs: total_count 2,500; pages 1–10 each populated with 100 records; page 11 returned 0 (total 1,000 accessible records). This is an access/pagination ceiling, not a complete inventory.
+- Schedule event: total 594; pages 1–5 populated with 100 each and page 6 with 94. Exact current-main SHA: total 487; pages 1–4 populated with 100 each and page 5 with 87; page 6 returned 0. Inventories include full page boundaries and counts, not only filtered workflow names.
+- Latest exact-main public E2E #293, run `44898963983`, job `136830566742`, failed at the current-main GitHub commit lookup (HTTP 403). Health returned HTTP 200 on attempt 5 after four ReadTimeouts; the JSON still carries stale `api_health_request_error=ReadTimeout`. Render reports branch main but SHA `bb6a9d27537e12b85768c7fead1467253b2423ba`, behind current main. `guest_token_seen=false`, `job_id_seen=false`, `cleanup_attempted=false`; no upload or inference.
+  - Failure artifact #14705266539 downloaded and parsed. ZIP SHA-256 `318c672b6c5a8288dc7f7c7969654c456751b33b6aabc323dfef301b80df9ca0`; extracted JSON (1,536 bytes) SHA-256 `844375cb30afcf7cbbb55d588d2954f36d25142bdec05bfb001f37481b8c82d2`.
+- Watchdog #125 run `44881810319`, job `136778517497`, succeeded and dispatched E2E #292 when current-main E2E age was 18,987 seconds. The full 157-line log confirms dispatch acceptance; watchdog artifact list was empty. The #292 E2E failed. PR #92's health/pin pre-dispatch gate remains unmerged; current main does not gate on deployed SHA/checkpoint verification.
+- Release monitor #369 run `44876700996`, job `136762863374`, completed as a monitor but reports `BLOCKED`, `release_ready=false`; frozen E4 checkpoint artifact #12183110279 returned HTTP 404. Artifact #14695923885 was downloaded and parsed. ZIP SHA-256 `2f801d40a66fff17b6807854d2828e5dffd8f1d7762c56b1be5503264ff7ea71`; extracted release_status.json (2,765 bytes) SHA-256 `f8f1bc66d809685f28fceedad2d6ccedeccab9cf8cc9b44558bfeb425259b1ec`. The release monitor is not a scientific reproduction run.
+- Exact-main CI run #2670 (`44786861263`) job `136463892312`: successful, 145 passed, 1 skipped. This is GitHub-runner test evidence.
+- PR #103 head `5372d812304eb3612dc7890e1f03ee9361e5c423`, base main, is still open. Historical exact-head CI #41231538021 was green (148 passed, 1 skipped); E2E PR harness #41231537964 passed while public upload skipped. Its main-only guard is present in the PR branch, absent on main.
+- PR #92 head `838b89d51cae3db2171bc67b0c2389c043b34122`, base main, remains open. Historical CI #43437830508 and watchdog-validation run #43437830689 passed; the PR recovery-dispatch job was skipped. Tests are not live Render evidence.
+- PR #146 exact head `7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433` remains stacked on #105 head `1d4726b430da933180d2c2744ec564a442c09b96`; CI #44900605180 passed (163 passed, 1 skipped), worker #44900605055/job #136836858514 passed with 442,347,520-byte peak under 480 MiB. Runner-only.
+- PR #178's tracker CI run #44910585294 passed (both tests jobs); it is documentation-only and remains draft/unmerged.
+
+### M0 disposition
+
+Actions pagination has now been reproduced to the accessible boundary for branch=main, schedule, and exact current-main SHA. The baseline is better evidenced, but M0 remains **not accepted** because complete patch/check/log/artifact auditing of all 99 open PRs is still unfinished. Do not move to M1 until that baseline audit and prioritization are complete.
+
+### Next safe task
+
+Continue the M0 open-PR audit in prioritized batches, beginning with PRs that can unblock M1 (#103, #92, #105, #146, parity stack #82/#102 and health contract #144). Keep public E2E blocked; do not inspect/deploy Render without authorization.
