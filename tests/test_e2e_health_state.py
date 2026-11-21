@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.e2e_health_state import clear_recovered_health_errors
+from scripts.e2e_health_state import record_health_response, record_health_request_error
 
 
 def test_successful_health_retry_clears_stale_error_fields() -> None:
@@ -18,7 +18,7 @@ def test_successful_health_retry_clears_stale_error_fields() -> None:
         ],
     }
 
-    clear_recovered_health_errors(state)
+    record_health_response(state, 200, "")
 
     assert "api_health_request_error" not in state
     assert "api_health_body" not in state
@@ -50,7 +50,7 @@ def test_e2e_health_readiness_budget_is_bounded_and_cold_start_aware() -> None:
     assert "deadline = time.monotonic() + HEALTH_READINESS_BUDGET_SECONDS" in script
     assert "timeout=_health_request_timeout(remaining)" in script
     assert "_health_response_within_budget(response_completed_at, deadline)" in script
-    assert "clear_recovered_health_errors(state)" in script
+    assert "record_health_response(" in script
 
     tree = ast.parse(script)
     timeout_helper = next(
@@ -79,3 +79,28 @@ def test_e2e_health_readiness_budget_is_bounded_and_cold_start_aware() -> None:
     assert within_budget(179.001, 179.0) is False
     with pytest.raises(ValueError, match="budget is exhausted"):
         timeout_for(0.0)
+
+
+
+def test_non_200_health_response_clears_stale_request_error() -> None:
+    state: dict[str, object] = {
+        "api_health_request_error": "ReadTimeout",
+        "api_health_body": "older body",
+    }
+
+    record_health_response(state, 503, "current response body")
+
+    assert "api_health_request_error" not in state
+    assert state["api_health_body"] == "current response body"
+
+
+def test_health_request_error_clears_stale_response_body() -> None:
+    state: dict[str, object] = {
+        "api_health_request_error": "older error",
+        "api_health_body": "older body",
+    }
+
+    record_health_request_error(state, "ReadTimeout")
+
+    assert state["api_health_request_error"] == "ReadTimeout"
+    assert "api_health_body" not in state
