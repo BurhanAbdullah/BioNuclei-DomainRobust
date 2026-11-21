@@ -416,3 +416,38 @@ Full patches were fetched for #92, #103, #105, #146, and #150; their relevant so
 These PRs are complementary, not individually mergeable as one tested stack. #103 and #150 overlap the E2E workflow/script; #105 introduces the health checkpoint contract; #146 is stacked on #105; #92 requires that health contract and suppresses dispatch when Render is stale/unverified. The safe sequence is a fresh additive integration branch with all required tests, not piecemeal merges or force-pushes. No merge was performed.
 
 M0 remains **not accepted**: this is a prioritized stack audit, not complete full-patch/check/log/artifact review for all 99 open PRs. M1 is not accepted; selected PR green CI/runner evidence does not prove the live Render revision or public inference.
+
+
+## Focused CI and PR audit — 2026-11-21 23:09 IST
+
+Fresh repository metadata/search still resolves main to `d4a653e94501e8b9f1ec9de09ff71720f90ab340`. The commit fetch returned no signature-verification object in this connector payload; signature status is **not freshly verifiable here**. The main CI workflow at that SHA (blob `7a1d470d6ef7b0aef68673ff6ceb1539cc3d161e`) installs `.[test,web]` only, so the optional MCP SDK is not guaranteed to be present in the main CI environment. The Actions run-list endpoint and originating browser are unavailable through this session; no new main/schedule/exact-SHA inventory or public upload was performed.
+
+### PR #80 — MCP SDK CI coverage
+
+- Exact head `abf750e2bbea8cc5a449305790ead63ebf0979ba`, base main `d4a653e94501e8b9f1ec9de09ff71720f90ab340`.
+- CI run **40079114233**, job **120828754444**: **147 passed**. The exact log confirms `mcp` is installed in the environment, but this run still uses the CI job's normal pytest collection.
+- BioMCP/web validation run **40079114201**: MCP server smoke job **120828754710** succeeded; installed the MCP extra, built the server, and ran MCP-focused tests: **3 passed**. Web adapter smoke and public console integrity also succeeded.
+- Patch is narrowly scoped: `.github/workflows/ci.yml` changes `.[test,web]` to `.[test,web,mcp]`; `tests/test_mcp_server.py` adds a real stdio MCP client protocol test using a synthetic uint16 TIFF (max 65535) and asserts tool discovery plus image inspection.
+- This is **CI/runner evidence**, not external BioMCP interoperability or public user inference. PR #80 remains open; no merge.
+
+### PR #174 — safe initial checkpoint loader
+
+- Head `cd3a14a7c7d994a6d41004cf78c3f63f2af003f4`, base main.
+- CI run **44747521522**, job **136326561315**: **148 passed, 1 skipped**.
+- Patch uses `torch.load(..., weights_only=True)` and requires dictionary/model-state shape. Tests verify normal tensor-state loading, missing model state, and rejection of an unsupported pickle object. Source/tests reviewed; no weights or scientific result changed. Runner evidence only.
+
+### PR #175 — restricted research checkpoint deserialization
+
+- Head `2b3afbe9ebeaa312734f6e78098934480589360d`, base main.
+- CI run **44814708387**, job **136559915307**: **147 passed, 1 skipped**.
+- Patch restricts checkpoint deserialization in five standalone evaluators and two E6 workflows to `weights_only=True`, with AST/YAML regression checks. Full selected patch reviewed; no model/metrics changed. Runner evidence only.
+
+### PR #178 — tracker exact-head CI
+
+- Head `99dc8e9c78c830f2f22ae26a7da9b31578be0798`, base main.
+- CI run **44926908678**, job **136914885944**: **145 passed, 1 skipped**; full job log confirms dependency install and pytest success.
+- This validates the tracker documentation commit's CI, not application runtime, deployment parity, public inference, or research reproduction.
+
+### M0 disposition
+
+This audit adds verified exact-head CI and patch evidence for three selected PRs. M0 remains incomplete: the 99-PR inventory is not fully reviewed patch/check/log/artifact-by-artifact, main Actions pagination is inaccessible, and signature verification is unavailable in the current connector. Prioritize closing these inventory gaps and avoiding duplicate PRs. M1 remains blocked on runtime integration and authorized live SHA/checkpoint verification; M2–M7 are not accepted.
