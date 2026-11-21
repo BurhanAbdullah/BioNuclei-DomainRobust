@@ -473,3 +473,37 @@ Main CI installs `.[test,web]` at the current main SHA; it does not install the 
 2. Complete remaining PR patch/check/log/artifact audit and refresh accessible Actions evidence.
 3. M1 runtime stack integration still requires exact-main CI plus the authorized deployed SHA/checkpoint identity gate. Render and public E2E remain uninspected/unperformed in this run.
 4. M0 remains partial. M2–M7 remain unaccepted.
+
+
+## Fresh audit and diagnostic fix — 2026-11-22 00:16 IST
+
+### Repository identity and evidence access
+
+- Repository-scoped commit search still resolves main to `d4a653e94501e8b9f1ec9de09ff71720f90ab340`. The normalized commit fetch does not expose signature verification; signature is **not freshly verified** in this run.
+- Browser tools are read-only tab/context APIs, and the originating browser context is unavailable. GitHub Actions run-list pagination and commit-verification details are not exposed by the current connector; public GitHub API URLs could not be opened through the web fallback. No fresh branch/schedule/exact-main Actions inventory, latest E2E/watchdog identification, or main-run artifact download was possible. The last-known E2E/watchdog records remain historical and are not relabeled fresh.
+
+### Current-main source audit
+
+- E2E workflow blob `c903cc0ab7b7695ba5a7d402b7a4f82496d38732` includes a `pull_request` trigger for `scripts/live_public_agent_e2e.py`; its public-upload job has no main-only job condition. This is a source-level PR upload risk on main. PR #103 contains the `refs/heads/main` restriction and PR-only offline harness, but is still unmerged; the risk remains on main.
+- Watchdog workflow blob `20aef7459b86b464007d19a1025a4492ec34b0fe` and script blob `6800946aeb84a1243219e2f85fd67ea0fee6a67b` still dispatch based on E2E freshness/current SHA and do not preflight deployed-runtime SHA/checkpoint identity. PR #92 remains the proposed gate and is unmerged.
+- These source findings were read at the exact main SHA above; no deployment or Render service was inspected.
+
+### PR #94 — health diagnostics follow the latest attempt
+
+PR #94 head was refreshed from `10e4867bfb52b05d525848032a04957317e5a206` and advanced with three non-force commits:
+
+- `6e68e89084c29cc64cf4dc2335fcc5ec2b16829f`: helper functions record latest HTTP response or transport error and remove contradictory stale fields.
+- `f54d2336c4cfed479b833655533ae9d43a5648c5`: E2E uses the helpers for response, timeout, and readiness-budget diagnostics.
+- `4c1376105f3c6d25cc9f376a5906cfab960e532d`: tests cover recovered HTTP 200, non-200 response after a prior timeout, and request error after a previous body.
+
+The branch update was verified through commit/file retrieval. Exact-head CI run `44938285032`, job `136949662592`, was still in progress at the last refresh (dependency install; test step pending); its logs were not yet downloadable. PR-harness run `44938285077`, job `136949662996`, succeeded: Python compilation passed and the public-upload job `136949664003` was skipped. Run `44938285077` had no artifacts. The local isolated helper-transition check passed 3 cases; this is **local logic evidence only**, not the full repository suite or public inference.
+
+### PR #178 tracker validation
+
+- Current tracker head `43b54e4c30dac230f5b3e0a0dc4cebb16878f153`, base main. CI run `44931462717`, job `136928795152`, passed `145 passed, 1 skipped`. No artifacts were attached. This result validates that earlier tracker commit only; a new tracker commit will need its own checks.
+
+### Milestone gate and risk
+
+M0 remains **not accepted**: the selected PR audit is not a complete review of every open PR's full patch/check/log/artifact set, and the Actions inventory/signature refresh is blocked by tool access. M1 remains blocked by the main-only public-upload guard not being merged, the watchdog lacking runtime/checkpoint pre-dispatch gating, and stale/unverified deployment identity. M2–M7 are not accepted. Public upload/inference was not performed.
+
+Deadline risk remains **high** for 2027-01-01. Next safe task is refresh #94 CI after it completes and prioritize existing #103/#92/#105/#146/#150 integration without duplicate PRs. Merge, Render inspection/deployment, and public E2E require authorization and verified runtime/checkpoint identity.
