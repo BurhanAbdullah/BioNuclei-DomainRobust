@@ -496,7 +496,7 @@ PR #94 head was refreshed from `10e4867bfb52b05d525848032a04957317e5a206` and ad
 - `f54d2336c4cfed479b833655533ae9d43a5648c5`: E2E uses the helpers for response, timeout, and readiness-budget diagnostics.
 - `4c1376105f3c6d25cc9f376a5906cfab960e532d`: tests cover recovered HTTP 200, non-200 response after a prior timeout, and request error after a previous body.
 
-The branch update was verified through commit/file retrieval. Exact-head CI run `44938285032`, job `136949662592`, completed successfully: **150 passed, 1 skipped, 1 warning**. The full log is 51,086 bytes; the warning is an `invalid escape sequence '\/'` deprecation in the source-inspection test. Run `44938285077`, job `136949662996`, also passed the offline compile-only harness; its public-upload job `136949664003` was skipped. Both runs had no artifacts. This is PR CI/harness evidence only. PR-harness run `44938285077`, job `136949662996`, succeeded: Python compilation passed and the public-upload job `136949664003` was skipped. Run `44938285077` had no artifacts. The local isolated helper-transition check passed 3 cases; this is **local logic evidence only**, not the full repository suite or public inference.
+The branch update was verified through commit/file retrieval. Exact-head CI run `44938285032`, job `136949662592`, completed successfully: **150 passed, 1 skipped, 1 warning**. The full log is 51,086 bytes; the warning is an `invalid escape sequence '\\/'` deprecation in the source-inspection test. Run `44938285077`, job `136949662996`, passed the offline compile-only harness; its public-upload job `136949664003` was skipped. Both runs had no artifacts. This is PR CI/harness evidence only. PR-harness run `44938285077`, job `136949662996`, succeeded: Python compilation passed and the public-upload job `136949664003` was skipped. Run `44938285077` had no artifacts. The local isolated helper-transition check passed 3 cases; this is **local logic evidence only**, not the full repository suite or public inference.
 
 ### PR #178 tracker validation
 
@@ -507,3 +507,31 @@ The branch update was verified through commit/file retrieval. Exact-head CI run 
 M0 remains **not accepted**: the selected PR audit is not a complete review of every open PR's full patch/check/log/artifact set, and the Actions inventory/signature refresh is blocked by tool access. M1 remains blocked by the main-only public-upload guard not being merged, the watchdog lacking runtime/checkpoint pre-dispatch gating, and stale/unverified deployment identity. M2–M7 are not accepted. Public upload/inference was not performed.
 
 Deadline risk remains **high** for 2027-01-01. Next safe task is refresh #94 CI after it completes and prioritize existing #103/#92/#105/#146/#150 integration without duplicate PRs. Merge, Render inspection/deployment, and public E2E require authorization and verified runtime/checkpoint identity.
+
+
+## PR safety and watchdog review — 2026-11-22 00:16 IST
+
+### PR #94 exact-head validation refresh
+
+- PR #94 head `4c1376105f3c6d25cc9f376a5906cfab960e532d`, base exact main.
+- CI run `44938285032`, job `136949662592`: **150 passed, 1 skipped, 1 warning**. Full job log retrieved (51,086 bytes). The warning is a deprecation warning from source inspection: `invalid escape sequence '\\/'`.
+- E2E harness run `44938285077`, job `136949662996`, passed the compile-only harness. Public-upload job `136949664003` was skipped. Both runs had no artifacts.
+- The new diagnostic helpers/tests were verified at the exact PR head. Three isolated local transition checks passed, but local logic checks are not repository CI or public inference.
+
+### PR #92 watchdog gate review
+
+- Head `838b89d51cae3db2171bc67b0c2389c043b34122`, base exact main.
+- CI run `43437830508`, job `131927398126`: **165 passed, 1 skipped, 7 subtests passed**.
+- Watchdog validation run `43437830689`, job `131927398351`, succeeded. Full log (24,269 bytes) shows mocked health-preflight timeout/rejection paths fail closed; recovery dispatch job `131927400708` was skipped on PR. Both runs had no artifacts. This is PR/runner validation, not live Render proof.
+- Patch review confirms dispatch requires a verified current-main Render SHA and the immutable checkpoint digest; it preserves the existing E2E parity gate. The gate is still unmerged and the live health contract has not been independently verified.
+
+### PR #103 main-only upload guard
+
+- Head `5372d812304eb3612dc7890e1f03ee9361e5c423`, base exact main. Patch reviewed: PR events compile the harness; public upload is conditioned on `refs/heads/main`; GitHub REST calls use a read-only token that is not sent to Render.
+- Associated CI run `41231538021`, job `124626597239`: **148 passed, 1 skipped**. E2E harness run `41231537964`, job `124626867341`, passed compilation; upload job `124626868453` was skipped. No artifacts. These checks are historical (31 October/1 November), not a fresh rerun.
+- Main source remains unsafe for PR-triggered public upload until this guard reaches main; no merge was performed.
+
+### Tracker validation status
+
+Tracker head `d8984dda6f1cdc8085eb291c5efb32b40fe33aa7`; its CI run `44938634115`, job `136950720578`, was still in dependency installation with pytest pending at the last refresh. No artifact was attached. Earlier tracker CI does not validate this commit.
+
