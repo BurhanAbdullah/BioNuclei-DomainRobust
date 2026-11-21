@@ -109,3 +109,24 @@ This additive update supersedes only the time-sensitive PR inventory and checkpo
 - Browser control remains unavailable (originating browser context required). The GitHub connector does not expose full Actions run enumeration for branch/schedule/exact-main, and fresh signature verification is unavailable through its normalized commit schema. Therefore those required audits are explicitly outstanding.
 
 **Milestone impact:** checkpoint memory validation on #146 now passes under the strict safety ceiling, but M1 remains incomplete because runtime parity, watchdog dispatch gating, and the #105/#146 integration/deployment identity are not proven. M0 tracker is updated with this evidence; exhaustive PR and Actions inventories remain incomplete.
+
+
+## Fresh source/runtime audit — 2026-11-21 19:14 IST
+
+This update records evidence retrieved through the GitHub connector. Actions inventory and commit-signature metadata are not fully exposed by the current connector/browser path, so those fields are not re-certified here.
+
+- Current main still resolves to `d4a653e94501e8b9f1ec9de09ff71720f90ab340` in repository-scoped commit search. Commit-fetch normalized output omits signature verification; prior verification remains historical, not fresh.
+- Fresh open-PR inventory returned **99** PRs. This is a count snapshot; a complete per-PR patch/check/log/artifact audit remains outstanding.
+- The current-main E2E workflow source blob is `c903cc0ab7b7695ba5a7d402b7a4f82496d38732`. It triggers a `pull_request` event for changes to `scripts/live_public_agent_e2e.py`, while its `public-upload-to-agent` job has no main-only job condition. This is a source-level risk: a qualifying PR can invoke the public upload job. PR #103 adds a PR-only offline harness job and conditions the public-upload job on `github.ref == 'refs/heads/main'`; the exact PR head workflow fetched in this audit contains that guard. PR #103 remains unmerged and therefore does not fix main.
+- Current-main watchdog workflow blob `20aef7459b86b464007d19a1025a4492ec34b0fe` and script blob `6800946aeb84a1243219e2f85fd67ea0fee6a67b` confirm the main watchdog uses freshness/SHA of E2E runs to decide dispatch and does not query Render health or require deployed SHA/checkpoint pin. PR #92 proposes the fail-closed health/pin gate; it remains unmerged.
+- PR #146 exact head `7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433`, stacked on PR #105 head `1d4726b430da933180d2c2744ec564a442c09b96`, has CI run **44900605180** with **163 passed, 1 skipped**. Worker run **44900605055**, job **136836858514**, succeeded: 480 MiB cgroup hard limit 503,316,480 bytes, peak 442,347,520 bytes (50,483,200 bytes below the 470 MiB safety ceiling); eight specialist statuses completed and the source-free result manifest lists 16 files. No artifact was attached. This is runner-only validation, not public inference.
+- PR #146's worker log confirms real checkpoint download/digest verification, community startup verification, specialist execution, production community image build, and constrained-memory worker validation all completed successfully. The result is still not deployed/public proof.
+
+### Milestone interpretation
+
+- M0 has a prioritized baseline, but its strict exit criterion is **not fully satisfied**: complete Actions run pagination and all-PR patch/check/artifact auditing are unavailable through this connector/browser session.
+- M1 remains blocked. The current-main public E2E PR-trigger risk, stale Render runtime, missing main health checkpoint identity, and unmerged watchdog/parity/pin stack are unresolved. PR #103 is the concrete safe fix for the PR-trigger risk; PR #92 is the proposed dispatch gate.
+- No public E2E was dispatched, no Render workspace/service was inspected, no deployment or merge was performed, and no public inference is claimed.
+- Deadline risk remains **high**: roughly 40 calendar days to 2027-01-01, with M0/M1 incomplete and M2–M7 unaccepted.
+
+**Next safe task:** verify PR #103 and #92 exact-head jobs and reconcile the fail-closed stack without merging or dispatching public E2E. Keep the current main PR-trigger risk documented until a safe fix reaches main.
