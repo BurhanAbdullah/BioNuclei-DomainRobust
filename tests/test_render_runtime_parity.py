@@ -4,20 +4,35 @@ import fnmatch
 from pathlib import Path
 import unittest
 
-
 from scripts.render_runtime_parity import is_non_runtime_path
 
 
 class RenderRuntimeParityTests(unittest.TestCase):
-    def test_public_upload_job_is_restricted_to_upstream_main(self) -> None:
+    def test_public_upload_job_is_restricted_to_manual_upstream_main(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
         expected = (
-            "    if: ${{ github.event_name != 'pull_request' "
+            "    if: ${{ github.event_name == 'workflow_dispatch' "
             "&& github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' "
             "&& github.ref == 'refs/heads/main' }}"
         )
         self.assertIn(expected, workflow)
+
+    def test_public_e2e_automatic_dispatch_is_paused(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
+        trigger_section = workflow.split("\npermissions:", 1)[0]
+        self.assertIn("workflow_dispatch:", trigger_section)
+        self.assertNotIn("schedule:", trigger_section)
+        self.assertNotIn("push:", trigger_section)
+
+    def test_watchdog_cannot_automatically_dispatch_public_e2e(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        watchdog = (root / ".github" / "workflows" / "public-e2e-schedule-watchdog.yml").read_text(encoding="utf-8")
+        trigger_section = watchdog.split("\npermissions:", 1)[0]
+        self.assertNotIn("schedule:", trigger_section)
+        self.assertNotIn("recover-missed-e2e:", watchdog)
+        self.assertNotIn("actions: write", watchdog)
 
     def test_render_build_inputs_remain_parity_gated(self) -> None:
         runtime_paths = (
@@ -58,37 +73,14 @@ class RenderRuntimeParityTests(unittest.TestCase):
         self.assertFalse(is_non_runtime_path("runtime-config.toml"))
         self.assertFalse(is_non_runtime_path("scripts-extra/runtime.py"))
 
-    def test_parity_helper_changes_trigger_main_e2e(self) -> None:
+    def test_parity_helper_changes_trigger_offline_validation(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
-        push_section = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
-        self.assertIn('      - "scripts/render_runtime_parity.py"', push_section)
-
-    def test_every_render_image_input_triggers_main_e2e(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        workflow = (root / ".github" / "workflows" / "live-public-agent-e2e.yml").read_text(encoding="utf-8")
-        push_section = workflow.split("  push:\n", 1)[1].split("  pull_request:\n", 1)[0]
-        push_patterns = [
-            line.strip().removeprefix("- ").strip().strip('"')
-            for line in push_section.splitlines()
-            if line.strip().startswith("- ")
-        ]
-        render_inputs = (
-            "webapp/community.py",
-            "src/bionuclei/inference.py",
-            "configs/base_system.yaml",
-            "pyproject.toml",
-            "README.md",
-            "docs/RESEARCH_PROTOCOL.md",
-            "docs/DATASETS.md",
-            "render.yaml",
-        )
-        for path in render_inputs:
-            with self.subTest(path=path):
-                self.assertTrue(
-                    any(fnmatch.fnmatchcase(path, pattern) for pattern in push_patterns),
-                    f"{path} does not trigger the main-branch E2E parity gate",
-                )
+        pr_section = workflow.split("  pull_request:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertIn('      - "scripts/render_runtime_parity.py"', pr_section)
+        self.assertIn('      - "tests/test_render_runtime_parity.py"', pr_section)
+        self.assertIn('      - ".github/workflows/public-e2e-schedule-watchdog.yml"', pr_section)
+        self.assertIn('      - "tests/test_public_e2e_schedule_watchdog.py"', pr_section)
 
     def test_excluded_prefixes_stay_out_of_both_render_images(self) -> None:
         root = Path(__file__).resolve().parents[1]
