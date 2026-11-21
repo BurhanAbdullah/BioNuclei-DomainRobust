@@ -553,3 +553,63 @@ The last-known exact-main E2E #294 run `44920455705`, job `136895133329`, was re
 ### Tracker CI
 
 Commit `3cfd0742385ae8ac8987140546cb38089c11257a` was verified as the tracker file's latest previous revision. Its CI run `44938877172` was in progress at last refresh; a subsequent tracker update will require another exact-head check.
+
+
+## Fresh Actions pagination and E2E #298 artifact audit — 2026-11-22 01:07 IST
+
+This refresh is grounded in GitHub API run/ref/commit responses, exact PR heads and patches, full job logs/steps, and downloaded failure/monitor artifacts. Browser control is read-only and the originating browser context is unavailable. No Render workspace/service was inspected and no public upload/E2E was manually dispatched.
+
+### Repository and Actions identity
+
+- Main ref freshly fetched: `d4a653e94501e8b9f1ec9de09ff71720f90ab340` (unchanged).
+- Main commit API returned `verification.verified=true`, `reason=valid`. The signature's `verified_at` field is `2026-10-24T07:08:31Z` (signature metadata timestamp, not this audit's time).
+- Open PR search returned **99**. Exact heads/bases were refreshed for the prioritized six below. A complete full-patch/check/log/artifact audit of all 99 remains incomplete.
+- Branch=main Actions: API reports 2,500 total; pages 1–10 each returned 100; page 11 returned 0. The accessible snapshot is capped at 1,000 records, not all 2,500.
+- Event=schedule: total **597**; pages 1–5 returned 100 each, page 6 returned 97 (597 records enumerated).
+- Exact current-main SHA: total **491**; pages 1–4 returned 100 each, page 5 returned 91 (491 records enumerated).
+
+### Latest exact-main E2E — run #298
+
+[Run 44941126536](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44941126536), scheduled, main SHA above, failed. Job **136958351446**: checkout/setup/dependency install/syntax validation succeeded; the real public E2E step failed; failure evidence upload succeeded.
+
+- Site preflight HTTP 200.
+- Health attempts 1–4 timed out; attempt 5 returned HTTP 200. Diagnostic JSON retained `api_health_request_error=ReadTimeout` after recovery.
+- Render reports branch main, SHA `bb6a9d27537e12b85768c7fead1467253b2423ba`, not current main; runtime tree parity false.
+- Runtime mismatch list: `scripts/aggregate_e6_fraction_evidence.py`, `scripts/download_aitslab_bioimaging1.py`, `scripts/public_e2e_schedule_watchdog.py`, `webapp/community.py`, `webapp/community_app.py`. Three are non-shipped false positives in the current classifier; the two webapp files are genuine shipped mismatches. No parity bypass is proposed.
+- `guest_token_seen=false`, `job_id_seen=false`, `cleanup_attempted=false`; no upload, inference, specialists, report, or deletion check occurred.
+- Failure artifact **14722175126**, ZIP 1,053 bytes. ZIP SHA-256 `1d06c127d9b4dd853b996ba05652873bda4a38d0c52c2b323f013551843c7ece` (matches job log). Extracted `live-agent-e2e-failure.json`, 2,807 bytes, SHA-256 `e16cbb7d97a7ef6692c602e8064d191ee19f5a17c9270c5929b4260cec7d3299`; archive unpack and JSON parse succeeded.
+
+### Latest watchdog and release monitor evidence
+
+- Watchdog run [44920438929](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44920438929), job **136895080077**, succeeded. Complete log: latest E2E age 15,372 seconds; dispatch accepted for current main. This current-main watchdog source still does not preflight Render SHA/checkpoint identity. It dispatched E2E #294; public parity guard blocked that run before upload (historical failure artifact).
+- Release monitor run [44916557550](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44916557550), job **136883314106**, succeeded as a monitor but reports `status=BLOCKED`, `release_ready=false`. Frozen E4 artifact **12183110279** lookup returned HTTP 404.
+  - ZIP SHA-256: `42552f5bbdbf2e7101e52dd4566085869a64ae396ddbe179952ddd658e61b5d0`.
+  - Extracted `release_status.json`, 2,765 bytes, SHA-256: `42a4e6fe1a7733b622bfb27b65e9587887650795da14e1e7f234a1fa7450de2`. Parsed successfully. Monitor success is not scientific release readiness.
+
+### Prioritized PR exact-head review
+
+Full patches for #92/#103/#105/#146/#150 were retrieved and inspected; #178 tracker diff was refreshed. Exact PR-head CI run metadata, job IDs, complete test job logs, and artifact lists were checked for the selected stack. PR harness jobs were also checked for #92/#103/#150. All listed artifacts were empty.
+
+- **#92** head `838b89d51cae3db2171bc67b0c2389c043b34122`, base main. CI **43437830508**, job **131927398126**: 165 passed, 1 skipped, 7 subtests passed. Watchdog validation **43437830689**, job **131927398351** succeeded; mocked timeout/stale-SHA cases refuse dispatch; recovery dispatch skipped on PR. Runner/PR validation only.
+- **#103** head `5372d812304eb3612dc7890e1f03ee9361e5c423`, base main. CI **41231538021**, job **124626597239**: 148 passed, 1 skipped. Harness **41231537964**, job **124626867341**, compiled; public-upload job **124626868453** skipped. Runner/PR validation only.
+- **#105** head `1d4726b430da933180d2c2744ec564a442c09b96`, base main. CI **43421687985**, job **131872961675**: 158 passed, 1 skipped. Historical checkpoint/health worker runs are not live deployment proof.
+- **#146** head `7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433`, base #105 head above. CI **44900605180**, job **136835494093**: 163 passed, 1 skipped. Worker **44900605055**, job **136836858514**, previously reported successful with peak 442,347,520 bytes under the 480-MiB limit; runner-only, no public inference.
+- **#150** head `ed314fca17ba7a5dd7848c39e8410b27dea46185`, base main. CI **44210719937**, job **134488047196**: 152 passed, 1 skipped, 29 subtests passed. Harness **44210719925**, job **134488047613**, parity tests passed; public upload job **134488049712** skipped. Runner/PR validation only.
+- **#178** head `f7a6031f202f86ad8d85c6130e1567aeccdb0c2f`, base main. CI **44939584722**, job **136953612269**: 145 passed, 1 skipped. Documentation CI only; no artifacts.
+
+The stack remains dependent: #146 is stacked on #105; #92 requires the health/checkpoint contract; #150 changes parity classification; #103 guards public upload on upstream main. These have not been integrated or deployed together. The main workflow still has a PR-triggered public-upload risk until #103's guard reaches main.
+
+### Evidence tiers and milestone gate
+
+- Repository/API, source, signature, full logs, and parsed artifacts: fresh repository/CI evidence.
+- Exact-head PR CI and harnesses: runner/PR evidence; not public inference.
+- Public upload/inference: **not demonstrated**. #298 failed before guest/job creation.
+- Deployment: **not inspected** (no Render workspace selected or service/deployment read).
+- M0: **partial, not accepted** — prioritized baseline is reproducible, but complete audit of all 99 open PRs remains unfinished; main run history is capped at 1,000 accessible records.
+- M1: **not accepted** — watchdog/runtime/checkpoint/parity/auth stack is not integrated and live deployed SHA/pin not independently verified.
+- M2–M7: **not accepted**; provenance, public workflow, privacy/deletion, fresh research, external BioMCP, and final acceptance remain unproven.
+- Deadline risk remains **high** for 2027-01-01; no guarantee.
+
+### Next safe action
+
+Continue M0 with prioritized PR audit batches and source-baseline provenance review. Then reconcile #103/#92/#105/#146/#150 on a fresh additive branch with exact-head tests. Public E2E stays blocked until deployment SHA and checkpoint identity are independently verified. No merge or deployment without explicit authorization.
