@@ -274,3 +274,16 @@ This is an additional evidence batch, not M0 completion. Fresh main SHA from rep
 
 Continue M0 PR inventory review and stack reconciliation. Keep public E2E disabled until deployed main SHA and checkpoint pin are verified; do not inspect Render or deploy without authorization. The deadline remains high risk.
 
+## M0 memory gate and artifact identity follow-up — 2026-11-21 20:39 IST
+
+- **#171 uint16 validator failure confirmed:** the exact workflow step ran the pinned checkpoint and all eight specialist checks successfully, then failed the 470 MiB safety ceiling. CI and the specialist contract remained green; the failed memory-gate run had no artifact.
+- **#172/#146 memory remediation evidence:** historical #172 worker run `44649655475` and #146 worker `44900605055` are green under runner constraints. #172 is main-based; #146 is stacked on #105 and includes the sealed checkpoint snapshot. #146's peak was **442,347,520 bytes**; #172's successful peak was **436,334,592 bytes** (runner-only). #146 CI [44900605180](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44900605180) passed 163 tests, 1 skipped. These are not deployed-runtime results.
+- #170, #168, #167, and #165 CI logs were re-read; counts remain **160+1 skipped**, **146+1 skipped**, **182+1 skipped**, and **146+1 skipped**, respectively. No artifacts were attached to the #171/#170 workers.
+- **Artifact integrity rechecked locally:** failure ZIP 14705266539 SHA-256 `318c672b6c5a8288dc7f7c7969654c456751b33b6aabc323dfef301b80df9ca0`; extracted JSON SHA-256 `844375cb30afcf7cbbb55d588d2954f36d25142bdec05bfb001f37481b8c82d2`. Release-status ZIP 14695923885 SHA-256 `2f801d40a66fff17b6807854d2828e5dffd8f1d7762c56b1be5503264ff7ea71`; extracted status SHA-256 `f8f1bc66d809685f28fceedad2d6ccedeccab9cf8cc9b44558bfeb425259b1ec`. Both ZIP hashes match GitHub artifact metadata; JSON parses. E2E #293 still has no guest token/job ID, and release status remains blocked by the missing E4 artifact.
+
+The earlier “Tracker-head verification” section records the 7f515 commit at the time it was written; the subsequent provenance audit pushed 3fefe and this current batch started at 268cf. Neither 3fefe nor 268cf had a verified PR run/legacy status when checked. This historical note is not a claim that the tracker is currently CI-green.
+
+### M0 status / next action
+
+M0 remains incomplete. The next batch should reconcile the runtime/parity/checkpoint branches (#103/#105/#146/#150/#172) without merging, and continue the remaining open-PR audit. Exact-main Actions pagination and signature verification remain blocked by connector capability. Public E2E stays blocked pending independent Render authorization and runtime/checkpoint verification.
+
