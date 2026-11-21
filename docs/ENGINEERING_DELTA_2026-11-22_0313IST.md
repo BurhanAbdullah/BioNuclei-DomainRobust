@@ -135,3 +135,28 @@ This follow-up supersedes the latest-run/Actions-page snapshot above only where 
 - **Deadline:** high risk for 2027-01-01; integration and authorized deployment/public validation remain critical-path blockers.
 
 Next safe work: audit the existing #103 authenticated API and #92 fail-closed gate at exact heads, and reconcile the #105/#146 checkpoint stack without merging or touching Render. Do not manually dispatch public E2E while runtime identity is stale/unverified.
+
+
+## Follow-up PR audit — 2026-11-22 04:18 IST
+
+Fresh exact-head review of the two previously prioritized runtime-safety PRs was completed. No code changes were made to either branch.
+
+### PR #92 — watchdog runtime/checkpoint gate
+
+- Head: `838b89d51cae3db2171bc67b0c2389c043b34122`; base main `d4a653e94501e8b9f1ec9de09ff71720f90ab340`.
+- Full changed-file patches reviewed: watchdog workflow, `scripts/public_e2e_schedule_watchdog.py`, and watchdog tests.
+- The proposed dispatch decision requires Render health to identify `main`, the current main SHA, `status=ok`, checkpoint availability and verification, and the expected immutable checkpoint SHA. Health probing is bounded; dispatch is refused when runtime identity, checkpoint pin, or GitHub server time cannot be verified. Tests cover behind/unverified runtime, invalid health/pin, retries, server time, and dispatch suppression.
+- Exact-head checks: [run 43437830689](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43437830689) — validate succeeded, watchdog dispatch job skipped; test job [131927398126](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43437830689/job/131927398126) reported **165 passed, 1 skipped, 7 subtests passed**. The second exact-head test run [43437830508](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43437830508) also succeeded. These are runner tests, not public inference.
+- This PR preserves automatic scheduling when runtime/pin are verified; it is not the manual-only pause proposed by #150. Integration must resolve this difference deliberately.
+
+### PR #103 — authenticated GitHub API checks
+
+- Head: `5372d812304eb3612dc7890e1f03ee9361e5c423`; base main.
+- Full patches reviewed: main-only public-upload guard, offline PR validation, shared token-header helper, both GitHub API request sites, and regression tests. The Bearer token is scoped to GitHub API requests; Render health remains unauthenticated.
+- Exact-head checks are green. CI [41794611644](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/41794611644) reported **148 passed, 1 skipped**. Offline harness run [41231537964](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/41231537964) succeeded and public-upload was skipped; tests [41231538021](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/41231538021) and [41231535677](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/41231535677) passed. This is older CI evidence on the exact head, not a new public run.
+
+### Integration disposition
+
+- #92 and #103 are main-based and have successful exact-head runner checks, but their checks are not fresh and the full runtime stack is not deployed/verified.
+- #150 is the manual-only safety pause and Docker-aware parity classifier; #92 is the verified-runtime watchdog gate. These are overlapping workflow edits and must be reconciled on one additive integration branch, not merged as independent conflicting workflow changes.
+- M0 remains partial because all 99 PRs have not had full diff/check/job-log/artifact review. M1 is still unaccepted; deployed SHA/checkpoint verification was not performed and Render was not inspected.
