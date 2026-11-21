@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import timedelta
 import hashlib
 import io
@@ -20,6 +21,11 @@ from fastapi.testclient import TestClient
 from bionuclei.adaptive_agent import CNNPatternCheck
 
 from bionuclei.expert_agents import run_expert_agents
+
+
+@contextmanager
+def _checkpoint_context(checkpoint: Path):
+    yield checkpoint
 
 
 @pytest.fixture
@@ -66,6 +72,7 @@ def test_inference_failure_removes_transient_artifacts_but_preserves_failed_stat
     checkpoint = root / "checkpoint.pt"
     checkpoint.write_bytes(b"checkpoint")
     monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "_checkpoint_for_inference", lambda: _checkpoint_context(checkpoint))
     monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
     monkeypatch.setattr(module, "to_dict", lambda _plan: {})
 
@@ -106,6 +113,7 @@ def test_report_failure_removes_transient_results_but_preserves_failed_status(co
     checkpoint = root / "checkpoint.pt"
     checkpoint.write_bytes(b"checkpoint")
     monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "_checkpoint_for_inference", lambda: _checkpoint_context(checkpoint))
     monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
     monkeypatch.setattr(module, "to_dict", lambda _plan: {})
 
@@ -153,6 +161,7 @@ def test_incomplete_specialist_result_is_never_published(community, monkeypatch)
     checkpoint = root / "checkpoint.pt"
     checkpoint.write_bytes(b"checkpoint")
     monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "_checkpoint_for_inference", lambda: _checkpoint_context(checkpoint))
     monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
     monkeypatch.setattr(module, "to_dict", lambda _plan: {
         "status": "PASS", "warnings": [],
@@ -330,6 +339,7 @@ def test_uint16_service_path_executes_specialists_from_computed_measurements(com
     checkpoint = root / "checkpoint.pt"
     checkpoint.write_bytes(b"test-only checkpoint placeholder")
     monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "_checkpoint_for_inference", lambda: _checkpoint_context(checkpoint))
     monkeypatch.setattr(
         "bionuclei.adaptive_agent.cnn_pattern_check",
         lambda _path: CNNPatternCheck(True, "Boundary U Net", 0.04, 0.95, 0.1, 4, "PASS", ()),
@@ -420,6 +430,7 @@ def test_public_upload_route_returns_job_bound_verified_specialist_result(commun
     checkpoint = module.JOB_ROOT / "test-only-checkpoint.pt"
     checkpoint.write_bytes(b"test-only checkpoint placeholder")
     monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "_checkpoint_for_inference", lambda: _checkpoint_context(checkpoint))
     monkeypatch.setattr(
         "bionuclei.adaptive_agent.cnn_pattern_check",
         lambda _path: CNNPatternCheck(True, "Boundary U-Net", 0.04, 0.95, 0.1, 4, "PASS", ()),
@@ -810,6 +821,7 @@ def test_source_input_cleanup_failure_never_publishes_completed_job(community, m
     checkpoint.write_bytes(b"test-only checkpoint placeholder")
 
     monkeypatch.setattr(module, "_checkpoint", lambda: checkpoint)
+    monkeypatch.setattr(module, "_checkpoint_for_inference", lambda: _checkpoint_context(checkpoint))
     monkeypatch.setattr(module, "build_plan", lambda *_args: SimpleNamespace(status="READY", warnings=[]))
     monkeypatch.setattr(module, "to_dict", lambda _plan: {
         "status": "READY",
