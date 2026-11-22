@@ -82,3 +82,23 @@ M0 remains **partial/not accepted** because full per-PR diff/check/log/artifact 
 The 2027-01-01 target is **high risk**. The critical path is fail-closed runtime integration, a verified deployment/checkpoint, fresh baseline provenance and current-main scientific reproduction, controlled public upload-to-inference, lifecycle/privacy integration and authorized verification, and external BioMCP execution.
 
 Keep public E2E paused by a reviewed safety integration until exact runtime/checkpoint identity is verified. Do not inspect Render, deploy, manually upload, dispatch public E2E, or merge without the required authorization.
+
+
+## Fresh checkpoint-integrity PR audit — 2026-11-22
+
+### PR #105 — immutable release digest on health and inference
+
+- Exact head `1d4726b430da933180d2c2744ec564a442c09b96`, base main. Full 11-file patch was refreshed and reviewed, including `webapp/app.py`, both health endpoints, E2E checkpoint gate, and checkpoint tests.
+- The release digest is fixed at `7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92`; a configured environment digest cannot redefine the source-controlled pin. Inference returns 503 on missing/unverified/mismatched checkpoint, and health reports the observed SHA plus availability/verification state.
+- Exact-head workflow runs [43421688067](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421688067), [43421687985](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421687985), [43421688000](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421688000), [43421687953](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421687953), and [43421687940](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421687940) all succeeded. The public E2E job was skipped; these are CI/runner validations only.
+
+### PR #146 — sealed checkpoint snapshot (stacked on #105)
+
+- Exact head `7c7f348333ba2cc1fe4bc53e53a0f1e62a9ef433`, base PR #105 head. Full 10-file patch refreshed; the checkpoint context, sealed memfd snapshot, community inference call, tests, and constrained-memory workflow were reviewed.
+- Inference copies the opened, verified checkpoint into a memfd snapshot, hashes the snapshot again, applies and checks write/grow/shrink/seal protections, and fails closed if a stable descriptor path cannot be provided. Model loading consumes the snapshot rather than the mutable deployment path.
+- Regression tests exercise pathname replacement and same-inode mutation after snapshot creation and assert sealing. The validation workflow builds the production community image, uses a 480 MiB container memory limit, and checks thread-pool defaults.
+- Exact-head runs [44900605117](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44900605117), [44900605141](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44900605141), [44900605180](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44900605180), [44900605104](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44900605104), and [44900605055](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44900605055) all succeeded. This is runner evidence; no deployment, Render inspection, or public upload/inference was performed.
+
+### Integration gate
+
+#105 and #146 are a coherent candidate checkpoint-integrity stack, with exact-head checks green. They remain unmerged and unverified on the deployed runtime. M1 still fails its exit criteria until this stack is integrated with the watchdog/runtime-parity changes, exact-main CI is green, automated stale-SHA/unverified-pin dispatch suppression is proven, and live runtime identity is authorized and verified. Do not merge overlapping PRs independently.
