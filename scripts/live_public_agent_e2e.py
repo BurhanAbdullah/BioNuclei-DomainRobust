@@ -31,6 +31,8 @@ API_BASE = os.environ.get(
     "BIONUCLEI_PUBLIC_API_URL",
     "https://bionuclei-community-analyzer.onrender.com",
 ).rstrip("/")
+
+EXPECTED_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
 ANALYSIS_TIMEOUT_MS = int(os.environ.get("BIONUCLEI_ANALYSIS_TIMEOUT_MS", "1200000"))
 
 
@@ -262,6 +264,12 @@ def main() -> None:
             state["checkpoint_available"] = health.get("checkpoint_available")
             require(health.get("status") == "ok" and health.get("checkpoint_available") is True,
                     f"Public API is not analysis-ready: status={health.get('status')!r}, checkpoint_available={health.get('checkpoint_available')!r}")
+            state["checkpoint_verified"] = health.get("checkpoint_verified")
+            state["checkpoint_sha256"] = health.get("checkpoint_sha256")
+            require(health.get("checkpoint_verified") is True,
+                    "Public API did not verify the immutable release checkpoint")
+            require(health.get("checkpoint_sha256") == EXPECTED_CHECKPOINT_SHA256,
+                    "Public API checkpoint digest does not match the pinned release")
             deployed_commit = str(health.get("render_git_commit") or "")
             require(bool(re.fullmatch(r"[0-9a-f]{40}", deployed_commit)),
                     f"Render health did not expose a valid deployed Git commit: {deployed_commit!r}")
@@ -691,6 +699,7 @@ def main() -> None:
                 state["input_dtype"] = profile["dtype"]
                 state["raw_image_min"] = profile["min"]
                 state["raw_image_max"] = profile["max"]
+                state["raw_image_dynamic_range"] = profile["max"] - profile["min"]
                 state["cnn_qc"] = {
                     "status": cnn.get("status"),
                     "foreground_fraction": foreground_fraction,
@@ -768,9 +777,25 @@ def main() -> None:
                 intensity_agent = next((a for a in agents if a.get("agent") == "intensity_agent"), None)
                 require(isinstance(intensity_agent, dict), "Intensity specialist output is missing")
                 require(
+                    "Raw image min: 512" in intensity_agent.get("observations", []),
+                    "Intensity specialist did not reason about the raw-image minimum",
+                )
+                require(
                     "Raw image max: 65535" in intensity_agent.get("observations", []),
                     "Intensity specialist did not reason about the 16-bit raw-image maximum",
                 )
+                require(
+                    "Raw image dynamic range: 65023 raw intensity units." in intensity_agent.get("observations", []),
+                    "Intensity specialist did not reason about the full raw-image dynamic range",
+                )
+                intensity_min_claim = next(
+                    c for c in intensity_agent.get("quantitative_claims", [])
+                    if c.get("reference") == "adaptive_plan.profile.min" and c.get("value") == 512
+                )
+                state["intensity_specialist_512_min_claim"] = {
+                    "reference": intensity_min_claim.get("reference"),
+                    "value": intensity_min_claim.get("value"),
+                }
                 intensity_max_claim = next(
                     c for c in intensity_agent.get("quantitative_claims", [])
                     if c.get("reference") == "adaptive_plan.profile.max" and c.get("value") == 65535
@@ -886,6 +911,11 @@ def main() -> None:
                     require(zip_result.get("n_instances") == nuclei_count and
                             zip_result.get("reports", {}).get("nuclei_count") == nuclei_count,
                             "ZIP result/measurement instance counts disagree")
+                    require(zip_result.get("adaptive_plan", {}).get("profile", {}).get("min") == 512,
+                            "ZIP results.json lost the raw 16-bit minimum")
+                    require(zip_result.get("adaptive_plan", {}).get("profile", {}).get("max") -
+                            zip_result.get("adaptive_plan", {}).get("profile", {}).get("min") == 65023,
+                            "ZIP results.json lost the full raw 16-bit dynamic range")
                     require(zip_result.get("adaptive_plan", {}).get("profile", {}).get("max") == 65535,
                             "ZIP results.json lost the raw 16-bit maximum")
                     require(zip_result.get("reports", {}).get("intensity", {}).get("max_nuclear_intensity") == 65535,
@@ -896,6 +926,9 @@ def main() -> None:
                     require(zip_report.get("job_id") == job_id and
                             zip_report.get("input_sha256") == result.get("input_sha256") and
                             zip_report.get("reports", {}).get("nuclei_count") == nuclei_count and
+                            zip_report.get("adaptive_plan", {}).get("profile", {}).get("min") == 512 and
+                            zip_report.get("adaptive_plan", {}).get("profile", {}).get("max") -
+                            zip_report.get("adaptive_plan", {}).get("profile", {}).get("min") == 65023 and
                             zip_report.get("adaptive_plan", {}).get("profile", {}).get("max") == 65535 and
                             zip_report.get("expert_agents") == artifact,
                             "ZIP analysis_report.json does not carry the live job's measured/evidence-bound results")
