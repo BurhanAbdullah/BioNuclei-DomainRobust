@@ -9,3 +9,53 @@
 @media(max-width:760px){body{font-size:15px}.wrap,.page{width:min(100% - 32px,var(--max))}.hero,.page-hero,.biomcp-hero{padding:var(--space-7) 0 var(--space-6)}h1{font-size:clamp(2.8rem,15vw,5rem)}h2{font-size:clamp(2rem,10vw,3rem)}.section,.biomcp-section,.landing-feature,.landing-intro,.landing-research,.landing-statement{padding:var(--space-7) 0}.grid,.research-grid,.biomcp-grid,.process,.biomcp-flow,.landing-intro-grid,.landing-research-grid,.split,.model,.training,.outputs,.facts{grid-template-columns:1fr}.feature-grid,.team-grid{grid-template-columns:1fr}.agents{grid-template-columns:1fr}.pipeline{grid-template-columns:1fr}.arrow{transform:rotate(90deg);text-align:center}.landing-hero-image{min-height:48vh}.landing-copy{padding:var(--space-6) 16px}.landing-note{margin-top:var(--space-5)}.foot-grid,.footer-grid{grid-template-columns:1fr 1fr}.nav-inner{min-height:68px}.brand .mark{width:38px;height:38px}}
 @media(max-width:480px){.foot-grid,.footer-grid{grid-template-columns:1fr}.btn{width:100%}.nav-cta .btn{width:auto}.visual img{aspect-ratio:4/3}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.site-reveal{opacity:1!important;transform:none!important;transition:none!important}.btn,.card,.feature,.research-card,.biomcp-card,.process-card,.agent{transition:none!important}}
+
+/* BioNuclei visual system: wine red, white, and black. */
+:root{--text-primary:#111111;--text-secondary:#333333;--text-on-dark:#ffffff;--text-on-light:#111111;--surface-base:#ffffff;--surface-elevated:#ffffff;--accent:#7b1638;--border-subtle:#e5d6dc}
+body{background:#ffffff;color:#111111}
+@media(prefers-color-scheme:dark){:root{--text-primary:#111111;--text-secondary:#333333;--text-on-dark:#ffffff;--text-on-light:#111111;--surface-base:#ffffff;--surface-elevated:#ffffff;--accent:#7b1638;--border-subtle:#e5d6dc}body{background:#ffffff;color:#111111}}
+.site-nav,.hero,.page-hero,.biomcp-hero,.landing-hero,.landing-copy{background:#ffffff;color:#111111}
+.site-nav{border-bottom:2px solid #7b1638}
+.footer,.site-footer{background:#ffffff;color:#111111;border-top:3px solid #7b1638}
+.foot-grid h4,.footer-grid h4,.foot-grid a,.foot-grid p,.footer-grid a,.footer-grid p,.foot-bottom,.footer-bottom,.site-trust,.site-trust span,.site-trust a{color:#111111}
+.footer a:hover,.site-footer a:hover{color:#7b1638}
+.section.dark,.biomcp-boundary,.landing-statement{background:#f5e8ed;color:#111111;border-top:1px solid #7b1638;border-bottom:1px solid #7b1638}
+.section.dark h2,.section.dark h3,.section.dark p,.section.dark .kicker,.section.dark .intro,.biomcp-boundary h2,.biomcp-boundary p,.biomcp-boundary .kicker,.landing-statement h2,.landing-statement p,.landing-statement .kicker{color:#111111}
+.cta,.join-panel{background:#ffffff;color:#111111;border:1px solid #7b1638}
+.cta h2,.cta p,.join-panel h2,.join-panel p{color:#111111}
+.panel.dark{background:#fff;color:#111;border-color:#7b1638}.panel.dark *{color:#111}
+pre,.biomcp-code{background:#f5e8ed;color:#111;border:1px solid #e5d6dc}
+code{color:#7b1638}
+.landing-hero-image,.research-image,.visual,.micro{background:#f5e8ed}
+.feature-card:hover{background:#f5e8ed;color:#111;border-color:#7b1638}
+.feature-card:hover h3,.feature-card:hover p,.feature-card:hover b,.feature-card:hover span{color:#111}
+.feature-card span,.feature-card b{color:#7b1638}
+.landing-overlay{background:linear-gradient(180deg,transparent,rgba(123,22,56,.42))}
+.btn,.btn.primary{border-color:#7b1638}.btn{color:#7b1638;background:#fff}.btn.primary{background:#7b1638;color:#fff}
+.btn.primary:hover,.btn.primary:focus-visible{background:#111;color:#fff;border-color:#111}
+.pill,.status,.badge{background:#fff;color:#7b1638;border-color:#7b1638}
+
+/* Final palette guardrails: wine red / white / black */
+:root{color-scheme:light;--text-primary:#111!important;--text-secondary:#333!important;--text-on-dark:#fff!important;--text-on-light:#111!important;--surface-base:#fff!important;--surface-elevated:#fff!important;--accent:#7b1638!important;--border-subtle:#e5d6dc!important}
+html,body{background:#fff!important;color:#111!important}
+body *{color-scheme:light}
+.site-nav,.site-nav *,.nav-inner,.nav-inner *{background-color:#fff}
+.site-nav,.site-nav a,.nav-links a,.nav-group-label{color:#111}
+.site-nav a:hover,.nav-links a:hover,.nav-group-label:hover{color:#7b1638}
+.site-nav,.site-header{border-bottom:2px solid #7b1638}
+footer,.footer,.site-footer{background:#fff!important;color:#111!important}
+footer *,.footer *,.site-footer *{color:#111!important}
+h1,h2,h3,h4,h5,h6,p,li,label,small,summary{color:#111}
+a{color:#7b1638}
+a:hover,a:focus-visible{color:#111}
+.card,.panel,.feature-card,.research-card,.biomcp-card,.process-card,.agent,.file,.output,.result-card{background:#fff!important;color:#111!important;border-color:#e5d6dc}
+.card *,.panel *,.feature-card *,.research-card *,.biomcp-card *,.process-card *,.agent *,.file *,.output *,.result-card *{color:#111}
+.section.dark,.landing-statement,.biomcp-boundary{background:#f5e8ed!important;color:#111!important}
+.section.dark *,.landing-statement *,.biomcp-boundary *{color:#111!important}
+.btn.primary,.button.primary,.cta-button{background:#7b1638!important;color:#fff!important;border-color:#7b1638!important}
+.btn.primary *,.button.primary *,.cta-button *{color:#fff!important}
+pre,.biomcp-code{background:#f5e8ed!important;color:#111!important;border-color:#e5d6dc}
+pre *, .biomcp-code *{color:#111!important}
+code{color:#7b1638}
+:focus-visible{outline:3px solid #7b1638!important;outline-offset:2px}
+@media(prefers-color-scheme:dark){html,body{background:#fff!important;color:#111!important}}
