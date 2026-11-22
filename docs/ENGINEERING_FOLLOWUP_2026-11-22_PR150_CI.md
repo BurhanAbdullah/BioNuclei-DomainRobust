@@ -214,3 +214,12 @@ This run has reviewed a prioritized set of scientific, security, upload, postpro
 - PR head is now `c0cc1d6f1ade3b8d0da6e7327ca7b3f10e17fff5`, base main.
 - Full commit diff inspected: additive 29-line audit section only.
 - Exact-head CI is queued: [44981988896](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44981988896). The preceding tracker commits `1062e29...` and `cbfee9a...` have runs in progress or prior successful checks, but those do not validate the newest head. Do not report this update as green until the exact-head checks complete.
+
+## Exact-main baseline recipe mismatch confirmed — 2026-11-22
+
+The baseline workflow and config were freshly fetched at main SHA `d4a653e94501e8b9f1ec9de09ff71720f90ab340`:
+- `.github/workflows/bbbc039_baseline.yml` blob `d42b8dbdbc155017c4da7433c71c16817c742cbb` defaults manual `EPOCHS` to `20`.
+- `configs/bbbc039_baseline.yaml` blob `d2661f3eeb306f11ed255a044cafda8cf55baac8` sets `training.epochs: 100`.
+- The workflow passes `inputs.epochs || '20'` to training, so a default baseline run does not match the committed 100-epoch recipe. This is a confirmed main-source mismatch, not an inference from a PR patch.
+- PR #169 (exact-main baseline selection and recipe verifier) includes the 100-epoch alignment and safe checkpoint metadata verification; PR #168 only aligns the default and is likely redundant. Both remain unmerged.
+- Prioritize #169 and avoid merging #168 independently if #169 is accepted. The current main baseline provenance cannot be accepted as recipe-consistent until corrected and a fresh exact-main baseline run/checkpoint is produced.
