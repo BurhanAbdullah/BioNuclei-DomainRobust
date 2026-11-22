@@ -4,6 +4,8 @@ from __future__ import annotations
 import ctypes
 import gc
 import json
+import os
+import re
 import platform
 import sys
 import threading
@@ -26,6 +28,59 @@ from .models import BoundaryUNet
 # single-threaded and serialize model construction/inference so repeated
 # browser clicks cannot load multiple Boundary U-Nets concurrently.
 _INFERENCE_LOCK = threading.Lock()
+
+# Verified checkpoint descriptors are registered by the web adapter after the
+# release digest and filesystem identity have been checked. Loading through the
+# descriptor prevents a pathname replacement from redirecting torch.load.
+_CHECKPOINT_FD_LOCK = threading.Lock()
+_VERIFIED_CHECKPOINT_FDS: dict[int, tuple[int, int, int, int, int]] = {}
+
+
+def _checkpoint_stat_key(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def register_verified_checkpoint_fd(fd: int, identity: tuple[int, int, int, int, int]) -> None:
+    if _checkpoint_stat_key(os.fstat(fd)) != identity:
+        raise RuntimeError("verified checkpoint identity changed before registration")
+    with _CHECKPOINT_FD_LOCK:
+        _VERIFIED_CHECKPOINT_FDS[fd] = identity
+
+
+def unregister_verified_checkpoint_fd(fd: int) -> None:
+    with _CHECKPOINT_FD_LOCK:
+        _VERIFIED_CHECKPOINT_FDS.pop(fd, None)
+
+
+def _verified_checkpoint_fd(checkpoint: Path) -> tuple[int, tuple[int, int, int, int, int]] | None:
+    path = str(checkpoint)
+    if not path.startswith("/proc/self/fd/"):
+        return None
+    descriptor_text = path.removeprefix("/proc/self/fd/")
+    if not descriptor_text.isdigit():
+        raise RuntimeError("invalid verified checkpoint descriptor path")
+    fd = int(descriptor_text)
+    with _CHECKPOINT_FD_LOCK:
+        expected = _VERIFIED_CHECKPOINT_FDS.get(fd)
+    if expected is None:
+        raise RuntimeError("checkpoint descriptor is not registered as verified")
+    if _checkpoint_stat_key(os.fstat(fd)) != expected:
+        raise RuntimeError("verified checkpoint identity changed")
+    return fd, expected
+
+
+def _assert_checkpoint_fd_identity(
+    checkpoint: Path,
+    expected: tuple[int, tuple[int, int, int, int, int]],
+) -> None:
+    if _verified_checkpoint_fd(checkpoint) != expected:
+        raise RuntimeError("verified checkpoint identity changed")
 try:
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
@@ -64,17 +119,18 @@ def _normalise(image: np.ndarray) -> np.ndarray:
 
 def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
     target = torch.device(device)
-    # The checkpoint is a trusted, immutable release artifact. Memory-map its
-    # CPU storages and assign them directly to the module instead of keeping a
-    # deserialized state dict and a second copied parameter set resident at
-    # once. This matters on the 512 MiB public worker before tiled activations
-    # are even allocated. weights_only rejects arbitrary pickled objects.
+    verified_fd = _verified_checkpoint_fd(checkpoint)
+    # Memory-map CPU storages and assign them directly to the module. A verified
+    # /proc/self/fd path binds torch.load to the inode whose digest was checked,
+    # rather than reopening a mutable checkpoint pathname.
     state = torch.load(
         checkpoint,
         map_location="cpu",
         mmap=True,
         weights_only=True,
     )
+    if verified_fd is not None:
+        _assert_checkpoint_fd_identity(checkpoint, verified_fd)
     cfg = state.get("config", {})
     model_cfg = cfg.get("model", {})
     model = BoundaryUNet(
@@ -83,6 +139,8 @@ def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
         base_channels=int(model_cfg.get("base_channels", 32)),
     )
     model.load_state_dict(state["model"], assign=True)
+    if verified_fd is not None:
+        _assert_checkpoint_fd_identity(checkpoint, verified_fd)
     del state
     if target.type != "cpu":
         model.to(target)
@@ -209,6 +267,7 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
     # The model is deliberately loaded inside the process-wide lock. This
     # prevents two authenticated /analyze jobs from simultaneously allocating
     # model state and intermediate tensors on a 512 MiB Render instance.
+    verified_fd = _verified_checkpoint_fd(checkpoint)
     with _INFERENCE_LOCK:
         model = _load_model(checkpoint, device)
         try:
@@ -221,6 +280,8 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
                 instances = _split_instances(
                     _predict_logits(model, x, tile_size=tile_size, overlap=overlap)
                 )
+            if verified_fd is not None:
+                _assert_checkpoint_fd_identity(checkpoint, verified_fd)
         finally:
             del x
             del model
