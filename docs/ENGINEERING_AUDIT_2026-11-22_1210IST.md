@@ -168,7 +168,7 @@ These overlapping branches cannot be merged independently. #150 removes automati
 
 ### M0 review coverage
 
-Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182, #105, #181, #169, #177 and #168; #104 and #178 remain partial. **91 of the 100 open PRs are still not fully audited** (89 untouched, 2 partial). M0 is not accepted.
+Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182, #105, #181, #169, #177, #168 and #170; #104, #141 and #178 remain partial. **90 of the 100 open PRs are still not fully audited** (87 untouched, 3 partial). M0 is not accepted.
 
 
 **CI correction:** The 14:07 audit append and the subsequent supersession-note commit on #178 both received successful tests runs: `44999496410` and `45004288578`, respectively, each 154 passed, 1 skipped; the latter has no artifacts. The earlier “not yet CI-tested” wording is historical and superseded.
@@ -210,3 +210,10 @@ Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for 
 The E7/final E6 hard-coded retained-E4 artifact 404 remains unresolved; these provenance PRs do not fix artifact identity. M2 is blocked.
 
 Coverage correction: nine selected PRs (#150, #103, #92, #182, #105, #181, #169, #177, #168) now have full diff/check/log/artifact review; #104 and #178 remain partial. 91 of 100 open PRs are not fully audited (89 untouched, 2 partial). M0 remains partial. Current #178 head `39973cc508ff8013cbebeefc125590334e31148a` has tests in progress (run `45004835065`); no artifact.
+## M0 retention-contract PR audit — 2026-11-22
+
+- **#170** head `7a7e0e58ae88c690971b429ad0323871af925f71`, base #105 head `1d4726b4...`: full 2-file diff and CI/log/artifact inventory reviewed. It derives root and health retention from configured `DEFAULT_RESULT_RETENTION_HOURS` and tests both 1-hour and 24-hour settings. CI [44517890895](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44517890895): 160 passed, 1 skipped; MCP smoke 2 passed; web adapter 160 passed, 1 skipped; community contract 4 passed; console integrity passed. Tiled checkpoint worker succeeded under 480 MiB with before/after SHA equality; no artifacts. Live Render job skipped. Runner-only.
+- **#141** head `00318ed4da86e4eaa4d5e4d3262436d83a93053c`, base #105 head `1d4726b4...`: full 2-file patch reviewed; it fixes the same root/health retention mismatch and adds a 24-hour test, but exact-head runs/status are empty. No CI or artifacts. #170 is the stronger tested duplicate (1-hour and 24-hour cases); avoid merging both independently.
+- PR descriptions claim the configured service retention is 24 hours. I did not independently re-read `render.yaml` or inspect Render; treat that value as PR-description evidence only.
+
+Coverage correction: 10 selected PRs (#150, #103, #92, #182, #105, #181, #169, #177, #168, #170) now have full diff/check/log/artifact review; #104, #141 and #178 remain partial. 90 of 100 open PRs are not fully audited (87 untouched, 3 partial). M0 remains partial. Current #178 head `916dabcc62cd2e553ee73f14f3a806139be65616` has tests in run `45004993280` in progress; previous head `39973cc...` was superseded.
