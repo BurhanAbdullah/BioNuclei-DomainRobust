@@ -51,3 +51,43 @@ Browser tools are read-only; this session has no originating browser context. Re
 ## Risk and next action
 
 The 2027-01-01 target is high risk with roughly six weeks remaining. Next safe task is to finish the M0 PR/check inventory within connector limits, then reconcile runtime parity, watchdog gating, and checkpoint-pin integrity as a single M1 integration. Do not merge, deploy, select Render, or dispatch public E2E without the required authorization and verified runtime/checkpoint identity.
+
+
+## Fresh verification update — 2026-11-22 13:07 IST
+
+### Main SHA and accessible Actions inventory
+
+- Main is still `97e35c1cc73f39fb2855268e441231975ba4bd0b`; commit verification is `verified=true`, `reason=valid` (verification time `2026-11-22T04:07:50Z`).
+- Branch-main runs: pages 1–10 each returned 100, page 11 empty, API total 2,500; only 1,000 are exposed through this connector listing. Schedule-event runs: pages 1–6 each returned 100, page 7 returned 2; all 602 are enumerated.
+- Open PR metadata: 100 returned on page 1, page 2 empty. All PR head/base metadata is visible in the returned listing; the all-PR full diff/check/log/artifact audit is still incomplete. PR #178 is based on stale main `d4a653e94501e8b9f1ec9de09ff71720f90ab340` and its draft branch has not been rebased.
+- A `head_sha` workflow-run listing query returned 0, so it was not treated as proof of no runs. The commit check-runs endpoint returned 47 checks, including current-main E7 failure, E6 25% in progress, and successful tests. The latest current-main public E2E/public watchdog runs are not present in the accessible page-1 listing; the newest inspected public E2E/watchdog runs below use stale SHA `d4a653e9...`.
+
+### Current-main CI and science
+
+- Main CI push run [44992588956](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44992588956) succeeded; job `137116678746` completed all steps including tests.
+- E7 [44994082617](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44994082617), job `137121239581`, failed at retained-E4 artifact verification. The complete 34,198-character log was refreshed. Artifact ID `12183110279` returns 404; dataset/evaluation/evidence steps were skipped; no E7 metrics exist and the run has no artifacts.
+- Source at exact main: `.github/workflows/e7_bbbc038_external.yml` (blob `f5a9c97e3956749d567c4b5f5ae989d32622ec48`) still falls back to hard-coded artifact ID/digest `12183110279` / `sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d` for `workflow_run`, rather than resolving the triggering successful E4 artifact. This is a confirmed M2 defect; it is queued behind the incomplete M0 gate.
+- E6 [44994082640](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44994082640) is current-main and still in progress. Three fractions (1%, 5%, 10%) have successful runner jobs/artifacts; 25% has resolved the exact E4 checkpoint and verified the dataset split/leakage guard, but training is still running. The 25% job-log fetch was unavailable (connector BlobNotFound); no final metrics are asserted here. Current-main E6 workflow source `.github/workflows/e6_external_few_shot.yml` (blob `eadc9d8a1a8d2e3da887641b72a688b31a528846`) verifies source run branch, SHA, workflow identity, and exactly one unexpired E4 artifact before download.
+- Zero-shot [44990767024](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44990767024) completed successfully. Runner success is not a public inference claim.
+
+### E2E/watchdog refresh and failure-artifact hashes
+
+The latest inspected public E2E [44972727518](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44972727518) and scheduled E2E [44966699214](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44966699214) both use stale SHA `d4a653e94501e8b9f1ec9de09ff71720f90ab340`. Both complete job logs/steps and failure-artifact metadata were refreshed. Each failure artifact was downloaded, ZIP-tested, extracted and JSON-parsed; the archives contain only the failure JSON, no source images:
+
+- E2E #302 artifact `14734721065`: archive 1,051 bytes, SHA-256 `acc4026852be6922aeb5dc93caa00ab0e196a8c6f9004f26c7c9110ceae2e999`; extracted JSON 2,806 bytes, SHA-256 `2303f89a8945d29947e7fba0efd2c22610ac15f7192936e9cd02a9adda896bdb`.
+- Scheduled #301 artifact `14731389860`: archive 1,052 bytes, SHA-256 `0f41ba3a21b1008d5fd40bc76b654bcda190130768ef3258cc8e465e51f19214`; extracted JSON 2,806 bytes, SHA-256 `7a40410b73868de6466abaddec4ca27d689611ac00fb6e6896f870e0cb050af4`.
+
+Both artifacts report runtime-tree parity false; Render runtime commit `bb6a9d27537e12b85768c7fead1467253b2423ba` is ahead of expected SHA. Health attempts 1–4 timed out; attempt 5 returned HTTP 200 but retained `ReadTimeout`. `checkpoint_available=true` does not verify the digest. No guest token/job ID was observed; upload/inference and cleanup were not reached.
+
+Watchdog [44972719647](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44972719647) is stale-main schedule run; steps refreshed and dispatch was accepted. The available log-fetch response was incomplete in this connector refresh, so the prior detailed log finding is retained only as historical evidence. There is no current-main public E2E/watchdog dispatch to inspect.
+
+### PR #181 stale-retry guard
+
+- PR #181 exact head `823f1f3922980cd91cea11c175d460a492cc88ff`, base current main `97e35c1cc73f39fb2855268e441231975ba4bd0b`. Full 2-file diff reviewed: retry is gated on failure, attempt limit, `head_branch == main`, and `head_sha == github.sha`; static tests cover the guard.
+- Exact-head checks: 2 test checks succeeded; Supabase Preview skipped. This is PR/runner evidence only. PR remains open and unmerged; main's E6 retry watchdog does not yet include the SHA/branch guard.
+
+### Evidence tier and gate status
+
+Repository/API and exact source evidence are separate from CI/runner checks and local artifact parsing. No public upload/inference or live deployment is verified. Browser tools available here are read-only; no originating browser context is available. Render was not selected/inspected/deployed. M0 remains partial due all-PR diff/check/log/artifact gaps and inaccessible main-run history; M1–M7 remain unaccepted. Deadline risk is high (about 40 days to 2027-01-01).
+
+Next: finish M0 inventory, then review the fail-closed runtime stack without merging overlapping PRs independently. M2 E7 exact-run artifact resolution must remain queued until M0 is accepted. No public E2E dispatch or merge was performed.
