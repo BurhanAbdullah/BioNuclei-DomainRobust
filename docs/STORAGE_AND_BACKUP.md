@@ -49,3 +49,17 @@ The script refuses plain-HTTP URLs, verifies the server's SHA-256 and every file
 - Analysis jobs are still transient (results expire after the retention window). Saved projects will use this store when project persistence lands.
 - If the PC is off, that night's backup is skipped and the next run catches up. The server copy is unaffected.
 - Restoring is a manual step: extract `data/` from an archive into the server's data root with the same key.
+
+## Daily backup into Google Drive (no PC needed)
+
+`.github/workflows/backup_to_drive.yml` runs every day at 02:47 IST and copies the encrypted archive into the Drive folder `1IUcF1OuF0beo1e1sLgDOHKyOOF9n8wAY`. Google stores ciphertext only; the data key never leaves the server and your password manager.
+
+One-time setup:
+1. Google Cloud Console: create a project, enable the Google Drive API, create an OAuth client of type **Desktop app**.
+2. On your computer: `python scripts/drive_authorize.py --client-id ... --client-secret ...` and approve in the browser with the Google account that owns the folder.
+3. GitHub repository > Settings > Secrets and variables > Actions, add secrets `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`, `GDRIVE_REFRESH_TOKEN` and `BIONUCLEI_BACKUP_TOKEN`.
+4. Actions > Backup to Google Drive > Run workflow, to test it once.
+
+Until the secrets exist, the workflow finishes with a "not configured" warning. It keeps the newest 30 backups and only ever deletes files it uploaded itself.
+
+The PC route above still works as a second copy: point `--dest` at a folder inside Google Drive for Desktop to sync it as well.
