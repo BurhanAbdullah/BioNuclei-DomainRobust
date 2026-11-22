@@ -41,13 +41,27 @@ app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_c
 
 @app.get("/")
 def root():
-    return {"service":"bionuclei-community-analyzer","version":"0.3.3","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
+    retention_hours = community_service.DEFAULT_RESULT_RETENTION_HOURS
+    retention_duration = "1 hour" if retention_hours == 1 else f"{retention_hours} hours"
+    return {
+        "service": "bionuclei-community-analyzer",
+        "version": "0.3.3",
+        "status": "online",
+        "health": "/health",
+        "algorithms": "/algorithms",
+        "authentication": "account optional; guest sessions use an ephemeral job token",
+        "retention": (
+            "original uploads are deleted after processing; results are disposable "
+            f"and expire after {retention_duration}"
+        ),
+        "result_retention_hours": retention_hours,
+    }
 
 @app.get("/health")
 def health():
     try: available=_checkpoint().is_file()
     except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
+    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":community_service.DEFAULT_RESULT_RETENTION_HOURS}
 
 @app.get("/algorithms")
 def algorithms():
