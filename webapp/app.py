@@ -154,7 +154,7 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
     return path, actual, verified
 
 
-def _close_checkpoint_load_fds -> None:
+def _close_checkpoint_load_fds() -> None:
     """Release verified checkpoint descriptors when the web worker shuts down."""
     global _CHECKPOINT_CACHE
     with _CHECKPOINT_CACHE_LOCK:
