@@ -88,3 +88,41 @@ def test_detailed_report_labels_not_applicable_specialists_truthfully(tmp_path: 
     assert "intensity_agent: NOT APPLICABLE" in html
     assert "not applicable" in html.lower()
     assert "Training provenance is not established" in html
+
+
+def test_report_flags_implausible_segmentation_and_formats_numbers(tmp_path: Path) -> None:
+    import tifffile
+    import numpy as np
+    (tmp_path / "nuclei_analysis.csv").write_text("label,area\n1,147456\n", encoding="utf-8")
+    tifffile.imwrite(tmp_path / "overlay.tif", np.zeros((64, 64, 3), dtype=np.uint8))
+    payload = {
+        "adaptive_plan": {"status": "CAUTION", "warnings": ["CNN class confidence is low."], "profile": {"shape": [384, 384], "dtype": "uint16", "median": 312.0, "std": 498.50859267840536, "saturation_fraction": 0.0}},
+        "model": {"architecture": "Boundary U-Net", "training_reference": "Not established"},
+        "n_instances": 1,
+        "reports": {"nuclei_count": 1, "morphology": {"mean_area": 147456.0}, "intensity": {"mean_nuclear_intensity": 463.78721788194446}},
+        "expert_agents": {"agents": [{"agent": "intensity_agent", "status": "completed", "observations": ["Raw image p995: 3149.725000000006.", "Mean: 463.78721788194446."]}]},
+    }
+    build_report(payload, tmp_path)
+    page = (tmp_path / "analysis_report.html").read_text(encoding="utf-8")
+    assert "Review required before use" in page
+    assert "One object covers 100% of the image" in page
+    assert "CNN class confidence is low." in page
+    assert "1 nuclear object in" in page and "1 nuclear objects" not in page
+    assert "3149.725000000006" not in page and "3,150" in page and "463.8" in page
+    assert "analysisability" not in page.lower()
+    assert ".;" not in page
+    assert "data:image/png;base64," in page and "Histogram of nuclear area" in page
+    review = json.loads((tmp_path / "analysis_report.json").read_text())["review"]
+    assert review["verdict"] == "Review required before use" and len(review["flags"]) >= 3
+    text = "".join(p.extract_text() for p in PdfReader(str(tmp_path / "analysis_report.pdf")).pages)
+    assert "Review before using these numbers" in text and "Figure 2" in text
+
+
+def test_clean_result_has_no_review_flags(tmp_path: Path) -> None:
+    (tmp_path / "nuclei_analysis.csv").write_text("label,area\n" + "".join(f"{i},{100 + i}\n" for i in range(1, 30)), encoding="utf-8")
+    payload = {"adaptive_plan": {"status": "READY", "warnings": [], "profile": {"shape": [512, 512], "dtype": "uint16"}},
+               "model": {"architecture": "Boundary U-Net"}, "reports": {"nuclei_count": 29}}
+    build_report(payload, tmp_path)
+    page = (tmp_path / "analysis_report.html").read_text(encoding="utf-8")
+    assert "No automatic quality flags" in page and "Review before using" not in page
+    assert "29 nuclear objects" in page
