@@ -137,3 +137,32 @@ Main remains `d4a653e94501e8b9f1ec9de09ff71720f90ab340`; signature verification 
 ### Baseline audit conclusion
 The provenance fixes are technically complementary and the #169 → #177 dependency is explicit. They remain PR-branch evidence: no current-main baseline checkpoint, exact recipe, target manifest, or fresh transfer artifact was independently reproduced here. Prioritize this stack after the M0 audit, with #169 as the baseline foundation, then #173 source-training provenance and #177 target-evaluation provenance. Next science-stack audit: #175/#174 safe checkpoint loading and #168 baseline workflow/config alignment. Do not mark M2 complete from these CI runs.
 
+
+## Fresh science/security stack audit — 2026-11-22 09:10 IST
+
+The next prioritized research/runtime PRs were inspected at their exact current heads and full patches. These are source/CI findings; none proves live inference or a fresh scientific result.
+
+### PR #175 — weights-only research evaluators
+- Head `2b3afbe9ebeaa312734f6e78098934480589360d`, base main; eight files.
+- Reviewed changes: `weights_only=True` added to five research/evaluation checkpoint loaders and two E6 workflow loaders; AST/YAML regression tests enforce restricted loading.
+- Exact-head CI runs [44814708387](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44814708387) (PR) and [44814703342](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44814703342) (push) both succeeded.
+
+### PR #174 — safe initial checkpoint loading
+- Head `cd3a14a7c7d994a6d41004cf78c3f63f2af003f4`, base main; two files.
+- Adds a weights-only loader requiring a dictionary model state and tests safe tensor loading, malformed checkpoint rejection, and unsafe pickle rejection.
+- Exact-head CI [44747521522](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44747521522) and [44747512105](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44747512105) both succeeded.
+
+### PR #168 — baseline epoch default
+- Head `1ce0b31d0b227169abab6851bf4aa53a32529495`, base main; two files.
+- Aligns the baseline workflow's default/manual training epochs with the committed 100-epoch config and adds a workflow/config consistency regression test.
+- Exact-head CI [44264892049](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44264892049) and [44264881470](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44264881470) both succeeded.
+- #169 includes the same 100-epoch alignment plus exact-main baseline/checkpoint verification; #168 may be redundant. Review dependency and test coverage before merging either, avoiding duplicate commits.
+
+### PR #172 — production-image memory and live-check opt-in
+- Head `982a04d44c9d23775cc1588e5be8d52814d2d9b5`, base main; ten files.
+- Reviewed diff: live Render validation requires a manual main dispatch and explicit `allow_live_render=true` input (default false); constrained-memory validation builds the actual production community Docker image; thread-pool defaults are checked; uint16 raw min/max/dynamic range is preserved in measurements and evidence-bound specialist claims; tiled inference uses `torch.inference_mode()`.
+- All five exact-head workflow runs succeeded: community validation [44649655426](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44649655426), BioMCP/web validation [44649655561](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44649655561), CI [44649655608](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44649655608), tiled checkpoint validation [44649655475](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44649655475), and push CI [44649649079](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44649649079).
+- These are PR/runner checks. The opt-in live Render job was not run and no production image was inspected or deployed.
+
+### Audit priority
+The research/security changes are largely complementary, but #168 is likely a partial duplicate of #169's baseline default alignment. M0 remains open pending the complete 99-PR audit and Actions history limits. M1 is still blocked by main's unsafe automatic dispatch. Next review the research/evaluation stack for exact dependency conflicts, then source-level privacy/deletion paths; do not infer from green CI.
