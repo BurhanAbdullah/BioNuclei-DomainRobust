@@ -168,7 +168,7 @@ These overlapping branches cannot be merged independently. #150 removes automati
 
 ### M0 review coverage
 
-Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182 and #105; selected reviews of #181 are partial because artifact inventory is incomplete; #104 and #178 remain partial. **95 of the 100 open PRs are still not fully audited** (92 untouched, 3 partial). M0 is not accepted.
+Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182, #105 and #181; #104 and #178 remain partial. **94 of the 100 open PRs are still not fully audited** (92 untouched, 2 partial). M0 is not accepted.
 
 
 **CI correction:** The 14:07 audit append and the subsequent supersession-note commit on #178 both received successful tests runs: `44999496410` and `45004288578`, respectively, each 154 passed, 1 skipped; the latter has no artifacts. The earlier “not yet CI-tested” wording is historical and superseded.
