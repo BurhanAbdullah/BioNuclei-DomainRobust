@@ -203,6 +203,8 @@ def remove_research_copy(request: Request, job_id: str):
 def remove_job(request:Request,job_id:str):
     user=authenticate_optional(request)
     try: deleted=delete_job(job_id,user.id)
+    except community_service.ActiveJobDeletionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc: raise HTTPException(status_code=404,detail=str(exc)) from exc
     return {"job_id":job_id,"deleted":deleted}
 
