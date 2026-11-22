@@ -136,3 +136,15 @@ def test_lab_page_never_persists_uploaded_microscopy_files() -> None:
     assert "url.revokeobjecturl" in lowered
     assert "beforeunload" in lowered
 
+
+
+def test_site_global_theme_is_wine_red_white_and_black() -> None:
+    css = (DOCS / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "--text-primary:#111111" in css
+    assert "--surface-base:#ffffff" in css
+    assert "--surface-elevated:#ffffff" in css
+    assert "--accent:#7b1638" in css
+    assert "prefers-color-scheme:dark" in css
+    dark_override = css[css.rfind("/* BioNuclei visual system"):]
+    assert "#ffffff" in dark_override and "#111111" in dark_override
+    assert ".footer,.site-footer{background:#ffffff;color:#111111" in dark_override
