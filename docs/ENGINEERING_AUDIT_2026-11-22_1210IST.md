@@ -168,7 +168,7 @@ These overlapping branches cannot be merged independently. #150 removes automati
 
 ### M0 review coverage
 
-Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182, #105 and #181; #104 and #178 remain partial. **94 of the 100 open PRs are still not fully audited** (92 untouched, 2 partial). M0 is not accepted.
+Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182, #105, #181, #169, #177 and #168; #104 and #178 remain partial. **91 of the 100 open PRs are still not fully audited** (89 untouched, 2 partial). M0 is not accepted.
 
 
 **CI correction:** The 14:07 audit append and the subsequent supersession-note commit on #178 both received successful tests runs: `44999496410` and `45004288578`, respectively, each 154 passed, 1 skipped; the latter has no artifacts. The earlier “not yet CI-tested” wording is historical and superseded.
@@ -199,3 +199,14 @@ Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for 
 
 
 **CI correction:** The 14:07 audit append and the subsequent supersession-note commit on #178 both received successful tests runs: `44999496410` and `45004288578`, respectively, each 154 passed, 1 skipped; the latter has no artifacts. The earlier “not yet CI-tested” wording is historical and superseded. Current #178 head `011152246936fce20aaf8c66612dd6eba51ac006` tests are queued in run `45004765152`; this M1 append is not yet validated.
+
+## M0 scientific-provenance PR refresh — 2026-11-22
+
+- **#169** head `6183cf907381880204e94640e2fb4db989cf07e7`, base stale main `d4a653e9...`: full 5-file diff reviewed. It restricts baseline/transfer workflow selection to exact current main, verifies run branch/conclusion/workflow path, checkout SHA, config/seed/epochs, and records baseline run SHA plus checkpoint digest. CI [44664121649](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44664121649), job `136049155583`: 152 passed, 1 skipped; no artifacts. PR remains open.
+- **#177** head `b7f5c347ca056fdae397e851f2de116de696b520`, base #169 head `6183cf907...`: full 2-file diff reviewed. It binds S-BIAD634 archive/manifest, 79-image metrics, evaluator/instance-metric/baseline-config/verifier hashes, and target-training exclusion in provenance after evaluation. CI [44832437317](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44832437317), job `136620442200`: 153 passed, 1 skipped; no artifacts. It is stacked and no current-main scientific reproduction is produced.
+- **#168** head `1ce0b31d0b227169abab6851bf4aa53a32529495`, base stale main `d4a653e9...`: full 2-file diff reviewed. It changes BBBC039 baseline workflow defaults from 20 to 100 epochs to match config; CI [44264892049](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44264892049), job `134666855040`: 146 passed, 1 skipped; no artifacts. It is not mergeable currently and overlaps #169, which already includes the 100-epoch default—do not merge both independently.
+- Merged security PRs #174/#175 are present on exact current main: source at SHA `97e35c1cc73f39fb2855268e441231975ba4bd0b` confirms trainer `scripts/train_domain_robust.py` and evaluator `scripts/evaluate_bbbc038.py` use `torch.load(..., weights_only=True)`. Source verification only; their historical CI was not refreshed in this run.
+
+The E7/final E6 hard-coded retained-E4 artifact 404 remains unresolved; these provenance PRs do not fix artifact identity. M2 is blocked.
+
+Coverage correction: nine selected PRs (#150, #103, #92, #182, #105, #181, #169, #177, #168) now have full diff/check/log/artifact review; #104 and #178 remain partial. 91 of 100 open PRs are not fully audited (89 untouched, 2 partial). M0 remains partial. Current #178 head `39973cc508ff8013cbebeefc125590334e31148a` has tests in progress (run `45004835065`); no artifact.
