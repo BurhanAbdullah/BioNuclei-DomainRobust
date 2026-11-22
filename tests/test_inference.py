@@ -203,12 +203,12 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
     tile_settings = {}
     monkeypatch.setattr(inference, "_load_model", lambda *_args, **_kwargs: DummyModel())
 
-    def fake_predict_logits(_model, x, *, tile_size, overlap):
+    def fake_predict_classes(_model, x, *, tile_size, overlap):
         tile_settings.update(tile_size=tile_size, overlap=overlap)
-        return torch.zeros((1, 3, *x.shape[-2:]), dtype=torch.float32)
+        return np.zeros(tuple(x.shape[-2:]), dtype=np.uint8)
 
-    monkeypatch.setattr(inference, "_predict_logits", fake_predict_logits)
-    monkeypatch.setattr(inference, "_split_instances", lambda _logits: mask.copy())
+    monkeypatch.setattr(inference, "_predict_classes", fake_predict_classes)
+    monkeypatch.setattr(inference, "_instances_from_classes", lambda _classes: mask.copy())
     monkeypatch.setattr(inference.gc, "collect", lambda: events.append("gc"))
     monkeypatch.setattr(inference, "_trim_cpu_allocator", lambda: events.append("trim"))
 
@@ -218,3 +218,18 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
     assert (output_path / "segmentation_mask.tif").is_file()
     assert tile_settings == {"tile_size": 160, "overlap": 128}
     assert events[-2:] == ["gc", "trim"]
+
+
+@pytest.mark.parametrize("shape", [(512, 512), (319, 321), (600, 520), (40, 40)])
+def test_uint8_class_stitch_matches_argmax_of_stitched_logits(shape):
+    """The low-memory label stitcher must give the exact same mask as the logit stitcher."""
+    torch.manual_seed(31)
+    model = BoundaryUNet(base_channels=2).eval()
+    height, width = shape
+    x = torch.rand((1, 1, height, width), dtype=torch.float32)
+    with torch.inference_mode():
+        reference = inference._split_instances(_predict_logits(model, x, tile_size=160, overlap=128))
+        classes = inference._predict_classes(model, x, tile_size=160, overlap=128)
+    assert classes.dtype == np.uint8
+    assert classes.shape == (height, width)
+    assert np.array_equal(inference._instances_from_classes(classes), reference)

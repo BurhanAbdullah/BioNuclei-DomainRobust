@@ -59,3 +59,9 @@ pre *, .biomcp-code *{color:#111!important}
 code{color:#7b1638}
 :focus-visible{outline:3px solid #7b1638!important;outline-offset:2px}
 @media(prefers-color-scheme:dark){html,body{background:#fff!important;color:#111!important}}
+/* Responsive safety: grid children may shrink, code blocks scroll inside their card, long hashes wrap. */
+.grid>*,.grid-2>*,.grid-3>*,.grid-4>*,.biomcp-grid>*,.workflow>*,.split>*,.outputs>*,.panel,.card{min-width:0}
+pre,.biomcp-code{max-width:100%;overflow-x:auto}
+code{overflow-wrap:anywhere}
+img,svg,canvas,video{max-width:100%}
+@media(max-width:720px){.grid,.grid-2,.grid-3,.grid-4,.biomcp-grid,.workflow{grid-template-columns:1fr}}

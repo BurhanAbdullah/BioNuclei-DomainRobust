@@ -200,6 +200,65 @@ def _predict_logits(
     return assembled[..., :original_height, :original_width]
 
 
+def _predict_classes(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    tile_size: int = 256,
+    overlap: int = 128,
+) -> np.ndarray:
+    """Predict per-pixel class labels with a uint8 stitch buffer.
+
+    Each output pixel is written by exactly one tile core, so the per-tile
+    argmax equals the argmax of the stitched logits. Keeping uint8 labels
+    instead of a float32 logit map cuts the full-image buffer from 12 bytes
+    per pixel (3 classes) to 1 byte per pixel, with identical masks.
+    """
+    if x.ndim != 4 or x.shape[0] != 1 or x.shape[1] != 1:
+        raise ValueError(f"Expected a single-image, single-channel tensor; got {tuple(x.shape)}")
+    if tile_size <= overlap or tile_size % 8 or overlap % 8:
+        raise ValueError("tile_size and overlap must be multiples of eight with tile_size > overlap")
+
+    original_height, original_width = x.shape[-2:]
+    pad_height = (-original_height) % 8
+    pad_width = (-original_width) % 8
+    if pad_height or pad_width:
+        x = F.pad(x, (0, pad_width, 0, pad_height), mode="replicate")
+
+    height, width = x.shape[-2:]
+    tile_height = min(tile_size, height)
+    tile_width = min(tile_size, width)
+    y_starts = _axis_tile_starts(height, tile_size, overlap)
+    x_starts = _axis_tile_starts(width, tile_size, overlap)
+
+    with torch.no_grad():
+        if len(y_starts) == 1 and len(x_starts) == 1:
+            labels = model(x).argmax(dim=1)[0].to(torch.uint8).cpu().numpy()
+            return labels[:original_height, :original_width].copy()
+
+        y_cores = _tile_core_ranges(y_starts, tile_height, height)
+        x_cores = _tile_core_ranges(x_starts, tile_width, width)
+        assembled = np.empty((height, width), dtype=np.uint8)
+        for y_index, y_start in enumerate(y_starts):
+            y0, y1 = y_cores[y_index]
+            for x_index, x_start in enumerate(x_starts):
+                x0, x1 = x_cores[x_index]
+                tile = x[..., y_start:y_start + tile_height, x_start:x_start + tile_width]
+                tile_labels = model(tile).argmax(dim=1)[0].to(torch.uint8).cpu().numpy()
+                assembled[y0:y1, x0:x1] = tile_labels[
+                    y0 - y_start:y1 - y_start,
+                    x0 - x_start:x1 - x_start,
+                ]
+                del tile_labels, tile
+
+    return assembled[:original_height, :original_width].copy()
+
+
+def _instances_from_classes(classes: np.ndarray) -> np.ndarray:
+    foreground = classes != 0
+    instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
+    return instances.astype(np.int32)
+
+
 def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu") -> dict:
     """Run segmentation and write mask, overlay, measurements and provenance."""
     image = np.asarray(tifffile.imread(input_path))
@@ -218,8 +277,8 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
             # side of internal seams. GPU inference keeps the faster default.
             tile_size, overlap = (160, 128) if device == "cpu" else (256, 128)
             with torch.no_grad():
-                instances = _split_instances(
-                    _predict_logits(model, x, tile_size=tile_size, overlap=overlap)
+                instances = _instances_from_classes(
+                    _predict_classes(model, x, tile_size=tile_size, overlap=overlap)
                 )
         finally:
             del x
