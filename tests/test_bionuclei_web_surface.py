@@ -148,3 +148,30 @@ def test_lab_enhancements_support_drag_drop_and_release_preview_on_clear() -> No
     assert "window.__bionucleiLabRevoke" in enhancement
     assert "window.__bionucleiLabRevoke=function()" in html
     assert "URL.revokeObjectURL(localUrl);localUrl=null" in html
+
+
+def test_local_document_links_and_assets_resolve() -> None:
+    from html.parser import HTMLParser
+    from urllib.parse import urlsplit
+
+    class Links(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.targets = []
+        def handle_starttag(self, tag, attrs):
+            for key, value in attrs:
+                if key in {"href", "src"} and value:
+                    self.targets.append(value)
+
+    failures = []
+    for page in DOCS.glob("*.html"):
+        parser = Links()
+        parser.feed(page.read_text(encoding="utf-8"))
+        for target in parser.targets:
+            parsed = urlsplit(target)
+            if parsed.scheme or target.startswith("//") or not parsed.path:
+                continue
+            resolved = (page.parent / parsed.path).resolve()
+            if not resolved.is_file():
+                failures.append(f"{page.name}: {target}")
+    assert not failures, "Broken local links/assets:\\n" + "\\n".join(failures)
