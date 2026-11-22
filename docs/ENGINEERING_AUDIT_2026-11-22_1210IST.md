@@ -6,7 +6,7 @@ This is an additive baseline refresh for PR #178. It records repository/CI evide
 
 - Main: `97e35c1cc73f39fb2855268e441231975ba4bd0b`.
 - GitHub commit API verification: `verified=true`, `reason=valid`; verified timestamp `2026-11-22T04:07:50Z`.
-- Current-main CI push run `44992588956`: success.
+- Current-main CI push run `44992588956`: success; job `137116678746`, all steps including test run succeeded.
 - Exact-main Actions query: 40 records on page 1; page 2 empty.
 - Branch-main Actions query: 1,000 records (pages 1–10, 100 each); page 11 empty despite API `total_count=2500`. The API/connector exposed only the first 1,000 records, so the other 1,500 cannot be audited here.
 - Scheduled-event query: 602 records; pages 1–6 contain 100 each, page 7 contains 2. Pagination is complete.
@@ -26,7 +26,13 @@ Other exact-main research status observed:
 
 ## Public E2E and runtime proof
 
-No public E2E run was found in the exact-main SHA query. Recent public E2E/watchdog failures and dispatch records are on the older SHA `d4a653e94501e8b9f1ec9de09ff71720f90ab340`, not current main. The browser extension has read-only tab tools only; the browser has no originating context, so manual upload is unavailable. Render was not selected, inspected, or deployed. No public upload or inference was attempted.
+No public E2E run was found in the exact-main SHA query. The latest inspected E2E [run 44972727518](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44972727518) is on older main `d4a653e94501e8b9f1ec9de09ff71720f90ab340`; job `137055811890` failed before public job creation. The complete 47,160-character job log confirms Render runtime parity was false, with mismatches in `scripts/aggregate_e6_fraction_evidence.py`, `scripts/download_aitslab_bioimaging1.py`, `scripts/public_e2e_schedule_watchdog.py`, `webapp/community.py`, and `webapp/community_app.py`. The diagnostic showed repeated health ReadTimeout, `checkpoint_available=true`, but no guest token. No public upload/inference was reached. Failure artifact `14734721065` was reported with ZIP SHA-256 `acc4026852be6922aeb5dc93caa00ab0e196a8c6f9004f26c7c9110ceae2e999`; artifact extraction/hash was not repeated in this refresh.
+
+The latest inspected watchdog [run 44972719647](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44972719647), job `137055785175`, on that same stale SHA, accepted dispatch: log states `age_seconds=4521`, stale E2E SHA, then dispatch request accepted. It did not verify deployed SHA/checkpoint pin. This is runner/log evidence for a safety gap on the old SHA; it is not a public inference result.
+
+The latest Pages deployment run `44983675451` had upload succeed and deploy step fail; its full log/artifact was not refreshed here. Do not infer a successful deployment.
+
+Browser tools are read-only; this session has no originating browser context. Render was not selected, inspected, or deployed. No public upload or inference was attempted.
 
 ## Milestone ordering
 
