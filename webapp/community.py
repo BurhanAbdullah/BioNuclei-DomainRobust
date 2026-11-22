@@ -28,6 +28,7 @@ from bionuclei.adaptive_agent import build_plan, to_dict
 from bionuclei.expert_agents import SPECIALIST_AGENTS, run_expert_agents
 from bionuclei.inference import predict
 from bionuclei.input_recognition import InputRejected, recognize_tiff
+from bionuclei.file_types import check_upload
 from bionuclei.report import build_report
 from .app import _checkpoint
 
@@ -641,8 +642,14 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
     suffix = Path(original_name or "").suffix.lower()
+    # Identify the file by its contents first: the name is not trusted.
+    kind = check_upload(data[:512], original_name or "")
+    if not kind.accepted:
+        raise ValueError(kind.message())
     if suffix not in ALLOWED_UPLOAD_SUFFIXES:
         raise ValueError("Unsupported image format. Upload a TIFF (.tif/.tiff) or Nikon ND2 (.nd2) file.")
+    if (kind.kind == "nd2") != (suffix == ".nd2"):
+        raise ValueError(f"The file name ends in {suffix} but the contents are a {kind.label}. Rename it with the correct extension and upload again.")
     if algorithm_profile not in {"auto", "nucleus-segmentation"}:
         raise ValueError("Unsupported analysis profile")
     modules = set(analysis_modules or ["nuclei", "morphology", "intensity"])
