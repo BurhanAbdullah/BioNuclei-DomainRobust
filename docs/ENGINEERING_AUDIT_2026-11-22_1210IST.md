@@ -142,3 +142,6 @@ The other 97 PRs still need full-diff/check/log/artifact review. No merge perfor
 M0 remains partial/not accepted: full PR review is outstanding and branch-main run history is capped at 1,000/2,500. M1 is not accepted: automatic E2E schedule/push triggers remain; runtime parity is false; safety-pause/watchdog changes are unmerged; live SHA and checkpoint digest are unverified. M2 is blocked by E4 artifact 404 in E7/final E6. M3–M7 are unaccepted. Deadline risk is **high**.
 
 Next safe action is finish M0 review; before any safety PR merge, rebase to current main and rerun exact-head checks. Public E2E/deployment must remain paused until runtime and checkpoint identity are verified. Merge requires explicit user authorization.
+
+
+**Supersession note:** This 14:07 IST refresh supersedes earlier sections of this audit for current-main SHA, Actions pagination counts, open-PR count, and E2E/watchdog conclusions. The 10:14 and 12:10 snapshots are historical; in particular, the earlier absence of a current-main scheduled E2E was superseded by run #303.
