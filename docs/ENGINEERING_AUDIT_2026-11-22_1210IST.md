@@ -91,3 +91,54 @@ Watchdog [44972719647](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/
 Repository/API and exact source evidence are separate from CI/runner checks and local artifact parsing. No public upload/inference or live deployment is verified. Browser tools available here are read-only; no originating browser context is available. Render was not selected/inspected/deployed. M0 remains partial due all-PR diff/check/log/artifact gaps and inaccessible main-run history; M1–M7 remain unaccepted. Deadline risk is high (about 40 days to 2027-01-01).
 
 Next: finish M0 inventory, then review the fail-closed runtime stack without merging overlapping PRs independently. M2 E7 exact-run artifact resolution must remain queued until M0 is accepted. No public E2E dispatch or merge was performed.
+
+
+## Current-main refresh — 2026-11-22 14:07 IST
+
+### Identity and coverage
+- Main SHA `97e35c1cc73f39fb2855268e441231975ba4bd0b`; commit signature API: `verified=true`, `reason=valid`. Commit #179 binds E6 to the exact E4 source run.
+- Branch-main Actions: pages 1–10 returned 100 each; pages 11–25 returned 0. API total is 2,500; only 1,000 records are exposed by this listing.
+- Schedule event: pages 1–6 returned 100 each; page 7 returned 4 (604 total, fully paginated).
+- Exact current-main SHA query: 50 records; page 2 empty. Open PRs: 100 on page 1, page 2 empty. Metadata refreshed, but full diff/check/log/artifact review is not complete for all.
+- Exact-main CI [44983675441](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44983675441), job `137089463110`: success, 154 passed, 1 skipped; no artifact.
+
+### Scheduled public E2E #303
+
+[Run 45001551896](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/45001551896), exact main, job `137143982659`, failed at runtime parity. Full log (49,379 characters), steps and artifact metadata refreshed. Artifact `14745857325` was downloaded, ZIP-tested, extracted and parsed; it contains only failure JSON (no source image). ZIP SHA-256 `17c7b55cdafc77e82502e0b59feaa151dba65a53821809648691e5b9384cfadd`; JSON SHA-256 `06b3326559733bcf8d21ceb88552668526ae3b10244d981c82cb7f13552beecc`.
+- Render SHA reported `bb6a9d27537e12b85768c7fead1467253b2423ba`; parity false, branch main, status ahead. Runtime-diff is **11 paths (9 scripts and 2 webapp files)**; main-vs-Render comparison listed 27.
+- Health attempts 1–7 timed out; attempt 8 returned 200, but `api_health_request_error` still records ReadTimeout. `checkpoint_available=true` does not verify a digest. No guest token/job ID; upload, inference, specialists, report and cleanup were not reached.
+- Main still has scheduled/push E2E triggers. No dispatch was initiated by this audit. #150 safety pause remains unmerged and based on stale main.
+
+### E7/E6 evidence-chain failures
+
+- **E7 #331**, [run 44994082617](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44994082617), exact main, job `137121239581`: failure at retained E4 artifact identity. Workflow `.github/workflows/e7_bbbc038_external.yml` (blob `f5a9c97e3956749d567c4b5f5ae989d32622ec48`) hard-codes artifact ID `12183110279` and digest `89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d` for workflow_run as well. The artifact lookup returned HTTP 404. BBBC038 acquisition/evaluation/metrics/provenance/upload did not run; no artifact.
+- **E6 finalizer #21**, [run 45001779876](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/45001779876), exact main, job `137144695816`: same fixed E4 ID/digest; lookup returned HTTP 404. Workflow `.github/workflows/e6_finalize_verified.yml` (blob `e254d957e5b657012988d6f47bdf5a3d541b84df`). No finalized artifact.
+- **E6 aggregate recovery #155**, [run 45001779947](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/45001779947), succeeded and produced artifact `14746132185` (`e6-external-few-shot-recovered-44994082640`). ZIP SHA-256/API digest `c919fe55d4c55cb0be40d82050ecd6de9483d4bb82db24fe1e49c9ac2045186d`; extracted JSON SHA-256 `238734faa8fc4bff0646ff44be756e31b318e01af03f220b9e09b39633c1ce20`. The runner summary reports all four fractions verified and leakage guard passed:
+
+| Fraction | Dice | IoU | AJI | Boundary F1 |
+|---|---:|---:|---:|---:|
+| 1% | 0.7472 | 0.6017 | 0.5543 | 0.1946 |
+| 5% | 0.7432 | 0.5930 | 0.5454 | 0.2067 |
+| 10% | 0.6559 | 0.4910 | 0.4607 | 0.1630 |
+| 25% | 0.6746 | 0.5110 | 0.4812 | 0.1614 |
+
+These are runner research metrics, not public inference proof. The summary contains metric/provenance hashes but not a complete fresh release chain.
+
+### Release monitor #373
+
+[Run 45000867363](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/45000867363), exact main, job `137141871612`, monitor job success. Artifact `14744889814`: ZIP SHA-256 `fc353110ebf5fd3064dc7efb73d93ce87d7ffc9edb8275369b1b7889866616b6`; extracted JSON SHA-256 `54d34ae84465a3ed4e34ff840d8865287f91690b9c3249182310f207c0985d3e`. Integrity check and JSON parsing passed; status `BLOCKED`, `release_ready=false`, because no successful clean-environment reproduction artifact is available. A green monitor job is not release readiness.
+
+### Selected PR refresh
+
+- **#178** head `ff649b07e282fc84bdb02d78a129f4aa4beb55e2`, base `d4a653e94501e8b9f1ec9de09ff71720f90ab340` (stale). CI [44999496410](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44999496410), job `137137682585`: 154 passed, 1 skipped. This audit append is not yet CI-tested.
+- **#181** head `823f1f3922980cd91cea11c175d460a492cc88ff`, base current main. Full 2-file diff refreshed; guard requires failed run, attempt limit, main branch and exact SHA. CI [44991042845](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44991042845), job `137111944141`: 156 passed, 1 skipped. Unmerged.
+- **#150** head `2a4f94493a33f47d91315c6646365daf3bc89534`, base stale `d4a653e9...`. Full 5-file patch/logs refreshed. It removes schedule/push E2E and watchdog dispatch, restricts public upload to manual main dispatch, and adds Docker COPY/ADD parity tests. Validation [44953480581](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953480581): two groups passed 8 and 7 tests; watchdog [44953480651](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953480651): 7 tests passed; CI [44953480644](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44953480644): 153 passed, 1 skipped, 21 subtests. No artifacts; public-upload job skipped. This PR is not rebased to current main and remains unmerged.
+- **#182** head `d1c062cd6804ec718853dc7f9c7da35e274e5624`, base current main. Full 2-file theme diff refreshed. CI [44992650220](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44992650220), job `137116867483`: 155 passed, 1 skipped; no artifacts.
+
+The other 97 PRs still need full-diff/check/log/artifact review. No merge performed.
+
+### Gate and deadline
+
+M0 remains partial/not accepted: full PR review is outstanding and branch-main run history is capped at 1,000/2,500. M1 is not accepted: automatic E2E schedule/push triggers remain; runtime parity is false; safety-pause/watchdog changes are unmerged; live SHA and checkpoint digest are unverified. M2 is blocked by E4 artifact 404 in E7/final E6. M3–M7 are unaccepted. Deadline risk is **high**.
+
+Next safe action is finish M0 review; before any safety PR merge, rebase to current main and rerun exact-head checks. Public E2E/deployment must remain paused until runtime and checkpoint identity are verified. Merge requires explicit user authorization.
