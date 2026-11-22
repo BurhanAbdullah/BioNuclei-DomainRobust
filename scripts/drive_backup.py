@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from bionuclei.storage import IntegrityError, _decode_key, verify_backup  # noqa: E402
+from bionuclei.storage import IntegrityError, StorageConfigError, _decode_key, verify_backup  # noqa: E402
 from pull_backup import download  # noqa: E402
 
 OAUTH_URL = os.getenv("BIONUCLEI_GOOGLE_OAUTH_URL", "https://oauth2.googleapis.com/token")
@@ -154,7 +154,11 @@ def main() -> int:
         print(f"Drive backup is not configured. Missing: {', '.join(missing)}. See docs/STORAGE_AND_BACKUP.md.", file=sys.stderr)
         return 3
     keep = int(os.getenv("GDRIVE_KEEP", "30"))
-    key = _decode_key(os.environ["BIONUCLEI_DATA_KEY"])
+    try:
+        key = _decode_key(os.environ["BIONUCLEI_DATA_KEY"])
+    except StorageConfigError as exc:
+        print(f"Drive backup refused: invalid data key configuration ({exc})", file=sys.stderr)
+        return 2
     server_url = os.environ["BIONUCLEI_SERVER_URL"]
     try:
         validate_server_url(server_url)
