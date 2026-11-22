@@ -34,3 +34,28 @@ code{color:#7b1638}
 .btn,.btn.primary{border-color:#7b1638}.btn{color:#7b1638;background:#fff}.btn.primary{background:#7b1638;color:#fff}
 .btn.primary:hover,.btn.primary:focus-visible{background:#111;color:#fff;border-color:#111}
 .pill,.status,.badge{background:#fff;color:#7b1638;border-color:#7b1638}
+
+/* Final palette guardrails: wine red / white / black */
+:root{color-scheme:light;--text-primary:#111!important;--text-secondary:#333!important;--text-on-dark:#fff!important;--text-on-light:#111!important;--surface-base:#fff!important;--surface-elevated:#fff!important;--accent:#7b1638!important;--border-subtle:#e5d6dc!important}
+html,body{background:#fff!important;color:#111!important}
+body *{color-scheme:light}
+.site-nav,.site-nav *,.nav-inner,.nav-inner *{background-color:#fff}
+.site-nav,.site-nav a,.nav-links a,.nav-group-label{color:#111}
+.site-nav a:hover,.nav-links a:hover,.nav-group-label:hover{color:#7b1638}
+.site-nav,.site-header{border-bottom:2px solid #7b1638}
+footer,.footer,.site-footer{background:#fff!important;color:#111!important}
+footer *,.footer *,.site-footer *{color:#111!important}
+h1,h2,h3,h4,h5,h6,p,li,label,small,summary{color:#111}
+a{color:#7b1638}
+a:hover,a:focus-visible{color:#111}
+.card,.panel,.feature-card,.research-card,.biomcp-card,.process-card,.agent,.file,.output,.result-card{background:#fff!important;color:#111!important;border-color:#e5d6dc}
+.card *,.panel *,.feature-card *,.research-card *,.biomcp-card *,.process-card *,.agent *,.file *,.output *,.result-card *{color:#111}
+.section.dark,.landing-statement,.biomcp-boundary{background:#f5e8ed!important;color:#111!important}
+.section.dark *,.landing-statement *,.biomcp-boundary *{color:#111!important}
+.btn.primary,.button.primary,.cta-button{background:#7b1638!important;color:#fff!important;border-color:#7b1638!important}
+.btn.primary *,.button.primary *,.cta-button *{color:#fff!important}
+pre,.biomcp-code{background:#f5e8ed!important;color:#111!important;border-color:#e5d6dc}
+pre *, .biomcp-code *{color:#111!important}
+code{color:#7b1638}
+:focus-visible{outline:3px solid #7b1638!important;outline-offset:2px}
+@media(prefers-color-scheme:dark){html,body{background:#fff!important;color:#111!important}}
