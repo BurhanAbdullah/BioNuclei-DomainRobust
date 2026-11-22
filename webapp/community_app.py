@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, Response
 from .app import _checkpoint, _png_data_url
 from .auth import authenticate_backup, authenticate_optional, create_guest_token
 from . import community as community_service
-from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
+from .community import DEFAULT_RESULT_RETENTION_HOURS, MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
 
 
 app = FastAPI(title="BioNuclei Community Analyzer", version="0.3.3", description="Transient public image analysis service with optional account history.")
@@ -47,7 +47,7 @@ def root():
 def health():
     try: available=_checkpoint().is_file()
     except Exception: available=False
-    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":1}
+    return {"status":"ok" if available else "degraded","service":"bionuclei-community-analyzer","checkpoint_available":available,"render_git_commit":os.getenv("RENDER_GIT_COMMIT","unknown"),"render_git_branch":os.getenv("RENDER_GIT_BRANCH","unknown"),"max_upload_bytes":MAX_UPLOAD_BYTES,"supported_input_formats":[".tif",".tiff",".nd2"],"account_required":False,"guest_access":True,"input_retention":"transient","result_retention_hours":DEFAULT_RESULT_RETENTION_HOURS}
 
 @app.get("/algorithms")
 def algorithms():
@@ -138,6 +138,11 @@ def progress(request:Request,job_id:str):
                 "Analysis failed. Transient input/result artifacts were removed and "
                 "cleanup was verified. Please retry the analysis."
             )
+        elif error.startswith(community_service.INPUT_REJECTED_PREFIX):
+            # Deterministic, user-safe input rejection written by the worker itself;
+            # it is only stored without the cleanup suffix when cleanup succeeded.
+            cleanup_status = "verified"
+            message = error + " Uploaded data was removed."
         else:
             # Legacy or unrecognized error records do not prove that cleanup succeeded.
             cleanup_status = "unknown"

@@ -377,6 +377,9 @@ def _remove_job_artifacts(job_id: str, root: Path) -> bool:
     return not cleanup_failed
 
 
+INPUT_REJECTED_PREFIX = "Input not suitable for analysis."
+
+
 def _cleanup_failed_job(
     job_id: str,
     root: Path,
@@ -597,7 +600,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         try:
             if isinstance(exc, InputRejected):
                 # Deterministic, user-safe reason: tell the user what to change.
-                _cleanup_failed_job(job_id, root, failure_message=f"Input not suitable for analysis. {exc}")
+                _cleanup_failed_job(job_id, root, failure_message=f"{INPUT_REJECTED_PREFIX} {exc}")
             else:
                 _cleanup_failed_job(job_id, root)
         except Exception as cleanup_exc:
