@@ -41,6 +41,7 @@ web = [
   "pillow>=10.0",
   "nd2>=0.11,<0.12",
   "reportlab>=4.2",
+  "cryptography>=43",
 ]
 
 [project.scripts]

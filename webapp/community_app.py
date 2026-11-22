@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
 from .app import _checkpoint, _png_data_url
-from .auth import authenticate_optional, create_guest_token
+from .auth import authenticate_backup, authenticate_optional, create_guest_token
 from . import community as community_service
 from .community import MAX_UPLOAD_BYTES, create_job, delete_job, delete_research_copy, get_archive, get_file, get_job, get_jobs_for_user
 
@@ -209,3 +209,27 @@ def remove_job(request:Request,job_id:str):
 def main():
     import uvicorn
     uvicorn.run("webapp.community_app:app",host="0.0.0.0",port=int(os.getenv("PORT","8000")))
+
+
+@app.get("/admin/backup")
+def admin_backup(request: Request):
+    """Encrypted backup archive for the administrator's scheduled backup client.
+
+    The archive holds stored files exactly as they are on disk (AES-256-GCM
+    ciphertext) plus a manifest. It never contains the encryption key. Only the
+    three most recent server-side archives are kept.
+    """
+    authenticate_backup(request)
+    from bionuclei.storage import SecureStore, StorageConfigError
+    try:
+        store = SecureStore.from_env()
+    except StorageConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    backups = store.root / "system" / "backups"
+    archive, digest, manifest = store.build_backup(backups)
+    for old in sorted(backups.glob("bionuclei-backup-*.tar.gz"))[:-3]:
+        old.unlink(missing_ok=True)
+    return FileResponse(archive, media_type="application/gzip", filename=archive.name,
+                        headers={"X-Backup-SHA256": digest, "X-Backup-Files": str(manifest["file_count"]),
+                                 "X-Backup-Encrypted": "true" if manifest["encrypted"] else "false",
+                                 "Cache-Control": "no-store"})
