@@ -57,7 +57,7 @@ The script refuses plain-HTTP URLs, verifies the server's SHA-256 and every file
 One-time setup:
 1. Google Cloud Console: create a project, enable the Google Drive API, create an OAuth client of type **Desktop app**.
 2. On your computer: `python scripts/drive_authorize.py --client-id ... --client-secret ...` and approve in the browser with the Google account that owns the folder.
-3. GitHub repository > Settings > Secrets and variables > Actions, add secrets `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`, `GDRIVE_REFRESH_TOKEN` and `BIONUCLEI_BACKUP_TOKEN`.
+3. GitHub repository > Settings > Secrets and variables > Actions, add secrets `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`, `GDRIVE_REFRESH_TOKEN`, `BIONUCLEI_BACKUP_TOKEN`, and `BIONUCLEI_DATA_KEY` (the same data key as the server; do not print it or place it in artifacts). For a custom HTTPS server, set the repository variable `BIONUCLEI_BACKUP_ALLOWED_HOST` to that exact hostname.
 4. Actions > Backup to Google Drive > Run workflow, to test it once.
 
 Until the secrets exist, the workflow finishes with a "not configured" warning. It keeps the newest 30 backups and only ever deletes files it uploaded itself.
