@@ -172,3 +172,30 @@ Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for 
 
 
 **CI correction:** The 14:07 audit append and the subsequent supersession-note commit on #178 both received successful tests runs: `44999496410` and `45004288578`, respectively, each 154 passed, 1 skipped; the latter has no artifacts. The earlier “not yet CI-tested” wording is historical and superseded.
+
+
+## M1 safety-stack source review — 2026-11-22
+
+### Current-main fail-closed gaps (source, exact SHA)
+
+- `scripts/live_public_agent_e2e.py` blob `cc5839d58813c1a128330ae5f1a92e7a81ab3f50` checks health `status` and `checkpoint_available`, then deployed branch/SHA and Docker-aware runtime parity. It does **not** require `checkpoint_verified` or `checkpoint_sha256` before upload. Pin enforcement exists only in stale/stacked candidates #104/#105, not main.
+- `scripts/public_e2e_schedule_watchdog.py` blob `6800946aeb84a1243219e2f85fd67ea0fee6a67b` considers workflow-run age/current SHA and dispatches; it does not probe Render or validate the deployed checkpoint. Watchdog #301's historical log records accepted dispatch. It was on prior main SHA, not a current-main watchdog run.
+- `.github/workflows/live-public-agent-e2e.yml` blob `c903cc0ab7b7695ba5a7d402b7a4f82496d38732` still has schedule and main push triggers, which directly run E2E outside the watchdog. #303 was automatically scheduled; it stopped at parity before guest session/upload.
+
+### Candidate safety PRs — fresh head/base and selected checks
+
+- **#103** head `5372d812304eb3612dc7890e1f03ee9361e5c423`, base stale main `d4a653e9...`: full 4-file patch reviewed; GitHub REST requests use read-only Bearer token, Render health stays unauthenticated, offline PR validation is added. CI [41231538021](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/41231538021): 148 passed, 1 skipped; E2E [41231537964](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/41231537964) compile-only harness success, public upload skipped. No artifacts.
+- **#104** head `0b1e474db9b5175cfb4fbd2e01863f1c3e14ee5c`, base #103 head `5372d812...`: selected source/tests reviewed; full 11-file review remains incomplete. Exact-head CI [43421259037](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421259037) and PR CI [43421252137](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421252137): 185 passed, 1 skipped, 20 subtests each. Harness validation [43421259181](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43421259181): 5 tests passed; public upload skipped. No artifacts. It verifies current workflow SHA, Render main SHA, and pinned checkpoint before browser install, but expects health fields supplied by #105 and is not independently mergeable. Review follow-up: health retries catch all exceptions (including non-transient HTTP errors); root warm-up's monotonic budget is checked between requests, but socket timeout/read behavior does not enforce a strict whole-response deadline.
+- **#105** head `1d4726b430da933180d2c2744ec564a442c09b96`, base stale main `d4a653e9...`: 11-file diff reviewed. Immutable checkpoint pin, hash/stat cache, fail-closed health/inference, uint16 raw-min/dynamic-range and evidence assertions. CI `43421687985`: 158 passed, 1 skipped; community validation `43421687953`: 158 passed, 1 skipped; MCP server smoke `43421688067`: 2 passed; web adapter: 158 passed, 1 skipped; console integrity succeeded. E2E `43421688000` and live Render job skipped. Tiled checkpoint worker `43421687940` succeeded, including 480 MiB limit and before/after checkpoint digest equality; full worker log fetched, no artifacts. These are runner checks, not public inference.
+- **#92** head `838b89d51cae3db2171bc67b0c2389c043b34122`, base stale main `d4a653e9...`: full 3-file diff reviewed. Watchdog health preflight requires current SHA, main branch, verified checkpoint pin, uses GitHub server time and bounded retry. CI [43437830508](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43437830508): 165 passed, 1 skipped, 7 subtests; validation [43437830689](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43437830689) passed. No artifacts. It gates watchdog dispatch only; direct E2E schedule/push still bypass it unless #150's trigger pause is integrated.
+
+### Integration decision (not implemented; M0 gate remains)
+
+These overlapping branches cannot be merged independently. #150 removes automatic schedule/push and watchdog dispatch but its stale branch does not include #105's checkpoint pin or #103's API authentication. #105 pins health/inference but retains automatic triggers. #104 preflight is stacked on #103 and expects the #105 health contract. Build a fresh additive branch from current main and integrate #150's safety pause with #103 authentication, #104 preflight and #105 checkpoint pin; retain the parity guard and offline validation. Keep #92's watchdog guard if automated recovery is re-enabled later. No branch was merged, deployed, or used to dispatch public E2E.
+
+### M0 review coverage
+
+Open-PR metadata: 100 records. Full diff/check/log/artifact audit completed for selected #150, #103, #92, #182, #105 and #181; #104 and #178 remain partial. **94 of the 100 open PRs are still not fully audited** (92 untouched, 2 partial). M0 is not accepted.
+
+
+**CI correction:** The 14:07 audit append and the subsequent supersession-note commit on #178 both received successful tests runs: `44999496410` and `45004288578`, respectively, each 154 passed, 1 skipped; the latter has no artifacts. The earlier “not yet CI-tested” wording is historical and superseded. Current #178 head `011152246936fce20aaf8c66612dd6eba51ac006` tests are queued in run `45004765152`; this M1 append is not yet validated.
