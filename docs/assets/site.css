@@ -97,3 +97,7 @@ pre{font-size:.85rem;line-height:1.65}
 @media(max-width:620px){body{font-size:16px}.wrap,.page{width:calc(100% - 36px)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 [hidden]{display:none!important}
+/* Frosted sticky navigation on inner pages (matches the homepage glass nav) */
+.site-nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.72)!important;-webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);border-bottom:1px solid rgba(17,17,17,.07)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.site-nav{background:#fff!important}}
+.site-reveal{transition:opacity .6s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
