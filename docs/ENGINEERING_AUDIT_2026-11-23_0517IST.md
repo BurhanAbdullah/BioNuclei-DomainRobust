@@ -25,7 +25,7 @@ This additive audit refreshes current-main identity, Actions pagination, open-PR
 | `head_sha=<current main>` | page 1: 15 | 15 | complete |
 | open PRs | page 1: 100; page 2: 4; page 3: 0 | — | 104 metadata records |
 
-The branch-main Actions listing is capped/truncated by the connector/API path; it is not treated as a complete history. Open PR head/base metadata was enumerated, but complete diff/check/log/artifact review for all 104 PRs remains outstanding.
+The branch-main Actions listing is capped/truncated by the connector/API path; it is not treated as a complete history. Full diff content for all 104 open PRs was retrieved in a diff-enabled listing and path/keyword triage was performed; complete manual review plus check/log/artifact review for all 104 remains outstanding.
 
 ## Exact-current-main workflow snapshot
 
@@ -85,7 +85,7 @@ The monitor's success means it ran successfully, not that the release is ready. 
 
 ## Selected open-PR audit
 
-All 104 open PRs' head/base metadata were refreshed. Full diffs/checks/logs/artifacts for every PR are **not** audited. These prioritized PRs were inspected at exact heads:
+All 104 open PRs' head/base metadata and full diff content were refreshed. Broad path/keyword triage flagged 98 PRs (mostly workflow/runtime/security/data/privacy paths); a limited hard-coded credential-pattern scan found 0 hits. This is not a comprehensive secret scanner or manual code review. Checks/logs/artifacts for all 104 are **not** audited. These prioritized PRs were inspected at exact heads:
 
 ### PR #188 — runtime SHA/checkpoint gate
 
