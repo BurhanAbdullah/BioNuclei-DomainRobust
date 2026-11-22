@@ -21,7 +21,6 @@ def test_retry_watchdog_is_scoped_to_e6_runs_on_main() -> None:
     assert triggers["workflow_run"]["branches"] == ["main"]
 
 
-
 def test_retry_requires_failure_attempt_limit_and_exact_current_main_sha() -> None:
     job = _workflow()["jobs"]["retry-25pct"]
     condition = " ".join(job["if"].split())
