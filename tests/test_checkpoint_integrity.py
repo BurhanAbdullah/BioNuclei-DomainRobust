@@ -259,7 +259,6 @@ def _save_small_checkpoint(path: Path, fill: float = 0.125) -> BoundaryUNet:
     return model
 
 
-
 def test_loader_rejects_in_place_checkpoint_change_during_torch_load(tmp_path, monkeypatch):
     path = tmp_path / "checkpoint.pt"
     _save_small_checkpoint(path)
@@ -280,11 +279,9 @@ def test_loader_rejects_in_place_checkpoint_change_during_torch_load(tmp_path, m
         return state
 
 
-
     monkeypatch.setattr(inference_module.torch, "load", load_then_mutate)
     with pytest.raises(RuntimeError, match="verified checkpoint identity changed"):
         _load_model(fd_path)
-
 
 
 def test_predict_rejects_checkpoint_change_during_inference(tmp_path, monkeypatch):
@@ -302,13 +299,11 @@ def test_predict_rejects_checkpoint_change_during_inference(tmp_path, monkeypatc
     output = tmp_path / "output"
 
 
-
     def mutate_during_prediction(_model, x, *, tile_size=256, overlap=128):
         with path.open("r+b") as stream:
             stream.seek(0)
             stream.write(b"X")
         return torch.zeros((1, 3, *x.shape[-2:]), dtype=torch.float32, device=x.device)
-
 
 
     monkeypatch.setattr(inference_module, "_predict_logits", mutate_during_prediction)
