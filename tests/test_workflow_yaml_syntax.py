@@ -26,3 +26,32 @@ def test_every_github_actions_workflow_parses_as_yaml() -> None:
         assert isinstance(document.get("jobs"), dict) and document["jobs"], (
             f"{path} must declare at least one job"
         )
+
+
+def test_main_ci_uses_and_verifies_cpu_only_pytorch() -> None:
+    workflow = yaml.safe_load(
+        Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["tests"]["steps"]
+
+    install = next(
+        step
+        for step in steps
+        if step.get("name") == "Install package and web test dependencies"
+    )
+    assert "--constraint deploy/render-cpu-constraints.txt" in install["run"]
+
+    verify = next(
+        step for step in steps if step.get("name") == "Verify CPU-only PyTorch"
+    )
+    assert "torch.version.cuda" in verify["run"]
+    assert "is not None" in verify["run"]
+
+    constraints = Path("deploy/render-cpu-constraints.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert any(line.startswith("torch==") and line.endswith("+cpu") for line in constraints)
+    assert any(
+        line.startswith("torchvision==") and line.endswith("+cpu")
+        for line in constraints
+    )
