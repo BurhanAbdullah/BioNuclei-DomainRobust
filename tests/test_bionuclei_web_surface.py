@@ -142,7 +142,7 @@ def test_lab_enhancements_support_drag_drop_and_release_preview_on_clear() -> No
     html = (DOCS / "bionuclei-lab.html").read_text(encoding="utf-8")
     enhancement = (DOCS / "assets" / "lab-enhancements.js").read_text(encoding="utf-8")
     assert 'src="assets/lab-enhancements.js"' in html
-    assert 'src="assets/lab-enhancements.css"' in html
+    assert 'href="assets/lab-enhancements.css"' in html
     assert "stage.addEventListener('drop'" in enhancement
     assert "Unsupported file. Choose TIFF/TIF or ND2." in enhancement
     assert "window.__bionucleiLabRevoke" in enhancement
