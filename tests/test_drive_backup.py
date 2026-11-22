@@ -172,6 +172,14 @@ def test_backup_workflow_is_main_only_and_receives_data_key():
     workflow = (ROOT / ".github" / "workflows" / "backup_to_drive.yml").read_text(encoding="utf-8")
     assert "    if: github.ref == 'refs/heads/main'\n" in workflow
     assert "BIONUCLEI_DATA_KEY: ${{ secrets.BIONUCLEI_DATA_KEY }}" in workflow
+    assert "BIONUCLEI_BACKUP_ALLOWED_HOST:" in workflow
+
+
+def test_backup_server_url_enforces_host_allowlist(monkeypatch):
+    monkeypatch.delenv("BIONUCLEI_BACKUP_ALLOWED_HOST", raising=False)
+    with pytest.raises(drive_backup.DriveError):
+        drive_backup.validate_server_url("https://example.com")
+    drive_backup.validate_server_url("https://bionuclei-community-analyzer.onrender.com")
 
 
 def test_backup_download_does_not_follow_redirect_with_token(tmp_path):
