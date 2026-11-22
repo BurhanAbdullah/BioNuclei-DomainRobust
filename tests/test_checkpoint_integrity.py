@@ -244,18 +244,63 @@ def test_verified_checkpoint_fd_rejects_in_place_change_before_load(tmp_path, mo
     with pytest.raises(RuntimeError, match="verified checkpoint identity changed"):
         _load_model(fd_path)
 
-def test_predict_rejects_checkpoint_change_during_inference(tmp_path, monkeypatch):
+def _save_small_checkpoint(path: Path, fill: float = 0.125) -> BoundaryUNet:
+    model = BoundaryUNet(in_channels=1, out_channels=3, base_channels=4)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.fill_(fill)
+    torch.save(
+        {
+            "config": {"model": {"in_channels": 1, "out_channels": 3, "base_channels": 4}},
+            "model": model.state_dict(),
+        },
+        path,
+    )
+    return model
+
+
+
+def test_loader_rejects_in_place_checkpoint_change_during_torch_load(tmp_path, monkeypatch):
     path = tmp_path / "checkpoint.pt"
-    torch.save({"weights": torch.tensor([1, 2, 3])}, path)
+    _save_small_checkpoint(path)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", digest)
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
     monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", digest)
 
+
+    fd_path = _checkpoint()
+    original_load = torch.load
+
+    def load_then_mutate(*args, **kwargs):
+        state = original_load(*args, **kwargs)
+        with path.open("r+b") as stream:
+            stream.seek(0)
+            stream.write(b"X")
+        return state
+
+
+
+    monkeypatch.setattr(inference_module.torch, "load", load_then_mutate)
+    with pytest.raises(RuntimeError, match="verified checkpoint identity changed"):
+        _load_model(fd_path)
+
+
+
+def test_predict_rejects_checkpoint_change_during_inference(tmp_path, monkeypatch):
+    path = tmp_path / "checkpoint.pt"
+    _save_small_checkpoint(path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", digest)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", digest)
+
+
     fd_path = _checkpoint()
     image_path = tmp_path / "image.tif"
     tifffile.imwrite(image_path, np.arange(64, dtype=np.uint16).reshape(8, 8))
     output = tmp_path / "output"
+
 
 
     def mutate_during_prediction(_model, x, *, tile_size=256, overlap=128):
