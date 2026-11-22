@@ -122,7 +122,13 @@ Keep public E2E paused by a reviewed safety integration until exact runtime/chec
 ### E6 provenance and stale retry
 
 - PR #179 is merged at main `97e35c1cc73f39fb2855268e441231975ba4bd0b`. Its E6 workflow now resolves and verifies the E4 artifact from the exact source run. No E4 run exists on this SHA; E6 aggregate/finalize/E7/clean-environment runs on this SHA are skipped.
-- Failed E6 run `44983269382` was on older SHA `7339aca07b91a8eaf4f6b94f3d08498cbabfada8` and failed at retained-E4 artifact identity verification before training. The current-main retry-watchdog run `44983811929` succeeded but reran job `137089667507` from that stale run. Five duplicate-named 25% failure artifacts were downloaded and ZIP-tested; each contains only `e6_25pct_memory_watch.log`, not scientific metrics. Archive SHA-256 values: `a787a9d173ae40533cfdfcd5c81e9231c33ec24f210be53788428caf8262b486`, `c0f4e2068de4beb1d9a9686b138c6f2f52a260c783b76caaba8a4089e5e88879`, `e22f4b61c2931489b4996643bf26cfa73886feff2e1326978d17f0cd8a874181`, `9ebf93b4afb185e532f4b865d41c1fb43b8d2485ffa305b6192fd2f160a749a0`, `d5621dc08f2734de1019ba3df0195c1d44e7cddaa1f53a2edb1e737dc3b348f5`.
+- Artifact SHA-256 pairs (ID; archive; extracted memory-log):
+  - `14739111352`: `a787a9d173ae40533cfdfcd5c81e9231c33ec24f210be53788428caf8262b486`; `adf2bf77dca23c842acae4a6dbe24c32b27c2281472dafde6446e58984ba519c`.
+  - `14738926166`: `c0f4e2068de4beb1d9a9686b138c6f2f52a260c783b76caaba8a4089e5e88879`; `5844cf530269515a147d121da4136c688c45ad157b4ebf0823487768703b6d86`.
+  - `14738632198`: `e22f4b61c2931489b4996643bf26cfa73886feff2e1326978d17f0cd8a874181`; `327a214a870338348fa19e782775390cb8a3bcaecbcea8949f00f83eccf42d63`.
+  - `14738343055`: `9ebf93b4afb185e532f4b865d41c1fb43b8d2485ffa305b6192fd2f160a749a0`; `1c7f5fb683a4d3dae2f8ddafce896a0751d3fb5d56977f16a18aec56041790e`.
+  - `14738273307`: `d5621dc08f2734de1019ba3df0195c1d44e7cddaa1f53a2edb1e737dc3b348f5`; `e30d31e1045a0a449d1ed8dde9d1bb70320170b74192464278b99c9a465499f9`.
+  All five ZIPs passed integrity testing; each contains only `e6_25pct_memory_watch.log` (20 lines, no JSON scientific metrics).
 - New PR #181 adds a current-main SHA gate to the retry watchdog and static regression tests. Exact head `823f1f3922980cd91cea11c175d460a492cc88ff`; both exact-head CI runs `44991042845` and `44991006792` succeeded: **156 passed, 1 skipped** each. Supabase Preview skipped. No artifacts. PR is ready for review, not merged.
 
 ### Public E2E and safety
