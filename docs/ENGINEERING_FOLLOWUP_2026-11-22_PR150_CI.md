@@ -240,3 +240,20 @@ The baseline workflow and config were freshly fetched at main SHA `d4a653e94501e
 
 ### M4 risk
 Owner isolation/expiry-at-access/cleanup logic has several overlapping unmerged implementations. M4 remains unaccepted until one coherent implementation is integrated, exact-main tests are green, and authorized live verification proves deletion and access-denial semantics.
+
+## Exact-main privacy/lifecycle source audit — 2026-11-22
+
+Fetched these files directly at main SHA `d4a653e94501e8b9f1ec9de09ff71720f90ab340` and inspected the relevant function bodies:
+- `webapp/community.py`, blob `ec0252c6acd43fca8cbb1102e11fc50df1fe732f`
+- `webapp/community_app.py`, blob `900bc126a139b7bcb2d2b8204d90ff9482ab061f`
+- `webapp/auth.py`, blob `9ca0e7844e9e175770042e6d02f1d6f1e8471615`
+
+Confirmed main-source observations:
+1. `get_job(job_id, user_id)` uses `_live_owned_row`, so owner scoping and expiry-at-access are present for the read path.
+2. `delete_job` checks the owner-scoped row and physically removes job directory/archive before deleting metadata, but it has no active-worker registry check; a live worker can recreate artifacts or race deletion. The API route currently maps missing rows to 404 and has no active-worker conflict handler.
+3. `purge_expired` invokes `_remove_expired_job`; that helper checks expiry and verifies physical cleanup but does not defer cleanup when a worker is still alive.
+4. `recover_interrupted_jobs` holds `DB_LOCK` while acquiring `ACTIVE_JOB_THREADS_LOCK`, contrary to the safer registry-before-DB order in #86. This is a lock-inversion risk.
+5. `create_job` writes the upload and publishes the queued database row before registering/starting the worker under the registry lock. The #85/#129 race tests address the row/worker registration window.
+6. Guest authentication uses high-entropy bearer tokens and `authenticate_optional` routes bearer requests through auth while otherwise creating a guest. These source checks are not an exhaustive auth review.
+
+The lifecycle findings are confirmed at exact main, not merely inferred from PR patches. M4 remains blocked. #85→#86→#87 is a coherent candidate for deletion/expiry/lock ordering; #129 is a separate partially audited stack based on #127. Before integrating, compare the stacks and retain owner isolation, access denial at expiry, worker-safe deletion, cleanup verification, and lock ordering. No live deletion test or Render inspection was performed.
