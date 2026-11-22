@@ -37,6 +37,7 @@ from bionuclei.inference import (
 )
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 
+
 @asynccontextmanager
 async def _checkpoint_lifespan(_app: FastAPI):
     # Hash the large release artifact before health probes begin. Missing or
@@ -151,7 +152,6 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
 
     verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
     return path, actual, verified
-
 
 
 def _close_checkpoint_load_fds -> None:
