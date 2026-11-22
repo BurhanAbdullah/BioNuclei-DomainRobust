@@ -36,7 +36,7 @@ jobs:
         run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); puts "YAML syntax OK"' .github/workflows/public-e2e-schedule-watchdog.yml
 
   recover-missed-e2e:
-    if: github.event_name == 'schedule'
+    if: ${{ github.event_name == 'schedule' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

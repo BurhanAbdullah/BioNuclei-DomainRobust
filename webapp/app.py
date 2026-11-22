@@ -8,11 +8,16 @@ Run locally with:
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import base64
+import hashlib
+import hmac
 import io
 import json
 import os
+import stat
 import tempfile
+import threading
 from pathlib import Path
 from typing import Annotated
 
@@ -24,13 +29,34 @@ from scipy import ndimage
 from PIL import Image
 
 from bionuclei.data import decode_instance_mask
-from bionuclei.inference import evaluate, predict
+from bionuclei.inference import (
+    evaluate,
+    predict,
+    register_verified_checkpoint_fd,
+    unregister_verified_checkpoint_fd,
+)
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
+
+
+@asynccontextmanager
+async def _checkpoint_lifespan(_app: FastAPI):
+    # Hash the large release artifact before health probes begin. Missing or
+    # mismatched files remain visible as degraded health and fail-closed inference.
+    try:
+        _checkpoint_identity()
+    except HTTPException:
+        pass
+    try:
+        yield
+    finally:
+        _close_checkpoint_load_fds()
+
 
 app = FastAPI(
     title="BioNuclei Web API",
     version="0.1.0",
     description="HTTP adapter for deterministic BioNuclei bioimage-analysis operations.",
+    lifespan=_checkpoint_lifespan,
 )
 
 allowed_origins = [origin.strip() for origin in os.getenv("BIONUCLEI_ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
@@ -45,14 +71,155 @@ app.add_middleware(
 MAX_UPLOAD_BYTES = int(os.getenv("BIONUCLEI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 
-def _checkpoint() -> Path:
+RELEASE_CHECKPOINT_SHA256 = "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92"
+
+# The release checkpoint is approximately 3 GB. Cache its digest only for the
+# exact filesystem identity that was hashed; every health/inference check still
+# opens the path and compares descriptor + path metadata to detect replacement
+# or in-place modification without rereading unchanged checkpoint bytes.
+_CHECKPOINT_CACHE_LOCK = threading.Lock()
+_CHECKPOINT_CACHE: tuple[str, tuple[int, int, int, int, int], str] | None = None
+
+_CHECKPOINT_LOAD_FD_CACHE: dict[tuple[str, tuple[int, int, int, int, int], str], int] = {}
+_CHECKPOINT_OPEN_FDS: set[int] = set()
+
+
+def _checkpoint_stat_key(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _hash_checkpoint(stream) -> str:
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _checkpoint_identity() -> tuple[Path, str, bool]:
+    """Return the actual checkpoint digest and whether it matches the pinned release."""
+    global _CHECKPOINT_CACHE
+
     raw = os.getenv("BIONUCLEI_CHECKPOINT")
     if not raw:
         raise HTTPException(status_code=503, detail="BIONUCLEI_CHECKPOINT is not configured on this server")
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
         raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
-    return path
+
+    expected = os.getenv("BIONUCLEI_CHECKPOINT_SHA256", RELEASE_CHECKPOINT_SHA256).strip().lower()
+    if expected.startswith("sha256:"):
+        expected = expected.removeprefix("sha256:")
+    expected_is_sha256 = len(expected) == 64 and all(char in "0123456789abcdef" for char in expected)
+    configured_release_matches = expected_is_sha256 and hmac.compare_digest(
+        expected, RELEASE_CHECKPOINT_SHA256
+    )
+
+    try:
+        with _CHECKPOINT_CACHE_LOCK:
+            with path.open("rb") as stream:
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode):
+                    raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint is unavailable")
+                identity = _checkpoint_stat_key(before)
+                cached = _CHECKPOINT_CACHE
+                cache_hit = cached is not None and cached[0] == str(path) and cached[1] == identity
+                actual = cached[2] if cache_hit else _hash_checkpoint(stream)
+
+                # Verify that neither the opened inode nor the path changed while
+                # checking it. A replacement or in-place write invalidates the
+                # cache and fails closed rather than accepting a stale digest.
+                after = os.fstat(stream.fileno())
+                current_path = path.stat()
+                if identity != _checkpoint_stat_key(after) or identity != _checkpoint_stat_key(current_path):
+                    _CHECKPOINT_CACHE = None
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Configured BioNuclei checkpoint changed while being verified",
+                    )
+                if not cache_hit:
+                    _CHECKPOINT_CACHE = (str(path), identity, actual)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        _CHECKPOINT_CACHE = None
+        raise HTTPException(status_code=503, detail="Configured BioNuclei checkpoint could not be read") from exc
+
+    verified = hmac.compare_digest(actual, RELEASE_CHECKPOINT_SHA256) and configured_release_matches
+    return path, actual, verified
+
+
+def _close_checkpoint_load_fds() -> None:
+    """Release verified checkpoint descriptors when the web worker shuts down."""
+    global _CHECKPOINT_CACHE
+    with _CHECKPOINT_CACHE_LOCK:
+        descriptors = tuple(_CHECKPOINT_OPEN_FDS)
+        _CHECKPOINT_OPEN_FDS.clear()
+        _CHECKPOINT_LOAD_FD_CACHE.clear()
+        _CHECKPOINT_CACHE = None
+    for fd in descriptors:
+        unregister_verified_checkpoint_fd(fd)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+def _checkpoint() -> Path:
+    global _CHECKPOINT_CACHE
+    path, actual, verified = _checkpoint_identity()
+    if not verified:
+        raise HTTPException(
+            status_code=503,
+            detail="Configured BioNuclei checkpoint does not match the expected release SHA-256",
+        )
+    if not Path("/proc/self/fd").is_dir():
+        raise HTTPException(status_code=503, detail="Verified checkpoint loading requires Linux file descriptors")
+
+    cached = _CHECKPOINT_CACHE
+    if cached is None or cached[0] != str(path) or cached[2] != actual:
+        raise HTTPException(status_code=503, detail="Verified checkpoint identity is unavailable")
+    identity = cached[1]
+    key = (str(path), identity, actual)
+    with _CHECKPOINT_CACHE_LOCK:
+        fd = _CHECKPOINT_LOAD_FD_CACHE.get(key)
+        if fd is not None:
+            try:
+                if _checkpoint_stat_key(os.fstat(fd)) == identity and _checkpoint_stat_key(path.stat()) == identity:
+                    register_verified_checkpoint_fd(fd, identity)
+                    return Path(f"/proc/self/fd/{fd}")
+            except (OSError, RuntimeError):
+                pass
+            _CHECKPOINT_LOAD_FD_CACHE.pop(key, None)
+
+        fd = None
+        try:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+            opened_identity = _checkpoint_stat_key(os.fstat(fd))
+            path_identity = _checkpoint_stat_key(path.stat())
+            if opened_identity != identity or path_identity != identity:
+                _CHECKPOINT_CACHE = None
+                raise HTTPException(
+                    status_code=503,
+                    detail="Configured BioNuclei checkpoint changed after verification",
+                )
+            register_verified_checkpoint_fd(fd, identity)
+            _CHECKPOINT_OPEN_FDS.add(fd)
+            _CHECKPOINT_LOAD_FD_CACHE[key] = fd
+            return Path(f"/proc/self/fd/{fd}")
+        except HTTPException:
+            if fd is not None and fd not in _CHECKPOINT_OPEN_FDS:
+                os.close(fd)
+            raise
+        except (OSError, RuntimeError) as exc:
+            if fd is not None and fd not in _CHECKPOINT_OPEN_FDS:
+                os.close(fd)
+            _CHECKPOINT_CACHE = None
+            raise HTTPException(status_code=503, detail="Verified BioNuclei checkpoint could not be opened") from exc
 
 
 async def _save_upload(upload: UploadFile, suffix: str = ".tif") -> Path:
@@ -106,11 +273,19 @@ def _artifact_payload(output: Path, *, original: Path | None = None) -> dict[str
 
 @app.get("/health")
 def health() -> dict[str, object]:
-    checkpoint = os.getenv("BIONUCLEI_CHECKPOINT")
+    checkpoint_configured = bool(os.getenv("BIONUCLEI_CHECKPOINT"))
+    try:
+        checkpoint, digest, verified = _checkpoint_identity()
+        available = checkpoint.is_file()
+    except HTTPException:
+        available, digest, verified = False, None, False
     return {
-        "status": "ok" if checkpoint and Path(checkpoint).expanduser().is_file() else "degraded",
+        "status": "ok" if available and verified else "degraded",
         "scientific_engine": "bionuclei-domainrobust",
-        "checkpoint_configured": bool(checkpoint),
+        "checkpoint_configured": checkpoint_configured,
+        "checkpoint_available": available,
+        "checkpoint_sha256": digest,
+        "checkpoint_verified": verified,
     }
 
 
