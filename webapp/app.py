@@ -154,8 +154,7 @@ def _checkpoint_identity() -> tuple[Path, str, bool]:
 
 
 
-
-def _close_checkpoint_load_fds() -> None:
+def _close_checkpoint_load_fds -> None:
     """Release verified checkpoint descriptors when the web worker shuts down."""
     global _CHECKPOINT_CACHE
     with _CHECKPOINT_CACHE_LOCK:
@@ -193,7 +192,7 @@ def _checkpoint() -> Path:
                 if _checkpoint_stat_key(os.fstat(fd)) == identity and _checkpoint_stat_key(path.stat()) == identity:
                     register_verified_checkpoint_fd(fd, identity)
                     return Path(f"/proc/self/fd/{fd}")
-            except OSError:
+            except (OSError, RuntimeError):
                 pass
             _CHECKPOINT_LOAD_FD_CACHE.pop(key, None)
 
