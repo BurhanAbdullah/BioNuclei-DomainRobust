@@ -55,11 +55,16 @@ def _trim_cpu_allocator() -> bool:
 
 
 def _normalise(image: np.ndarray) -> np.ndarray:
-    x = image.astype(np.float32, copy=False)
+    # Own one float32 buffer and normalize it in place. The previous
+    # x / scale + np.clip(...) expression materialized two additional full-image
+    # arrays while the CPU model was already resident.
+    x = image.astype(np.float32, copy=True)
     scale = float(np.percentile(x, 99.5))
     if not np.isfinite(scale) or scale <= 0:
         scale = 1.0
-    return np.clip(x / scale, 0.0, 1.0)
+    np.divide(x, scale, out=x)
+    np.clip(x, 0.0, 1.0, out=x)
+    return x
 
 
 def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:

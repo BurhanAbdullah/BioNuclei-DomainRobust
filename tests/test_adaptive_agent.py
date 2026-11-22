@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from bionuclei.adaptive_agent import CNNPatternCheck, build_plan, to_dict
+from bionuclei.adaptive_agent import CNNPatternCheck, build_plan, inspect_image, to_dict
 
 
 def test_adaptive_plan_flags_flat_image(tmp_path: Path) -> None:
@@ -101,10 +101,68 @@ def test_cnn_preflight_downsamples_large_image_and_uses_frozen_weights(tmp_path:
         return FakeModel()
 
     monkeypatch.setattr(bionuclei.inference, "_load_model", fake_load_model)
+
+    def fake_trim_allocator():
+        events.append("trim_allocator")
+        return True
+
+    monkeypatch.setattr(bionuclei.inference, "_trim_cpu_allocator", fake_trim_allocator)
     result = __import__("bionuclei.adaptive_agent", fromlist=["cnn_pattern_check"]).cnn_pattern_check(path)
     assert result.executed is True
     assert result.status == "PASS"
     assert seen_shapes == [(1, 1, 192, 192)]
     assert loader_calls == [(checkpoint, "cpu")]
-    assert events == ["acquire", "load", "model_cleanup", "release"]
+    assert events == ["acquire", "load", "model_cleanup", "trim_allocator", "release"]
     assert lock.held is False
+
+
+def test_uint16_image_profile_preserves_full_range_and_statistics(tmp_path: Path, monkeypatch) -> None:
+    image = np.array(
+        [
+            [0, 1, 512, 1024],
+            [2048, 4096, 8192, 16384],
+            [32768, 49152, 65534, 65535],
+        ],
+        dtype=np.uint16,
+    )
+    path = tmp_path / "uint16-profile.tif"
+    tifffile.imwrite(path, image)
+
+    real_percentile = np.percentile
+    percentile_calls = []
+
+    def record_percentile(values, quantiles, *args, **kwargs):
+        percentile_calls.append(quantiles)
+        return real_percentile(values, quantiles, *args, **kwargs)
+
+    monkeypatch.setattr("bionuclei.adaptive_agent.np.percentile", record_percentile)
+    profile = inspect_image(path)
+
+    reference = image.astype(np.float64).reshape(-1)
+    expected_p01, expected_median, expected_p995 = real_percentile(
+        reference, (1.0, 50.0, 99.5)
+    )
+    assert profile.finite is True
+    assert profile.dtype == "uint16"
+    assert profile.min == float(reference.min())
+    assert profile.max == float(reference.max()) == 65535.0
+    assert profile.p01 == float(expected_p01)
+    assert profile.median == float(expected_median)
+    assert profile.p995 == float(expected_p995)
+    assert profile.mean == float(reference.mean())
+    assert profile.std == float(reference.std())
+    assert profile.saturation_fraction == float(np.mean(reference >= 65535))
+    assert percentile_calls == [(1.0, 50.0, 99.5)]
+
+
+def test_float_image_profile_ignores_non_finite_values_but_reports_them(tmp_path: Path) -> None:
+    image = np.array([[1.0, np.nan], [3.0, 5.0]], dtype=np.float32)
+    path = tmp_path / "float-profile.tif"
+    tifffile.imwrite(path, image)
+
+    profile = inspect_image(path)
+
+    assert profile.finite is False
+    assert profile.min == 1.0
+    assert profile.max == 5.0
+    assert profile.mean == 3.0
