@@ -86,6 +86,7 @@
         <svg aria-hidden="true" viewBox="0 0 48 48" width="44" height="44"><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/><path d="M24 31V17m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <b>Drop a microscopy image here</b>
         <span>or <u>browse files</u> · TIFF/TIF or Nikon ND2 · <span data-max-upload>up to 64 MiB</span></span>
+        <span class="ws-drop-hint">Drop several files at once to build an experiment</span>
         <input id="image" type="file" accept=".tif,.tiff,.nd2">
       </label>
       <div id="fileInfo" class="note" hidden></div>
@@ -100,6 +101,30 @@
       </div>
       <div id="runMsg" aria-live="polite"></div>
       <div id="analysisProgress" class="ws-card ws-progress" data-analysis-progress hidden></div>
+      <div class="ws-or"><span>or analyse a whole experiment</span></div>
+      <section id="experiment" class="ws-card ws-exp" aria-labelledby="expTitle">
+        <div class="ws-exp-head">
+          <div><h2 id="expTitle">Experiment tray</h2><p class="ws-muted" data-exp-summary>Add 2–20 images. Each is numbered and checked in your browser before anything is uploaded.</p></div>
+          <label class="ws-btn ghost"><input id="batchInput" type="file" accept=".tif,.tiff,.nd2" multiple hidden>Add images</label>
+        </div>
+        <div class="ws-exp-empty" data-exp-empty>
+          <p><b>What the tray checks:</b> format, dimensions, bit depth, channels and stacks, fluorophores named in metadata or file names, brightfield-like contrast, and exact duplicates by SHA-256. File names such as <code>ctrl_rep1.tif</code> become condition and replicate labels you can edit.</p>
+        </div>
+        <div class="ws-table ws-exp-table" data-exp-table hidden>
+          <table>
+            <thead><tr><th scope="col"><input type="checkbox" data-exp-all aria-label="Select all suitable images"></th><th scope="col">#</th><th scope="col">Image</th><th scope="col">Condition</th><th scope="col">Rep</th><th scope="col">Recognised</th><th scope="col">Plane</th><th scope="col">Result</th></tr></thead>
+            <tbody data-exp-body></tbody>
+          </table>
+        </div>
+        <div class="ws-actions" data-exp-actions hidden>
+          <button type="button" class="ws-btn primary" data-exp-run>Analyze selected</button>
+          <button type="button" class="ws-btn ghost" data-exp-stop hidden>Stop after current</button>
+          <button type="button" class="ws-btn ghost" data-exp-csv disabled>Download experiment summary (CSV)</button>
+          <button type="button" class="ws-btn danger" data-exp-delete disabled>Delete all server results</button>
+          <button type="button" class="ws-btn ghost" data-exp-clear>Clear tray</button>
+        </div>
+        <p class="ws-fine" data-exp-status aria-live="polite"></p>
+      </section>
     </section>
 
     <section id="resultPanel" class="ws-panel" aria-labelledby="resultTitle" hidden>
@@ -179,5 +204,5 @@
   </aside>
 </div>
 
-<script src="assets/site.js"></script><script src="assets/bionuclei-config.js"></script><script src="assets/bionuclei-specialist-verification.js"></script><script src="assets/bionuclei-analyzer.js"></script><script src="assets/workstation.js"></script>
+<script src="assets/site.js"></script><script src="assets/bionuclei-config.js"></script><script src="assets/bionuclei-specialist-verification.js"></script><script src="assets/bionuclei-analyzer.js"></script><script src="assets/workstation.js"></script><script src="assets/experiment.js"></script>
 </body></html>

@@ -78,6 +78,37 @@ def _agent_lines(payload: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _input_lines(payload: dict[str, Any]) -> list[str]:
+    """Describe how the uploaded file was recognised and which plane was analysed."""
+    meta = payload.get("input_metadata") or {}
+    if not meta:
+        return []
+    lines = []
+    fmt = meta.get("input_format")
+    if meta.get("recognized_as"):
+        lines.append(f"Recognised as: {meta['recognized_as']} ({fmt}).")
+    elif fmt:
+        lines.append(f"Input format: {fmt}.")
+    axes = meta.get("source_axes")
+    shape = meta.get("source_shape")
+    if axes and shape:
+        lines.append(f"Source axes {axes} with shape {shape}.")
+    selected = meta.get("selected_indices") or {}
+    if selected:
+        lines.append("Analysed plane: " + ", ".join(f"{k} {v}" for k, v in selected.items()) + ".")
+    plane = meta.get("selected_plane_shape")
+    if plane:
+        lines.append(f"Analysed plane size: {plane[0]} x {plane[1]} px, {meta.get('selected_plane_dtype', meta.get('dtype', ''))}.")
+    size = meta.get("pixel_size")
+    if isinstance(size, dict) and size.get("x"):
+        lines.append(f"Pixel size from {size.get('source', 'metadata')}: {size['x']:.4g} {size.get('unit', '')}. Measurements remain in pixels.")
+    else:
+        lines.append("No pixel size was found in the file metadata. All measurements are in pixels.")
+    for note in meta.get("notes") or []:
+        lines.append(str(note))
+    return lines
+
+
 def _build_pdf(payload: dict[str, Any], output_dir: Path) -> Path:
     """Generate a PDF using built in Helvetica fonts available in ReportLab."""
     from reportlab.lib import colors
@@ -103,7 +134,13 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path) -> Path:
     summary = [["Status", _clean(plan.get("status", "UNKNOWN"))], ["Nuclei detected", _clean(reports.get("nuclei_count", payload.get("n_instances", "Not available")))], ["Image shape", _clean(profile.get("shape", "Not available"))], ["Data type", _clean(profile.get("dtype", "Not available"))], ["Model", _clean(model.get("architecture", "Boundary U Net"))], ["Training reference", _clean(model.get("training_reference", "Not established"))], ["Specialist agents", str(len((payload.get("expert_agents") or {}).get("agents", [])))]]
     table = Table(summary, colWidths=[55 * mm, 110 * mm])
     table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), regular), ("FONTNAME", (0, 0), (0, -1), bold), ("GRID", (0, 0), (-1, -1), .35, colors.grey), ("FONTSIZE", (0, 0), (-1, -1), 9), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-    story += [table, Paragraph("1. Executive Summary", heading)]
+    story += [table]
+    input_lines = _input_lines(payload)
+    if input_lines:
+        story.append(Paragraph("Input recognition", heading))
+        for line in input_lines:
+            story.append(Paragraph(html.escape(_clean(line)), body))
+    story.append(Paragraph("1. Executive Summary", heading))
     for text in _interpretation(payload)[:2]:
         story.append(Paragraph(html.escape(_clean(text)), body))
     story.append(Paragraph("2. Image Quality and Analysisability", heading))
@@ -143,8 +180,10 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
     sections = []
     for text in _interpretation(payload):
         sections.append(f"<p>{html.escape(_clean(text))}</p>")
+    input_html = "".join(f"<li>{html.escape(_clean(line))}</li>" for line in _input_lines(payload))
+    input_section = f"<h2>Input recognition</h2><ul>{input_html}</ul>" if input_html else ""
     agents = "".join(f"<li>{html.escape(line)}</li>" for line in _agent_lines(payload)) or "<li>No specialist agent findings were recorded for this run.</li>"
-    page = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>BioNuclei Analysis Report</title><style>body{{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;line-height:1.55}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #bbb;padding:8px;text-align:left}}h1,h2{{margin-top:1.5em}}</style></head><body><h1>BioNuclei Quantitative Bioimaging Analysis Report</h1><p><strong>Status:</strong> {html.escape(_clean(plan.get('status','UNKNOWN')))}</p><table><tr><th>Nuclei detected</th><td>{html.escape(_clean(reports.get('nuclei_count',payload.get('n_instances','Not available'))))}</td></tr><tr><th>Model</th><td>{html.escape(_clean(model.get('architecture','Boundary U Net')))}</td></tr><tr><th>Training reference</th><td>{html.escape(_clean(model.get('training_reference','Not established')))}</td></tr></table><h2>Evidence summary</h2>{''.join(sections)}<h2>Specialist execution and evidence status</h2><ul>{agents}</ul><p><strong>Model weights are not updated during user analysis.</strong> {html.escape(f"Verified specialist training corpus: {training['validated_images']} validated images." if training["verified"] and training["claim_allowed"] and training["validated_images"] is not None else "Training provenance is not established; no training-image count is claimed.")}</p><h2>Limitations</h2><p>This software reports computational measurements and evidence. It is not a clinical diagnostic system.</p></body></html>"""
+    page = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>BioNuclei Analysis Report</title><style>body{{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;line-height:1.55}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #bbb;padding:8px;text-align:left}}h1,h2{{margin-top:1.5em}}</style></head><body><h1>BioNuclei Quantitative Bioimaging Analysis Report</h1><p><strong>Status:</strong> {html.escape(_clean(plan.get('status','UNKNOWN')))}</p><table><tr><th>Nuclei detected</th><td>{html.escape(_clean(reports.get('nuclei_count',payload.get('n_instances','Not available'))))}</td></tr><tr><th>Model</th><td>{html.escape(_clean(model.get('architecture','Boundary U Net')))}</td></tr><tr><th>Training reference</th><td>{html.escape(_clean(model.get('training_reference','Not established')))}</td></tr></table>{input_section}<h2>Evidence summary</h2>{''.join(sections)}<h2>Specialist execution and evidence status</h2><ul>{agents}</ul><p><strong>Model weights are not updated during user analysis.</strong> {html.escape(f"Verified specialist training corpus: {training['validated_images']} validated images." if training["verified"] and training["claim_allowed"] and training["validated_images"] is not None else "Training provenance is not established; no training-image count is claimed.")}</p><h2>Limitations</h2><p>This software reports computational measurements and evidence. It is not a clinical diagnostic system.</p></body></html>"""
     html_path = output_dir / "analysis_report.html"
     html_path.write_text(page, encoding="utf-8")
     (output_dir / "analysis_report.json").write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")

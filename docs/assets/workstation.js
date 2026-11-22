@@ -56,7 +56,13 @@
     drop.addEventListener('drop', event => {
       event.preventDefault();
       drop.classList.remove('is-over');
-      const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      const files = event.dataTransfer && event.dataTransfer.files;
+      if (files && files.length > 1 && window.BioNucleiExperiment) {
+        window.BioNucleiExperiment.add(files);
+        qs('#experiment')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      const file = files && files[0];
       if (!file) return;
       if (!/\.(tif|tiff|nd2)$/i.test(file.name)) {
         const info = $('fileInfo');
@@ -151,6 +157,7 @@
           const limit = fmtBytes(Number(health.max_upload_bytes));
           setText('[data-server-limit]', limit);
           qsa('[data-max-upload]').forEach(n => { n.textContent = `up to ${limit}`; });
+          window.__BIONUCLEI_MAX_UPLOAD = Number(health.max_upload_bytes);
         }
         checking = false;
         return;

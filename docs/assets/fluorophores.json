@@ -1,0 +1,276 @@
+[
+ {
+  "name": "DAPI",
+  "aliases": [
+   "dapi"
+  ],
+  "ex": 358,
+  "em": 461,
+  "nuclear": true,
+  "note": "DNA stain, fixed cells"
+ },
+ {
+  "name": "Hoechst 33342",
+  "aliases": [
+   "hoechst 33342",
+   "hoechst33342",
+   "hoechst",
+   "h33342",
+   "nucblue"
+  ],
+  "ex": 350,
+  "em": 461,
+  "nuclear": true,
+  "note": "DNA stain, live or fixed cells"
+ },
+ {
+  "name": "Hoechst 33258",
+  "aliases": [
+   "hoechst 33258",
+   "hoechst33258",
+   "h33258"
+  ],
+  "ex": 352,
+  "em": 461,
+  "nuclear": true,
+  "note": "DNA stain"
+ },
+ {
+  "name": "DRAQ5",
+  "aliases": [
+   "draq5"
+  ],
+  "ex": 646,
+  "em": 697,
+  "nuclear": true,
+  "note": "far-red DNA stain, live or fixed cells"
+ },
+ {
+  "name": "DRAQ7",
+  "aliases": [
+   "draq7"
+  ],
+  "ex": 599,
+  "em": 697,
+  "nuclear": true,
+  "note": "far-red DNA stain, dead or permeabilised cells"
+ },
+ {
+  "name": "Propidium iodide",
+  "aliases": [
+   "propidium iodide",
+   "propidium",
+   "pi"
+  ],
+  "ex": 535,
+  "em": 617,
+  "nuclear": true,
+  "note": "DNA stain, dead or fixed cells"
+ },
+ {
+  "name": "SYTOX Green",
+  "aliases": [
+   "sytox green",
+   "sytox"
+  ],
+  "ex": 504,
+  "em": 523,
+  "nuclear": true,
+  "note": "DNA stain, dead cells"
+ },
+ {
+  "name": "RedDot1",
+  "aliases": [
+   "reddot1",
+   "reddot"
+  ],
+  "ex": 662,
+  "em": 694,
+  "nuclear": true,
+  "note": "far-red DNA stain, live cells"
+ },
+ {
+  "name": "NucRed Live 647",
+  "aliases": [
+   "nucred",
+   "nucred live"
+  ],
+  "ex": 638,
+  "em": 686,
+  "nuclear": true,
+  "note": "far-red DNA stain, live cells"
+ },
+ {
+  "name": "H2B-GFP",
+  "aliases": [
+   "h2b-gfp",
+   "h2bgfp",
+   "h2b gfp",
+   "h2b"
+  ],
+  "ex": 488,
+  "em": 507,
+  "nuclear": true,
+  "note": "histone fusion, labels chromatin"
+ },
+ {
+  "name": "H2B-mCherry",
+  "aliases": [
+   "h2b-mcherry",
+   "h2bmcherry",
+   "h2b mcherry"
+  ],
+  "ex": 587,
+  "em": 610,
+  "nuclear": true,
+  "note": "histone fusion, labels chromatin"
+ },
+ {
+  "name": "EGFP",
+  "aliases": [
+   "egfp",
+   "gfp"
+  ],
+  "ex": 488,
+  "em": 507,
+  "nuclear": false,
+  "note": "fluorescent protein"
+ },
+ {
+  "name": "FITC",
+  "aliases": [
+   "fitc"
+  ],
+  "ex": 495,
+  "em": 519,
+  "nuclear": false,
+  "note": "green conjugate"
+ },
+ {
+  "name": "Alexa Fluor 488",
+  "aliases": [
+   "alexa fluor 488",
+   "alexa488",
+   "af488",
+   "a488"
+  ],
+  "ex": 495,
+  "em": 519,
+  "nuclear": false,
+  "note": "green conjugate"
+ },
+ {
+  "name": "Alexa Fluor 555",
+  "aliases": [
+   "alexa fluor 555",
+   "alexa555",
+   "af555",
+   "a555"
+  ],
+  "ex": 555,
+  "em": 565,
+  "nuclear": false,
+  "note": "orange conjugate"
+ },
+ {
+  "name": "Cy3",
+  "aliases": [
+   "cy3"
+  ],
+  "ex": 550,
+  "em": 570,
+  "nuclear": false,
+  "note": "orange conjugate"
+ },
+ {
+  "name": "TRITC",
+  "aliases": [
+   "tritc",
+   "rhodamine"
+  ],
+  "ex": 557,
+  "em": 576,
+  "nuclear": false,
+  "note": "orange conjugate"
+ },
+ {
+  "name": "tdTomato",
+  "aliases": [
+   "tdtomato"
+  ],
+  "ex": 554,
+  "em": 581,
+  "nuclear": false,
+  "note": "fluorescent protein"
+ },
+ {
+  "name": "Alexa Fluor 568",
+  "aliases": [
+   "alexa fluor 568",
+   "alexa568",
+   "af568",
+   "a568"
+  ],
+  "ex": 578,
+  "em": 603,
+  "nuclear": false,
+  "note": "red conjugate"
+ },
+ {
+  "name": "mCherry",
+  "aliases": [
+   "mcherry"
+  ],
+  "ex": 587,
+  "em": 610,
+  "nuclear": false,
+  "note": "fluorescent protein"
+ },
+ {
+  "name": "Alexa Fluor 594",
+  "aliases": [
+   "alexa fluor 594",
+   "alexa594",
+   "af594",
+   "a594"
+  ],
+  "ex": 590,
+  "em": 617,
+  "nuclear": false,
+  "note": "red conjugate"
+ },
+ {
+  "name": "Texas Red",
+  "aliases": [
+   "texas red",
+   "texasred"
+  ],
+  "ex": 595,
+  "em": 615,
+  "nuclear": false,
+  "note": "red conjugate"
+ },
+ {
+  "name": "Cy5",
+  "aliases": [
+   "cy5"
+  ],
+  "ex": 649,
+  "em": 670,
+  "nuclear": false,
+  "note": "far-red conjugate"
+ },
+ {
+  "name": "Alexa Fluor 647",
+  "aliases": [
+   "alexa fluor 647",
+   "alexa647",
+   "af647",
+   "a647"
+  ],
+  "ex": 650,
+  "em": 665,
+  "nuclear": false,
+  "note": "far-red conjugate"
+ }
+]
