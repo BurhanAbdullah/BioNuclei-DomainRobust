@@ -9,6 +9,10 @@ on:
   # share physical CPU/RAM, but can consume repository concurrency capacity.
   # Keep this manually dispatchable for a deliberate single-fraction recovery.
   workflow_dispatch:
+    inputs:
+      e4_run_id:
+        description: "Successful E4 workflow run on the current main SHA"
+        required: true
 
 permissions:
   contents: read
@@ -21,13 +25,14 @@ env:
   NUMEXPR_NUM_THREADS: "2"
   BIONUCLEI_NUM_WORKERS: "0"
   BIONUCLEI_ACTIVATION_CHECKPOINT: "1"
-  E4_ARTIFACT_ID: "12183110279"
-  EXPECTED_E4_DIGEST: "sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d"
 
 jobs:
   e6_25pct:
     name: E6 25pct recovery
+    if: ${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    env:
+      E4_SOURCE_RUN_ID: ${{ inputs.e4_run_id }}
     timeout-minutes: 360
     steps:
       - name: Checkout
@@ -95,26 +100,51 @@ jobs:
           ) > e6_25pct_memory_watch.log 2>&1 &
           echo $! > e6_25pct_memory_watch.pid
 
-      - name: Verify retained E4 artifact identity
+      - name: Resolve and verify exact E4 artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}" --jq '.digest')"
-          test "${digest}" = "${EXPECTED_E4_DIGEST}"
-
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${E4_SOURCE_RUN_ID}")"
+          source_sha="$(jq -r '.head_sha' <<<"$run_json")"
+          source_branch="$(jq -r '.head_branch' <<<"$run_json")"
+          source_path="$(jq -r '.path' <<<"$run_json")"
+          source_conclusion="$(jq -r '.conclusion' <<<"$run_json")"
+          source_workflow_id="$(jq -r '.workflow_id' <<<"$run_json")"
+          checkout_sha="$(git rev-parse HEAD)"
+          test "$source_branch" = "main"
+          test "$source_path" = ".github/workflows/e4_domain_robust.yml"
+          test "$source_conclusion" = "success"
+          test "$source_sha" = "$checkout_sha"
+          expected_workflow_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/e4_domain_robust.yml" --jq '.id')"
+          test "$source_workflow_id" = "$expected_workflow_id"
+          artifact_name="e4-domain-robust-${E4_SOURCE_RUN_ID}"
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${E4_SOURCE_RUN_ID}/artifacts")"
+          artifact_json="$(jq -c --arg name "$artifact_name" '[.artifacts[] | select(.name == $name and .expired == false)] | if length == 1 then .[0] else error("expected exactly one unexpired E4 artifact") end' <<<"$artifacts_json")"
+          artifact_id="$(jq -r '.id' <<<"$artifact_json")"
+          artifact_digest="$(jq -r '.digest' <<<"$artifact_json")"
+          test "$artifact_id" != "null"
+          test "$artifact_digest" != "null"
+          {
+            echo "E4_ARTIFACT_ID=$artifact_id"
+            echo "EXPECTED_E4_DIGEST=$artifact_digest"
+          } >> "$GITHUB_ENV"
+          echo "Resolved $artifact_name (artifact $artifact_id, $artifact_digest)"
       - name: Download frozen E4 checkpoint
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4.zip
+          actual_digest="sha256:$(sha256sum e4.zip | cut -d' ' -f1)"
+          test "$actual_digest" = "$EXPECTED_E4_DIGEST"
           unzip -q e4.zip -d e4_artifact
           test -f e4_artifact/outputs/e4_domain_robust/last.pt
           python - <<'PY'
           import torch, yaml
           ckpt=torch.load('e4_artifact/outputs/e4_domain_robust/last.pt', map_location='cpu', weights_only=True)
-          assert 'config' in ckpt and 'model' in ckpt
+          if not isinstance(ckpt, dict) or not isinstance(ckpt.get('model'), dict) or not isinstance(ckpt.get('config'), dict):
+              raise RuntimeError('E4 checkpoint must contain config and tensor model state')
           yaml.safe_dump(ckpt['config'], open('e4_config.yaml','w'), sort_keys=False)
           PY
 
