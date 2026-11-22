@@ -120,3 +120,21 @@ pre{font-size:.85rem;line-height:1.65}
 .rm-filter button{border-color:var(--border-subtle)!important;color:var(--ink)!important;background:#fff!important;font-weight:600}
 .rm-filter button.selected{background:var(--wine)!important;border-color:var(--wine)!important;color:#fff!important}
 .rm-card:after{color:var(--wine);opacity:.85!important;font-weight:600}
+/* Eyepiece: a circular, living microscope field in inner page headers */
+.has-eyepiece{position:relative;overflow:hidden;isolation:isolate}
+.has-eyepiece>.wrap,.has-eyepiece>:not(.eyepiece){position:relative;z-index:1}
+.has-eyepiece h1,.has-eyepiece .lead,.has-eyepiece>p,.has-eyepiece .wrap>p{max-width:min(760px,56%)}
+.eyepiece{position:absolute;z-index:0;right:max(24px,calc((100% - var(--max))/2 + 8px));top:50%;width:min(400px,36vw);aspect-ratio:1;margin:0;transform:translateY(-50%);border-radius:50%;overflow:hidden;background:#04060a;box-shadow:0 0 0 10px #fff,0 0 0 11px rgba(123,22,56,.22),0 30px 70px rgba(77,12,37,.28),inset 0 0 60px rgba(0,0,0,.8);animation:eyeIn .9s cubic-bezier(.2,.7,.2,1) both}
+.eyepiece canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.eyepiece::after{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,transparent 58%,rgba(0,0,0,.55) 100%);pointer-events:none}
+.eyepiece::before{content:"";position:absolute;left:50%;top:8%;bottom:8%;width:1px;background:rgba(255,255,255,.12);z-index:1}
+.eyepiece figcaption{position:absolute;left:50%;bottom:9%;transform:translateX(-50%);z-index:2;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.5);color:rgba(255,255,255,.75);font-size:.62rem;font-weight:650;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+@keyframes eyeIn{from{opacity:0;transform:translateY(-46%) scale(.94)}to{opacity:1;transform:translateY(-50%) scale(1)}}
+@media(max-width:1100px){.eyepiece{width:min(300px,34vw)}}
+@media(max-width:720px){.eyepiece{display:none}.has-eyepiece h1,.has-eyepiece .lead,.has-eyepiece>p,.has-eyepiece .wrap>p{max-width:none}}
+@media(prefers-reduced-motion:reduce){.eyepiece{animation:none}}
+.roadmap-hero{padding-top:72px!important}
+/* Legacy page variables mapped onto the brand palette */
+:root{--harvard:var(--wine);--cream:var(--soft);--line:var(--border-subtle);--ink-legacy:var(--ink)}
+/* Fact boxes: label on its own line */
+.meta div>b:first-child,.fact>b:first-child{display:block;margin-bottom:3px;color:var(--ink)}

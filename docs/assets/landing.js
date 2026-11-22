@@ -62,8 +62,19 @@
     }
     return out;
   }
+  let living = false;
   function drawField() {
     if (!view || !raw || !seg) return;
+    if (window.BioNucleiField && !living) {
+      // Same seed for both layers: nuclei move identically, the right side adds outlines.
+      living = true;
+      const a = window.BioNucleiField.create(raw, { outline: false, seed: 20261122 });
+      window.BioNucleiField.create(seg, { outline: true, sweep: false, fill: true, dim: 0.6, seed: 20261122 });
+      view.classList.add('is-live');
+      const count = qs('[data-count]'); if (count) count.textContent = String(a.count());
+      return;
+    }
+    if (living) return;
     const rect = view.getBoundingClientRect();
     if (!rect.width) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
