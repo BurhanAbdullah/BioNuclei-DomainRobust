@@ -52,7 +52,7 @@ The script refuses plain-HTTP URLs, verifies the server's SHA-256 and every file
 
 ## Daily backup into Google Drive (no PC needed)
 
-`.github/workflows/backup_to_drive.yml` runs every day at 02:47 IST and copies the encrypted archive into the Drive folder `1IUcF1OuF0beo1e1sLgDOHKyOOF9n8wAY`. Google stores ciphertext only; the data key never leaves the server and your password manager.
+`.github/workflows/backup_to_drive.yml` runs every day at 02:47 IST and copies the encrypted archive into the Drive folder `1IUcF1OuF0beo1e1sLgDOHKyOOF9n8wAY`. Google stores ciphertext only. To verify every file before upload, the scheduled runner receives `BIONUCLEI_DATA_KEY` as a GitHub Actions secret and temporarily holds the archive and key; therefore GitHub Actions is a trusted processor for this data. The key is not printed or uploaded as an artifact. If the key must remain only on the server and your own computer, do not enable the Drive workflow. The OAuth scope is `drive` (broad account access), so use a dedicated Google account for backups and revoke the grant when no longer needed.
 
 One-time setup:
 1. Google Cloud Console: create a project, enable the Google Drive API, create an OAuth client of type **Desktop app**.
