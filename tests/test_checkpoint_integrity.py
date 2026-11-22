@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 
 import bionuclei.inference as inference_module
+from bionuclei.models import BoundaryUNet
 from bionuclei.inference import _load_model, predict
 from webapp import app as scientific_app
 from webapp import community_app
