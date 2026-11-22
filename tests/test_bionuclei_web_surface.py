@@ -136,3 +136,15 @@ def test_lab_page_never_persists_uploaded_microscopy_files() -> None:
     assert "url.revokeobjecturl" in lowered
     assert "beforeunload" in lowered
 
+
+
+def test_lab_enhancements_support_drag_drop_and_release_preview_on_clear() -> None:
+    html = (DOCS / "bionuclei-lab.html").read_text(encoding="utf-8")
+    enhancement = (DOCS / "assets" / "lab-enhancements.js").read_text(encoding="utf-8")
+    assert 'src="assets/lab-enhancements.js"' in html
+    assert 'src="assets/lab-enhancements.css"' in html
+    assert "stage.addEventListener('drop'" in enhancement
+    assert "Unsupported file. Choose TIFF/TIF or ND2." in enhancement
+    assert "window.__bionucleiLabRevoke" in enhancement
+    assert "window.__bionucleiLabRevoke=function()" in html
+    assert "URL.revokeObjectURL(localUrl);localUrl=null" in html
