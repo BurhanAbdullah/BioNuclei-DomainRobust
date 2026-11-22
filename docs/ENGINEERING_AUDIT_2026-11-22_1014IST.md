@@ -109,3 +109,27 @@ Keep public E2E paused by a reviewed safety integration until exact runtime/chec
 - This audit file was re-fetched at exact PR #178 head `d5020341e87bf6e28afd1f13b74fe9ee4158e2fd` before the update.
 - New audit commit `d5020341e87bf6e28afd1f13b74fe9ee4158e2fd` was validated by exact-head run [44986731889](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44986731889), job `137098825555`: **145 passed, 1 skipped**. The full 49,805-character job log was fetched. This is documentation-PR CI evidence, not public inference.
 - #178 now has four changed documentation files and remains a draft; no merge was performed.
+
+
+## Fresh main, Actions, and E6 retry audit — 2026-11-22 11:14 IST
+
+### Current main
+
+- SHA: `97e35c1cc73f39fb2855268e441231975ba4bd0b`; GitHub commit verification: `verified=true`, `reason=valid`, verified at `2026-11-22T04:07:50Z`.
+- Actions branch-main query: pages 1–10 populated (100 each); page 11 empty and pages 12–25 empty. API reports 2,500 total, but only 1,000 records are accessible through this listing. Scheduled-event query: pages 1–6 populated (100 each), page 7 has 2; total 602. Exact-main SHA query: 35 records on page 1; page 2 empty. Open PR listing: 99 records on page 1; page 2 empty. Full diffs/checks/logs/artifacts for all 99 PRs remain incomplete.
+- Current-main CI run `44983675441` succeeded. Zero-shot run `44990767024` remains in progress. Pages deploy run `44983675451` failed after upload; artifact `github-pages` (`14739385465`, 140,058 bytes, digest `sha256:a956ac81ae265b0d4b03977b268ece0d30521d75b478a236830aea317fb7e723`) is present in the run, while deploy-pages reported 0 artifacts. This is consistent with a transient artifact-metadata/API failure; no source/config fix is justified from this log alone, and deployment was not rerun.
+
+### E6 provenance and stale retry
+
+- PR #179 is merged at main `97e35c1cc73f39fb2855268e441231975ba4bd0b`. Its E6 workflow now resolves and verifies the E4 artifact from the exact source run. No E4 run exists on this SHA; E6 aggregate/finalize/E7/clean-environment runs on this SHA are skipped.
+- Failed E6 run `44983269382` was on older SHA `7339aca07b91a8eaf4f6b94f3d08498cbabfada8` and failed at retained-E4 artifact identity verification before training. The current-main retry-watchdog run `44983811929` succeeded but reran job `137089667507` from that stale run. Five duplicate-named 25% failure artifacts were downloaded and ZIP-tested; each contains only `e6_25pct_memory_watch.log`, not scientific metrics. Archive SHA-256 values: `a787a9d173ae40533cfdfcd5c81e9231c33ec24f210be53788428caf8262b486`, `c0f4e2068de4beb1d9a9686b138c6f2f52a260c783b76caaba8a4089e5e88879`, `e22f4b61c2931489b4996643bf26cfa73886feff2e1326978d17f0cd8a874181`, `9ebf93b4afb185e532f4b865d41c1fb43b8d2485ffa305b6192fd2f160a749a0`, `d5621dc08f2734de1019ba3df0195c1d44e7cddaa1f53a2edb1e737dc3b348f5`.
+- New PR #181 adds a current-main SHA gate to the retry watchdog and static regression tests. Exact head `823f1f3922980cd91cea11c175d460a492cc88ff`; both exact-head CI runs `44991042845` and `44991006792` succeeded: **156 passed, 1 skipped** each. Supabase Preview skipped. No artifacts. PR is ready for review, not merged.
+
+### Public E2E and safety
+
+- E2E #301/#302 are preflight failures on then-current main `d4a653e94501e8b9f1ec9de09ff71720f90ab340`. Both archives were refreshed, ZIP integrity-tested and JSON-parsed. #301 ZIP/JSON SHA-256: `0f41ba3a21b1008d5fd40bc76b654bcda190130768ef3258cc8e465e51f19214` / `7a40410b73868de6466abaddec4ca27d689611ac00fb6e6896f870e0cb050af4`; #302: `acc4026852be6922aeb5dc93caa00ab0e196a8c6f9004f26c7c9110ceae2e999` / `2303f89a8945d29947e7fba0efd2c22610ac15f7192936e9cd02a9adda896bdb`. Runtime parity false, runtime SHA stale; neither reached guest session/upload/inference.
+- Public E2E watchdog #129 on that old SHA accepted dispatch without deployed-SHA/checkpoint verification. PR #150 remains open; its runner checks pass, but public-upload validation is skipped. Main is still not fail-closed.
+
+### Evidence and milestone status
+
+Repository/API, CI/runner, and local artifact parsing are separate evidence tiers; no public inference or deployed-runtime evidence. M0 remains partial (full PR audit incomplete). M1 remains blocked (automatic dispatch, runtime parity false, deployed identity/checkpoint unverified). M2–M7 unaccepted. Render was not inspected, no deploy/public upload/E2E dispatch was initiated, and browser control is unavailable without an originating context. Deadline risk remains high.
