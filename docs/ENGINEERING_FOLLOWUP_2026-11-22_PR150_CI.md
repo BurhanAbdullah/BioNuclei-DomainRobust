@@ -192,3 +192,25 @@ The research/security changes are largely complementary, but #168 is likely a pa
 
 ### M0 audit status
 This run has reviewed a prioritized set of scientific, security, upload, postprocessing, and runtime PRs, including their dependency relationships. The full 99-PR diff/check/log/artifact audit remains outstanding; M0 exit criteria are not met. M1–M7 remain gated as previously recorded.
+
+## Fresh audit and artifact verification — 2026-11-22 09:10 IST
+
+### Main/Actions/PR inventory
+- Main SHA `d4a653e94501e8b9f1ec9de09ff71720f90ab340` and commit verification `verified=true, reason=valid` refreshed.
+- `branch=main`: pages 1–10 each returned 100; page 11 returned 0. API total 2,500, but only 1,000 accessible records were enumerated.
+- `event=schedule`: pages 1–6 returned 100 and page 7 returned 2; all 602 populated records were enumerated.
+- Exact main SHA: pages 1–4 returned 100 and page 5 returned 98; all 498 populated records were enumerated.
+- Open PR listing refreshed: 99. Full all-PR diffs/checks/logs/artifacts remain incomplete.
+
+### E2E/watchdog/release artifact refresh
+- E2E #302 (run [44972727518](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44972727518), exact main) remains failed at runtime parity before guest token/job/upload/inference/cleanup. Full log and job-step metadata were re-fetched. Health 1–4 timeouts, probe 5 HTTP 200, but stale `ReadTimeout` retained; deployed SHA is behind main; checkpoint digest not verified.
+- Watchdog #129 ([44972719647](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44972719647)) log/steps re-fetched. Dispatch accepted at 4,521-second stale age without deployed SHA/checkpoint gate.
+- Both #302 failure and #372 release-status artifacts were re-downloaded through the artifact connector, materialized, and revalidated. ZIP integrity and JSON parsing passed. Hashes match the previous report:
+  - E2E #302 ZIP SHA-256 `acc4026852be6922aeb5dc93caa00ab0e196a8c6f9004f26c7c9110ceae2e999`; JSON SHA-256 `2303f89a8945d29947e7fba0efd2c22610ac15f7192936e9cd02a9adda896bdb`.
+  - Release #372 ZIP SHA-256 `d24dcdf1d2e6a1ce252d8178f120aa55d58864f892cee4fddf6a851e8427c442`; JSON SHA-256 `bd8774dda8a6139d7ad5dc91fb4f4bb5d2c915a526b152cc1fa80cac4aaeb1d6`.
+- Release #372 reports evidence `BLOCKED`, `release_ready=false`, missing frozen E4 checkpoint artifact (HTTP 404). Monitor success is not release success.
+
+### Tracker PR #178 exact-head validation
+- PR head is now `c0cc1d6f1ade3b8d0da6e7327ca7b3f10e17fff5`, base main.
+- Full commit diff inspected: additive 29-line audit section only.
+- Exact-head CI is queued: [44981988896](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44981988896). The preceding tracker commits `1062e29...` and `cbfee9a...` have runs in progress or prior successful checks, but those do not validate the newest head. Do not report this update as green until the exact-head checks complete.
