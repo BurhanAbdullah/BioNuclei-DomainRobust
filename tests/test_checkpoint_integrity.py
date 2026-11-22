@@ -1,14 +1,27 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
+import numpy as np
 import pytest
+import torch
+import tifffile
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+
+import bionuclei.inference as inference_module
+from bionuclei.inference import _load_model, predict
 from webapp import app as scientific_app
 from webapp import community_app
 from webapp.app import RELEASE_CHECKPOINT_SHA256, _checkpoint, _checkpoint_identity
+
+
+@pytest.fixture(autouse=True)
+def _close_checkpoint_fds_after_test():
+    yield
+    scientific_app._close_checkpoint_load_fds()
 
 
 def _configure_checkpoint(tmp_path, monkeypatch, expected: str | None = None):
@@ -28,7 +41,9 @@ def test_checkpoint_identity_and_both_health_endpoints_report_actual_digest(tmp_
     assert identity_path == path.resolve()
     assert digest == actual
     assert verified is True
-    assert _checkpoint() == path.resolve()
+    fd_path = _checkpoint()
+    assert fd_path.parent == Path("/proc/self/fd")
+    assert fd_path.read_bytes() == path.read_bytes()
 
     for payload in (scientific_app.health(), community_app.health()):
         assert payload["status"] == "ok"
@@ -190,3 +205,68 @@ def test_analyze_rejects_upload_before_job_creation_when_checkpoint_is_unverifie
 
     assert response.status_code == 503
     assert "does not match the expected release SHA-256" in response.json()["detail"]
+
+
+def test_verified_checkpoint_fd_load_survives_path_replacement(tmp_path, monkeypatch):
+    path = tmp_path / "checkpoint.pt"
+    torch.save({"weights": torch.tensor([1, 2, 3])}, path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", digest)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", digest)
+
+    fd_path = _checkpoint()
+    replacement = tmp_path / "replacement.pt"
+    torch.save({"weights": torch.tensor([9, 9, 9])}, replacement)
+    replacement.replace(path)
+
+    # The descriptor still points to the verified original, but its ctime
+    # changed when the pathname was replaced; inference must fail closed.
+    loaded = torch.load(fd_path, map_location="cpu", mmap=True, weights_only=True)
+    assert loaded["weights"].tolist() == [1, 2, 3]
+    with pytest.raises(RuntimeError, match="verified checkpoint identity changed"):
+        _load_model(fd_path)
+
+
+def test_verified_checkpoint_fd_rejects_in_place_change_before_load(tmp_path, monkeypatch):
+    path = tmp_path / "checkpoint.pt"
+    torch.save({"weights": torch.tensor([1, 2, 3])}, path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", digest)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", digest)
+
+    fd_path = _checkpoint()
+    with path.open("r+b") as stream:
+        stream.seek(0)
+        stream.write(b"X")
+
+    with pytest.raises(RuntimeError, match="verified checkpoint identity changed"):
+        _load_model(fd_path)
+
+def test_predict_rejects_checkpoint_change_during_inference(tmp_path, monkeypatch):
+    path = tmp_path / "checkpoint.pt"
+    torch.save({"weights": torch.tensor([1, 2, 3])}, path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(scientific_app, "RELEASE_CHECKPOINT_SHA256", digest)
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT", str(path))
+    monkeypatch.setenv("BIONUCLEI_CHECKPOINT_SHA256", digest)
+
+    fd_path = _checkpoint()
+    image_path = tmp_path / "image.tif"
+    tifffile.imwrite(image_path, np.arange(64, dtype=np.uint16).reshape(8, 8))
+    output = tmp_path / "output"
+
+
+    def mutate_during_prediction(_model, x, *, tile_size=256, overlap=128):
+        with path.open("r+b") as stream:
+            stream.seek(0)
+            stream.write(b"X")
+        return torch.zeros((1, 3, *x.shape[-2:]), dtype=torch.float32, device=x.device)
+
+
+
+    monkeypatch.setattr(inference_module, "_predict_logits", mutate_during_prediction)
+    with pytest.raises(RuntimeError, match="verified checkpoint identity changed"):
+        predict(image_path, fd_path, output, device="cpu")
+    assert not output.exists()
