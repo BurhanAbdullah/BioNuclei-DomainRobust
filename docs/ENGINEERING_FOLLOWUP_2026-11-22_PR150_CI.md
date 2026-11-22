@@ -114,3 +114,26 @@ The PR stack is not integrated or proven together. #150's manual-only pause and 
 M0 remains partial: complete accessible Actions pagination and PR metadata are refreshed, but full diffs/checks/logs/artifacts for all 99 PRs are not audited. M1 remains unaccepted: main's watchdog still dispatches without verified runtime/checkpoint and deployed parity is false. M2–M7 remain unaccepted. Deadline risk for 2027-01-01 remains high.
 
 Next: continue the M0 source/diff audit, prioritize a single additive M1 integration branch after exact source rereads, and keep public E2E dispatch paused only after authorization to merge the safety change. No Render inspection, deploy, upload, or inference was performed.
+
+## Fresh research-provenance PR audit — 2026-11-22 09:09 IST
+
+Main remains `d4a653e94501e8b9f1ec9de09ff71720f90ab340`; signature verification is `verified=true, reason=valid`. The current audit focused on the scientific baseline/transfer provenance stack rather than duplicating runtime-parity PRs.
+
+### PR #169 — exact-main baseline selection and recipe verification
+- Head `6183cf907381880204e94640e2fb4db989cf07e7`; base main `d4a653e94501e8b9f1ec9de09ff71720f90ab340`.
+- Five files; full patch reviewed. Restricts baseline push workflow to main, defaults the baseline recipe to 100 epochs, verifies checkpoint config/seed/epochs with safe `weights_only=True`, and makes S-BIAD634 transfer select a successful exact-main baseline run/checkpoint.
+- Associated CI run [44664121649](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44664121649) completed successfully. No fresh scientific baseline result was generated in this audit.
+
+### PR #173 — source/acquisition-manifest accurate E4/E5 provenance
+- Head `5819fe1cda8b63327099b32450502f60cf049678`; base main.
+- Seven files; full patch reviewed. Adds source-download manifest to E4; binds source split/acquisition, configuration, checkpoint and method-record hashes. E5 fixes the preregistered 20-epoch recipe and cross-checks source/target acquisition identities and shared seed/epoch identity across variants; completeness checks require all 79 target images and metric fields.
+- Associated CI run [44822792979](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44822792979) completed successfully. CI does not establish fresh training/evaluation reproducibility.
+
+### PR #177 — S-BIAD634 target and metric artifact binding
+- Head `b7f5c347ca056fdae397e851f2de116de696b520`; base is PR #169 head `6183cf907381880204e94640e2fb4db989cf07e7`.
+- Two files; full patch reviewed. Adds target archive and manifest hashes, target manifest inventory count, metrics/evaluator/instance-metrics hashes, baseline config/verifier hashes, explicit no-target-training flag, and 79-image/IoU-threshold completeness checks before artifact upload.
+- Associated CI run [44832437317](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44832437317) completed successfully. This is stacked PR CI evidence, not a fresh exact-main transfer result.
+
+### Baseline audit conclusion
+The provenance fixes are technically complementary and the #169 → #177 dependency is explicit. They remain PR-branch evidence: no current-main baseline checkpoint, exact recipe, target manifest, or fresh transfer artifact was independently reproduced here. Prioritize this stack after the M0 audit, with #169 as the baseline foundation, then #173 source-training provenance and #177 target-evaluation provenance. Next science-stack audit: #175/#174 safe checkpoint loading and #168 baseline workflow/config alignment. Do not mark M2 complete from these CI runs.
+
