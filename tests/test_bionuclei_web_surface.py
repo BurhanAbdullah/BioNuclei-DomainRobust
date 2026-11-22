@@ -148,3 +148,12 @@ def test_site_global_theme_is_wine_red_white_and_black() -> None:
     dark_override = css[css.rfind("/* BioNuclei visual system"):]
     assert "#ffffff" in dark_override and "#111111" in dark_override
     assert ".footer,.site-footer{background:#ffffff;color:#111111" in dark_override
+
+
+def test_final_global_theme_guardrails_are_present() -> None:
+    css = (DOCS / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "color-scheme:light" in css
+    assert "html,body{background:#fff!important;color:#111!important}" in css
+    assert "a:hover,a:focus-visible{color:#111}" in css
+    assert ":focus-visible{outline:3px solid #7b1638!important" in css
+    assert "@media(prefers-color-scheme:dark){html,body{background:#fff!important;color:#111!important}}" in css
