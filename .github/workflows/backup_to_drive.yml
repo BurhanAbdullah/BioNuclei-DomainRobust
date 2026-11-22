@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   backup:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -28,6 +29,8 @@ jobs:
         env:
           BIONUCLEI_SERVER_URL: ${{ vars.BIONUCLEI_SERVER_URL || 'https://bionuclei-community-analyzer.onrender.com' }}
           BIONUCLEI_BACKUP_TOKEN: ${{ secrets.BIONUCLEI_BACKUP_TOKEN }}
+          BIONUCLEI_DATA_KEY: ${{ secrets.BIONUCLEI_DATA_KEY }}
+          BIONUCLEI_BACKUP_ALLOWED_HOST: ${{ vars.BIONUCLEI_BACKUP_ALLOWED_HOST || 'bionuclei-community-analyzer.onrender.com' }}
           GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID || '1IUcF1OuF0beo1e1sLgDOHKyOOF9n8wAY' }}
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}

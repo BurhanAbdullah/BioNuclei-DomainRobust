@@ -137,6 +137,7 @@ def test_backup_contains_only_ciphertext_and_verifies_with_key(store, tmp_path):
     assert SECRET not in contents and SECRET not in raw
     assert base64.urlsafe_b64encode(k).decode().rstrip("=") not in contents.decode("latin-1")
     report = verify_backup(archive, digest, k)
+    assert report["encrypted"] is True
     assert report["decryption_verified"] == 2
     with pytest.raises(IntegrityError, match="key fingerprint"):
         verify_backup(archive, digest, key())

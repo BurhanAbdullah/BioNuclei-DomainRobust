@@ -269,6 +269,8 @@ def verify_backup(archive: Path, expected_sha256: str | None = None, key: bytes 
             raise IntegrityError("Unknown backup format.")
         aes = None
         if key is not None:
+            if manifest.get("encrypted") is not True:
+                raise IntegrityError("Backup is not encrypted.")
             if manifest.get("key_fingerprint") != key_fingerprint(key):
                 raise IntegrityError("The provided key does not match this backup's key fingerprint.")
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -291,4 +293,5 @@ def verify_backup(archive: Path, expected_sha256: str | None = None, key: bytes 
                     raise IntegrityError(f"File cannot be decrypted with this key: {entry['path']}") from exc
                 decrypted += 1
     return {"sha256": digest, "file_count": manifest["file_count"], "total_bytes": manifest["total_bytes"],
-            "created_utc": manifest["created_utc"], "decryption_verified": decrypted if key is not None else None}
+            "created_utc": manifest["created_utc"], "encrypted": manifest.get("encrypted") is True,
+            "decryption_verified": decrypted if key is not None else None}

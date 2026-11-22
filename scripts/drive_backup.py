@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from bionuclei.storage import IntegrityError, _decode_key, verify_backup  # noqa: E402
+from bionuclei.storage import IntegrityError, StorageConfigError, _decode_key, verify_backup  # noqa: E402
 from pull_backup import download  # noqa: E402
 
 OAUTH_URL = os.getenv("BIONUCLEI_GOOGLE_OAUTH_URL", "https://oauth2.googleapis.com/token")
@@ -43,6 +43,37 @@ CHUNK = 8 * 1024 * 1024
 
 class DriveError(RuntimeError):
     pass
+
+
+def validate_server_url(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    allowed_host = os.getenv(
+        "BIONUCLEI_BACKUP_ALLOWED_HOST", "bionuclei-community-analyzer.onrender.com"
+    ).strip().lower()
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.hostname.lower() != allowed_host
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise DriveError(
+            "Backup server URL must be HTTPS on the configured allowed host, "
+            "without embedded credentials, query, or fragment."
+        )
+
+
+def verify_drive_backup(archive: Path, expected_sha256: str, key: bytes | None) -> dict:
+    if key is None:
+        raise IntegrityError("Drive backup requires BIONUCLEI_DATA_KEY to verify encrypted files.")
+    report = verify_backup(archive, expected_sha256, key)
+    if report.get("encrypted") is not True:
+        raise IntegrityError("Refusing to upload an unencrypted backup to Drive.")
+    if report.get("decryption_verified") != report.get("file_count"):
+        raise IntegrityError("Backup decryption verification was incomplete.")
+    return report
 
 
 def _request(method: str, url: str, *, token: str | None = None, data: bytes | None = None, headers: dict | None = None, timeout: int = 120):
@@ -117,17 +148,27 @@ def prune(token: str, folder_id: str, keep: int) -> list[str]:
 
 
 def main() -> int:
-    need = ["BIONUCLEI_SERVER_URL", "BIONUCLEI_BACKUP_TOKEN", "GDRIVE_FOLDER_ID", "GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"]
+    need = ["BIONUCLEI_SERVER_URL", "BIONUCLEI_BACKUP_TOKEN", "BIONUCLEI_DATA_KEY", "GDRIVE_FOLDER_ID", "GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"]
     missing = [k for k in need if not os.getenv(k)]
     if missing:
         print(f"Drive backup is not configured. Missing: {', '.join(missing)}. See docs/STORAGE_AND_BACKUP.md.", file=sys.stderr)
         return 3
     keep = int(os.getenv("GDRIVE_KEEP", "30"))
-    key = _decode_key(os.environ["BIONUCLEI_DATA_KEY"]) if os.getenv("BIONUCLEI_DATA_KEY") else None
+    try:
+        key = _decode_key(os.environ["BIONUCLEI_DATA_KEY"])
+    except StorageConfigError as exc:
+        print(f"Drive backup refused: invalid data key configuration ({exc})", file=sys.stderr)
+        return 2
+    server_url = os.environ["BIONUCLEI_SERVER_URL"]
+    try:
+        validate_server_url(server_url)
+    except DriveError as exc:
+        print(f"Drive backup refused: {exc}", file=sys.stderr)
+        return 2
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            archive, expected = download(os.environ["BIONUCLEI_SERVER_URL"], os.environ["BIONUCLEI_BACKUP_TOKEN"], Path(tmp))
-            report = verify_backup(archive, expected, key)
+            archive, expected = download(server_url, os.environ["BIONUCLEI_BACKUP_TOKEN"], Path(tmp))
+            report = verify_drive_backup(archive, expected, key)
             token = access_token(os.environ["GDRIVE_CLIENT_ID"], os.environ["GDRIVE_CLIENT_SECRET"], os.environ["GDRIVE_REFRESH_TOKEN"])
             info = upload(token, os.environ["GDRIVE_FOLDER_ID"], archive, report["sha256"])
             removed = prune(token, os.environ["GDRIVE_FOLDER_ID"], keep)

@@ -28,12 +28,20 @@ sys.path.insert(0, str(ROOT / "src"))
 from bionuclei.storage import IntegrityError, _decode_key, verify_backup  # noqa: E402
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Do not forward the backup bearer token to a redirect target."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def download(url: str, token: str, dest: Path, timeout: int = 600) -> tuple[Path, str]:
     """Download /admin/backup to a temporary file; return its path and the server's checksum."""
     request = urllib.request.Request(url.rstrip("/") + "/admin/backup", headers={"X-BioNuclei-Backup-Token": token, "User-Agent": "BioNuclei-backup/1"})
     dest.mkdir(parents=True, exist_ok=True)
     partial = dest / ".incoming.tar.gz.part"
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    opener = urllib.request.build_opener(_NoRedirect)
+    with opener.open(request, timeout=timeout) as response:
         expected = response.headers.get("X-Backup-SHA256", "")
         disposition = response.headers.get("Content-Disposition", "")
         name = disposition.split("filename=")[-1].strip('"; ') if "filename=" in disposition else "bionuclei-backup.tar.gz"
