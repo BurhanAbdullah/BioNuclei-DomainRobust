@@ -11,7 +11,13 @@ available for reproducing those numbers.
 of the distance map of the interior class, so the boundary class separates
 touching nuclei. Each seed is grown back over the full nucleus, holes left by
 dark nucleoli are filled, and specks far smaller than the typical nucleus in
-the image are dropped. On real 16-bit DAPI images the connected
+the image are dropped.
+
+Decoder comparison on the BBBC039 held-out test split (50 images, released
+checkpoint, same class maps): connected AJI 0.763 and mean count error 15.5;
+seeded with SEED_H 0.1 AJI 0.873 and mean count error 12.7. Dice is 0.970 for
+both. Both still undercount dense clusters. SEED_H 0.05 scores slightly higher
+on BBBC039 but cuts textured nuclei on real DAPI images, so 0.1 is used. On real 16-bit DAPI images the connected
 decoder reports many 1-10 pixel fragments and nuclei with holes; the seeded
 decoder does not.
 """
@@ -28,7 +34,7 @@ PRODUCT_DECODER = "seeded"
 _EIGHT = np.ones((3, 3), dtype=np.uint8)
 MIN_OBJECT_PX = 30
 RELATIVE_MIN = 0.10
-SEED_H = 0.3
+SEED_H = 0.1
 
 
 def connected_instances(classes: np.ndarray) -> np.ndarray:
