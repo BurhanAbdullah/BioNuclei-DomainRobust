@@ -2,43 +2,207 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BioNuclei | Analysis workspace</title>
+<title>BioNuclei Lab | Analysis workspace</title>
 <meta name="description" content="Private, disposable BioNuclei microscopy image analysis workspace with interactive nuclear review.">
 <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/site.css">
+<link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="assets/workstation.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
-.viewer{position:relative;width:100%;overflow:hidden;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:#05090d;touch-action:none}
-.viewer img{display:block;width:100%;height:auto;max-width:none;min-height:220px;object-fit:contain}
-.viewer canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
-.viewer:after{content:'Drag to draw a temporary ROI';position:absolute;right:12px;bottom:10px;padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.68);color:#fff;font-size:.72rem;pointer-events:none}
-#maskPreview{width:100%;height:auto;min-height:220px;object-fit:contain;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:#05090d}
-#measurementTools{margin-top:16px}.tab{cursor:pointer}.tab.is-active{background:var(--accent);color:var(--text-on-dark);border-color:var(--accent)}
-@media(max-width:800px){.viewer img,#maskPreview{min-height:160px}.viewer:after{font-size:.65rem}}
-</style>
 </head>
-<body>
-<nav class="site-nav"><div class="wrap nav-inner"><a class="brand" href="bionuclei.html"><img src="assets/logo-mark.svg" class="mark" alt="BioNuclei"><span>BioNuclei<small>Analysis workspace</small></span></a><div class="nav-links"></div><div class="nav-cta"><a class="btn small primary" href="bionuclei.html">Overview</a><button id="signout" class="nav-toggle" type="button" hidden>Sign out</button><button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button></div></div></nav>
-<main>
-<header class="hero"><div class="wrap"><div class="eyebrow">Private analysis workspace</div><h1>Upload once. Analyze. Inspect. Download.</h1><p class="lead">Use BioNuclei with an account or as a guest. The released workflow performs Boundary U-Net segmentation, instance measurements and evidence review. Uploads are transient and the analysis job can be deleted immediately after the report is received.</p><div class="actions"><a class="btn primary" href="#access">Start analysis</a><a class="btn" href="bionuclei-analysis.html">See analysis capabilities</a></div></div></header>
-<section id="access" class="section"><div class="wrap"><div class="section-head"><div class="eyebrow">Choose one access mode</div><h2>Account or guest</h2><p class="intro">Create an account, sign in to an existing account, or continue without registration. These modes are mutually exclusive on this screen.</p></div>
-<div class="tabs" role="tablist" aria-label="Access mode"><button class="tab is-active" role="tab" aria-selected="true" data-access-tab="signup">Sign up</button><button class="tab" role="tab" aria-selected="false" data-access-tab="signin">Sign in</button><button class="tab" role="tab" aria-selected="false" data-access-tab="guest">Guest</button></div>
-<div class="card" data-access-panel="signup"><span class="badge">New account</span><h3>Create your BioNuclei account</h3><p>Supabase Auth handles the password securely. BioNuclei does not receive or store your password.</p><div class="grid2"><div><label for="signupEmail">Email</label><input id="signupEmail" type="email" autocomplete="email" required></div><div><label for="signupPassword">Password</label><input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required></div></div><div class="actions"><button id="signupButton" class="btn primary" type="button">Create account</button></div><div id="signupMsg" aria-live="polite"></div></div>
-<div class="card" data-access-panel="signin" hidden><span class="badge">Existing account</span><h3>Sign in</h3><p>Only the authenticated session is used to authorize your analysis job.</p><div class="grid2"><div><label for="loginEmail">Email</label><input id="loginEmail" type="email" autocomplete="email" required></div><div><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div></div><div class="actions"><button id="signinButton" class="btn primary" type="button">Sign in</button><button id="resetButton" class="btn" type="button">Reset password</button></div><div id="loginMsg" aria-live="polite"></div></div>
-<div class="card" data-access-panel="guest" hidden><span class="badge experimental">Guest</span><h3>Continue without an account</h3><p>Guest mode creates only an ephemeral job token in this browser session. No account is created.</p><div class="actions"><button id="guestButton" class="btn primary" type="button">Continue as guest</button></div><div id="guestMsg" aria-live="polite"></div></div>
-</div></section>
-<section id="workspace" class="section" hidden><div class="wrap"><div class="section-head"><div class="eyebrow">Analysis pipeline</div><h2>From image to inspectable evidence</h2><p class="intro">The current public workflow runs a validated nuclei segmentation pipeline, deterministic instance separation, per-nucleus measurements, QC and evidence-constrained specialist review.</p></div>
-<div class="grid3"><article class="card"><span class="badge validated">01 · AI</span><h3>Boundary U-Net</h3><p>Predicts background, nuclear interior and boundary information in evaluation mode.</p></article><article class="card"><span class="badge validated">02 · Objects</span><h3>Individual nuclei</h3><p>Converts semantic predictions into explicit nuclear instances for quantitative analysis.</p></article><article class="card"><span class="badge validated">03 · Evidence</span><h3>Measurements + QC</h3><p>Reports morphology, fluorescence intensity, input quality, uncertainty context and provenance.</p></article></div>
-<div class="card"><h3>Upload microscopy image</h3><p class="muted">TIFF or Nikon ND2. The selected file remains in browser memory until it is sent. This page does not write image data to IndexedDB or local storage.</p><label for="image">Microscopy image</label><input id="image" type="file" accept=".tif,.tiff,.nd2"><div id="fileInfo" class="note" hidden></div><div id="nd2Controls" class="grid2" hidden><div><label for="nd2Channel">ND2 channel</label><input id="nd2Channel" type="number" min="0" value="0"></div><div><label for="nd2Time">ND2 time</label><input id="nd2Time" type="number" min="0" value="0"></div><div><label for="nd2Z">ND2 Z</label><input id="nd2Z" type="number" min="0" value="0"></div><div><label for="nd2Field">ND2 field</label><input id="nd2Field" type="number" min="0" value="0"></div></div><div class="actions"><button id="analyzeButton" class="btn primary" type="button">Analyze image</button><button id="clearButton" class="btn" type="button">Remove selected file</button></div><div id="runMsg" aria-live="polite"></div></div>
-</div></section>
-<section id="resultPanel" class="section" hidden><div class="wrap"><div class="section-head"><div class="eyebrow">Interactive evidence review</div><h2>Inspect the detected nuclei</h2><p class="intro">Review the segmentation visually, explore measured objects, color the nuclei by a quantitative variable, and draw a temporary ROI. The ROI is calculated in your browser from the returned measurements and is not saved as a separate server artifact.</p></div>
-<div class="stats"><div class="stat-card"><span class="muted">Nuclei</span><strong id="nucleusCount">Not available</strong></div><div class="stat-card"><span class="muted">Input</span><strong id="resultShape">Not available</strong></div><div class="stat-card"><span class="muted">Modules</span><strong id="reportCount">Not available</strong></div></div>
-<div class="grid2"><div class="card"><h3>Analyzed overlay</h3><div class="viewer"><img id="overlayPreview" alt="Analyzed microscopy overlay" loading="lazy"><canvas id="analysisCanvas" aria-label="Interactive nuclear measurement overlay"></canvas></div><div id="measurementTools" hidden><p class="muted">Color detected nuclei by:</p><div class="actions"><button class="btn small is-active" data-heatmap="area" type="button">Area</button><button class="btn small" data-heatmap="intensity" type="button">Mean intensity</button><button class="btn small" data-heatmap="circularity" type="button">Circularity</button><button class="btn small" data-heatmap="eccentricity" type="button">Eccentricity</button><button id="clearROI" class="btn small" type="button">Clear ROI</button></div><p id="roiSummary" class="note">Draw a rectangle on the viewer to inspect a spatial subset.</p></div></div><div class="card"><h3>Segmentation mask</h3><img id="maskPreview" alt="BioNuclei segmentation mask" loading="lazy"><p class="muted">The mask contains explicit instance labels used for downstream measurements.</p></div></div>
-<div class="card"><div class="section-head"><div class="eyebrow">Object measurements</div><h3>Per-nucleus measurement table</h3><p id="measurementCount" class="muted">Waiting for measurement data.</p></div><div style="overflow:auto"><table><thead><tr><th>ID</th><th>Area</th><th>Circularity</th><th>Eccentricity</th><th>Mean intensity</th><th>Centroid</th></tr></thead><tbody id="measurementBody"></tbody></table></div></div>
-<div class="card"><span class="badge validated">Evidence constrained</span><h3>Expert analysis layer</h3><p id="agentSummary">Specialist agents review measured evidence and the scientific report. They do not change model weights during a user analysis and do not invent unsupported biological conclusions.</p><div id="agentDetails" class="meta"></div></div>
-<div class="actions"><button id="downloadButton" class="btn primary" type="button">Download complete report</button><button id="deleteButton" class="btn" type="button">Delete analysis data now</button></div><div id="resultMsg" aria-live="polite"></div></div></section>
-<section id="privacy" class="section alt"><div class="wrap"><div class="grid2"><div><div class="eyebrow">Data lifecycle</div><h2>Designed for disposable analysis</h2></div><div class="card"><p><strong>Account mode:</strong> Supabase Auth manages the credential. The analyzer uses the authenticated session to authorize the current job.</p><p><strong>Guest mode:</strong> no account is created. A high entropy job token is held in browser memory for the current session.</p><p><strong>Image:</strong> the original upload is deleted by the backend after processing. Results expire after a short retention window or can be deleted immediately.</p><p><strong>Interactive review:</strong> measurements and ROI summaries are rendered in the browser from the returned analysis artifacts. They are not silently added to model training.</p><p><strong>Research training:</strong> the released Boundary U-Net weights are not updated during user analysis.</p></div></div></div></section>
-</main>
-<footer class="site-footer"><div class="wrap footer-grid"><div><h4>BioNuclei</h4><p>Open scientific software for reproducible nuclear image analysis.</p></div><div><h4>Product</h4><a href="bionuclei.html">Overview</a><a href="bionuclei-analysis.html">Analyses</a><a href="bionuclei-formats.html">Formats</a><a href="bionuclei-lab.html">Lab</a></div><div><h4>Evidence</h4><a href="results.html">Results</a><a href="research.html">Research</a><a href="research.html">Validation</a></div><div><h4>Project</h4><a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">GitHub</a><a href="https://doi.org/10.5281/zenodo.17101800">Dataset DOI</a><a href="research.html">Citation</a></div></div><div class="wrap footer-bottom"><span>BioNuclei scientific image analysis software.</span><span>Not a clinical diagnostic system.</span></div></footer>
-<script src="assets/site.js"></script><script src="assets/bionuclei-config.js"></script><script src="assets/bionuclei-specialist-verification.js"></script><script src="assets/bionuclei-analyzer.js"></script>
+<body class="ws">
+<a class="ws-skip" href="#wsMain">Skip to workspace</a>
+<header class="ws-bar">
+  <a class="ws-brand" href="index.html"><img src="assets/logo-mark.svg" alt="" width="28" height="28"><span>BioNuclei <b>Lab</b></span></a>
+  <nav class="ws-nav" aria-label="Primary">
+    <a href="bionuclei-lab.html" aria-current="page">Lab</a>
+    <a href="bionuclei-analysis.html">Analyses</a>
+    <a href="research.html">Research</a>
+    <a href="biomcp.html">BioMCP</a>
+    <a href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">Docs</a>
+  </nav>
+  <div class="ws-bar-end">
+    <span class="ws-server" data-server-pill data-state="checking"><i aria-hidden="true"></i><span>Checking server</span></span>
+    <button id="signout" class="ws-btn ghost small" type="button" hidden>Sign out</button>
+  </div>
+</header>
+
+<div class="ws-shell">
+  <aside class="ws-rail" aria-label="Analysis steps">
+    <p class="ws-label">Workflow</p>
+    <ol class="ws-steps">
+      <li data-step="access"><span>1</span><div><b>Access</b><small>Account or guest</small></div></li>
+      <li data-step="image"><span>2</span><div><b>Image</b><small>TIFF or Nikon ND2</small></div></li>
+      <li data-step="analyze"><span>3</span><div><b>Analyze</b><small>Server-side pipeline</small></div></li>
+      <li data-step="results"><span>4</span><div><b>Results</b><small>Review, export, delete</small></div></li>
+    </ol>
+    <div class="ws-rail-note">
+      <p class="ws-label">Pipeline</p>
+      <p>Boundary U-Net inference, instance separation, per-nucleus measurements, QC and eight evidence-bound specialist reviews.</p>
+      <a href="bionuclei-analysis.html">What each stage does →</a>
+    </div>
+  </aside>
+
+  <main id="wsMain" class="ws-main" tabindex="-1">
+    <section id="access" class="ws-panel" aria-labelledby="accessTitle">
+      <div class="ws-head">
+        <p class="ws-label">Step 1 · Choose one access mode</p>
+        <h1 id="accessTitle">Start an analysis session</h1>
+        <p class="ws-sub">Guest mode needs no account. Account mode keeps your session across reloads. Both run the same released pipeline and the same deletion rules.</p>
+      </div>
+      <div class="ws-tabs" role="tablist" aria-label="Access mode">
+        <button class="tab is-active" role="tab" aria-selected="true" data-access-tab="signup">Sign up</button>
+        <button class="tab" role="tab" aria-selected="false" data-access-tab="signin">Sign in</button>
+        <button class="tab" role="tab" aria-selected="false" data-access-tab="guest">Guest</button>
+      </div>
+      <div class="ws-card" data-access-panel="signup">
+        <h2>Create your BioNuclei account</h2>
+        <p class="ws-muted">Supabase Auth handles the password. BioNuclei never receives or stores it.</p>
+        <div class="ws-fields"><div><label for="signupEmail">Email</label><input id="signupEmail" type="email" autocomplete="email" required></div><div><label for="signupPassword">Password</label><input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required></div></div>
+        <div class="ws-actions"><button id="signupButton" class="ws-btn primary" type="button">Create account</button></div>
+        <div id="signupMsg" aria-live="polite"></div>
+      </div>
+      <div class="ws-card" data-access-panel="signin" hidden>
+        <h2>Sign in</h2>
+        <p class="ws-muted">Only the authenticated session is used to authorize your analysis job.</p>
+        <div class="ws-fields"><div><label for="loginEmail">Email</label><input id="loginEmail" type="email" autocomplete="email" required></div><div><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div></div>
+        <div class="ws-actions"><button id="signinButton" class="ws-btn primary" type="button">Sign in</button><button id="resetButton" class="ws-btn ghost" type="button">Reset password</button></div>
+        <div id="loginMsg" aria-live="polite"></div>
+      </div>
+      <div class="ws-card" data-access-panel="guest" hidden>
+        <h2>Continue without an account</h2>
+        <p class="ws-muted">Guest mode holds an ephemeral job token in this browser tab only. No account is created.</p>
+        <div class="ws-actions"><button id="guestButton" class="ws-btn primary" type="button">Continue as guest</button></div>
+        <div id="guestMsg" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section id="workspace" class="ws-panel" aria-labelledby="uploadTitle" hidden>
+      <div class="ws-head">
+        <p class="ws-label">Step 2 · Image</p>
+        <h1 id="uploadTitle">Upload microscopy image</h1>
+        <p class="ws-sub">The file stays in browser memory until you press Analyze. This page never writes image data to browser storage. The server deletes the original after processing.</p>
+      </div>
+      <label class="ws-drop" for="image" data-dropzone>
+        <svg aria-hidden="true" viewBox="0 0 48 48" width="44" height="44"><circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/><path d="M24 31V17m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <b>Drop a microscopy image here</b>
+        <span>or <u>browse files</u> · TIFF/TIF or Nikon ND2 · <span data-max-upload>up to 64 MiB</span></span>
+        <span class="ws-drop-hint">Drop several files at once to build an experiment</span>
+        <input id="image" type="file" accept=".tif,.tiff,.nd2">
+      </label>
+      <div id="fileInfo" class="note" hidden></div>
+      <details id="nd2Controls" class="ws-card ws-nd2" hidden open>
+        <summary>ND2 plane selection</summary>
+        <p class="ws-muted">BioNuclei analyzes one 2-D plane. Pick the channel, time point, Z slice and field. Indices start at 0.</p>
+        <div class="ws-fields four"><div><label for="nd2Channel">Channel</label><input id="nd2Channel" type="number" min="0" value="0"></div><div><label for="nd2Time">Time</label><input id="nd2Time" type="number" min="0" value="0"></div><div><label for="nd2Z">Z</label><input id="nd2Z" type="number" min="0" value="0"></div><div><label for="nd2Field">Field</label><input id="nd2Field" type="number" min="0" value="0"></div></div>
+      </details>
+      <div class="ws-actions sticky">
+        <button id="analyzeButton" class="ws-btn primary large" type="button">Analyze image</button>
+        <button id="clearButton" class="ws-btn ghost" type="button">Remove selected file</button>
+      </div>
+      <div id="runMsg" aria-live="polite"></div>
+      <div id="analysisProgress" class="ws-card ws-progress" data-analysis-progress hidden></div>
+      <div class="ws-or"><span>or analyse a whole experiment</span></div>
+      <section id="experiment" class="ws-card ws-exp" aria-labelledby="expTitle">
+        <div class="ws-exp-head">
+          <div><h2 id="expTitle">Experiment tray</h2><p class="ws-muted" data-exp-summary>Add 2–20 images. Each is numbered and checked in your browser before anything is uploaded.</p></div>
+          <label class="ws-btn ghost"><input id="batchInput" type="file" accept=".tif,.tiff,.nd2" multiple hidden>Add images</label>
+        </div>
+        <div class="ws-exp-empty" data-exp-empty>
+          <p><b>What the tray checks:</b> format, dimensions, bit depth, channels and stacks, fluorophores named in metadata or file names, brightfield-like contrast, and exact duplicates by SHA-256. File names such as <code>ctrl_rep1.tif</code> become condition and replicate labels you can edit.</p>
+        </div>
+        <div class="ws-table ws-exp-table" data-exp-table hidden>
+          <table>
+            <thead><tr><th scope="col"><input type="checkbox" data-exp-all aria-label="Select all suitable images"></th><th scope="col">#</th><th scope="col">Image</th><th scope="col">Condition</th><th scope="col">Rep</th><th scope="col">Recognised</th><th scope="col">Plane</th><th scope="col">Result</th></tr></thead>
+            <tbody data-exp-body></tbody>
+          </table>
+        </div>
+        <div class="ws-actions" data-exp-actions hidden>
+          <button type="button" class="ws-btn primary" data-exp-run>Analyze selected</button>
+          <button type="button" class="ws-btn ghost" data-exp-stop hidden>Stop after current</button>
+          <button type="button" class="ws-btn ghost" data-exp-csv disabled>Download experiment summary (CSV)</button>
+          <button type="button" class="ws-btn danger" data-exp-delete disabled>Delete all server results</button>
+          <button type="button" class="ws-btn ghost" data-exp-clear>Clear tray</button>
+        </div>
+        <p class="ws-fine" data-exp-status aria-live="polite"></p>
+      </section>
+    </section>
+
+    <section id="resultPanel" class="ws-panel" aria-labelledby="resultTitle" hidden>
+      <div class="ws-head">
+        <p class="ws-label">Step 4 · Interactive evidence review</p>
+        <h1 id="resultTitle">Inspect the detected nuclei</h1>
+      </div>
+      <div class="ws-stats">
+        <div><span>Nuclei</span><strong id="nucleusCount">Not available</strong></div>
+        <div><span>Input plane</span><strong id="resultShape">Not available</strong></div>
+        <div><span>Modules</span><strong id="reportCount">Not available</strong></div>
+      </div>
+      <div class="ws-viewer-card">
+        <div class="ws-toolbar" role="toolbar" aria-label="Viewer">
+          <div class="ws-seg" role="tablist" aria-label="Layer">
+            <button type="button" role="tab" aria-selected="true" data-layer="overlay">Analyzed overlay</button>
+            <button type="button" role="tab" aria-selected="false" data-layer="mask">Segmentation mask</button>
+          </div>
+          <button type="button" class="ws-icon" data-fullscreen aria-label="Show viewer full screen" title="Full screen"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        </div>
+        <div class="ws-layer" data-layer-panel="overlay">
+          <div class="viewer"><img id="overlayPreview" alt="Analyzed microscopy overlay" loading="lazy"><canvas id="analysisCanvas" aria-label="Interactive nuclear measurement overlay"></canvas></div>
+          <div id="measurementTools" hidden>
+            <p class="ws-muted">Color detected nuclei by:</p>
+            <div class="ws-chips"><button class="ws-chip is-active" data-heatmap="area" type="button">Area</button><button class="ws-chip" data-heatmap="intensity" type="button">Mean intensity</button><button class="ws-chip" data-heatmap="circularity" type="button">Circularity</button><button class="ws-chip" data-heatmap="eccentricity" type="button">Eccentricity</button><button id="clearROI" class="ws-chip ghost" type="button">Clear ROI</button></div>
+            <p id="roiSummary" class="note">Drag on the image to draw a temporary ROI. It is computed in your browser and never saved.</p>
+          </div>
+        </div>
+        <div class="ws-layer" data-layer-panel="mask" hidden>
+          <img id="maskPreview" alt="BioNuclei segmentation mask" loading="lazy">
+          <p class="ws-muted">Explicit instance labels used for every downstream measurement.</p>
+        </div>
+      </div>
+      <div class="ws-card">
+        <div class="ws-table-head"><h2>Per-nucleus measurements</h2><p id="measurementCount" class="ws-muted">Waiting for measurement data.</p></div>
+        <div class="ws-table"><table><thead><tr><th scope="col">ID</th><th scope="col">Area</th><th scope="col">Circularity</th><th scope="col">Eccentricity</th><th scope="col">Mean intensity</th><th scope="col">Centroid</th></tr></thead><tbody id="measurementBody"></tbody></table></div>
+      </div>
+      <div class="ws-card">
+        <h2>Expert analysis layer</h2>
+        <p id="agentSummary" class="ws-muted">Specialist agents review measured evidence and the scientific report. They do not change model weights and do not invent unsupported biological conclusions.</p>
+        <div id="agentDetails" class="meta"></div>
+      </div>
+      <div class="ws-card ws-export">
+        <div><h2>Export and clean up</h2><p class="ws-muted">The report bundles the mask, overlay, measurements, specialist evidence and provenance. Your original image is not included.</p></div>
+        <div class="ws-actions"><button id="downloadButton" class="ws-btn primary" type="button">Download complete report</button><button id="deleteButton" class="ws-btn danger" type="button">Delete analysis data now</button></div>
+        <div id="resultMsg" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="ws-inspector" aria-label="Session details">
+    <section class="ws-insp-block">
+      <p class="ws-label">Analysis server</p>
+      <dl class="ws-dl" data-server-details>
+        <div><dt>Status</dt><dd data-server-status>Checking…</dd></div>
+        <div><dt>Model checkpoint</dt><dd data-server-checkpoint>–</dd></div>
+        <div><dt>Deployed commit</dt><dd data-server-commit>–</dd></div>
+        <div><dt>Upload limit</dt><dd data-server-limit>–</dd></div>
+      </dl>
+      <p class="ws-fine" data-server-note>The free server sleeps when idle. The first request can take about a minute while it wakes. This panel checks it for you.</p>
+      <button type="button" class="ws-btn ghost small" data-server-retry hidden>Check again</button>
+    </section>
+    <section id="privacy" class="ws-insp-block">
+      <p class="ws-label">Data lifecycle</p>
+      <ul class="ws-facts">
+        <li><b>Image.</b> Deleted by the server after processing.</li>
+        <li><b>Results.</b> Expire after a short retention window, or delete them now.</li>
+        <li><b>Guest mode.</b> Job token held in this tab only.</li>
+        <li><b>Training.</b> Released model weights are never updated by your analysis.</li>
+      </ul>
+    </section>
+    <section class="ws-insp-block">
+      <p class="ws-label">Scope</p>
+      <p class="ws-fine">Research software for 2-D fluorescence nuclei. Not a clinical diagnostic system.</p>
+      <p class="ws-fine"><a href="bionuclei-formats.html">Supported formats</a> · <a href="results.html">Validation results</a></p>
+    </section>
+  </aside>
+</div>
+
+<script src="assets/site.js"></script><script src="assets/bionuclei-config.js"></script><script src="assets/bionuclei-specialist-verification.js"></script><script src="assets/bionuclei-analyzer.js"></script><script src="assets/file-sniff.js"></script><script src="assets/workstation.js"></script><script src="assets/experiment.js"></script>
 </body></html>

@@ -35,7 +35,11 @@ def community(tmp_path, monkeypatch):
 def _seed_job(module, job_id: str, user_id: str, root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     input_path = root / "input.tif"
-    input_path.write_bytes(b"synthetic-input")
+    # A real (small) fluorescence-like TIFF so input recognition passes and the
+    # failure under test happens in the later pipeline stage it targets.
+    yy, xx = np.mgrid[:64, :64]
+    plane = 200 + 3000 * np.exp(-((yy - 32) ** 2 + (xx - 32) ** 2) / 50.0)
+    tifffile.imwrite(input_path, plane.astype(np.uint16))
     with module.DB_LOCK, module._db() as conn:
         now = module._now().isoformat()
         conn.execute(
