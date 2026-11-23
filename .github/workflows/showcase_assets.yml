@@ -52,6 +52,6 @@ jobs:
           git checkout -B showcase-assets
           mkdir -p docs/assets/showcase
           cp /tmp/showcase/* docs/assets/showcase/
-          git add docs/assets/showcase
+          git add -f docs/assets/showcase
           git commit -m "Showcase assets from BBBC039 test split (source ${GITHUB_SHA::7})"
           git push -f origin showcase-assets
