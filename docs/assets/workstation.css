@@ -285,3 +285,6 @@ body.ws #agentDetails>p,body.ws #agentDetails>.raw-image-profile{grid-column:1/-
 .raw-image-profile dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 16px;margin:0}
 .raw-image-profile dt{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--grey)}
 .raw-image-profile dd{margin:0;font-variant-numeric:tabular-nums;font-weight:600}
+.ws-sample{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:12px 0 4px;font-size:.88rem}
+.ws-sample>span:first-child{font-weight:600}
+.ws-btn.small{height:34px;padding:0 14px;font-size:.84rem}

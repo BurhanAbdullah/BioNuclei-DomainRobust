@@ -37,3 +37,6 @@ checkpoints/
 Thumbs.db
 .vscode/
 .idea/
+
+# Public CC0 sample image (BBBC039) used by the website "Try a sample" button
+!docs/assets/showcase/sample_bbbc039.tif
