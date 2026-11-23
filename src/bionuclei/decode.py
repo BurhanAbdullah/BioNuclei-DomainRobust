@@ -45,7 +45,7 @@ def _size_floor(areas: np.ndarray) -> int:
     return max(MIN_OBJECT_PX, int(RELATIVE_MIN * float(np.median(plausible))))
 
 
-def seeded_instances(classes: np.ndarray) -> np.ndarray:
+def seeded_instances(classes: np.ndarray, seed_h: float = SEED_H) -> np.ndarray:
     """One seed per nucleus from distance-map peaks, grown over the filled foreground.
 
     Seeds come from the interior class only, so the predicted boundary band
@@ -64,7 +64,7 @@ def seeded_instances(classes: np.ndarray) -> np.ndarray:
 
     interior = ndimage.binary_fill_holes(classes == 1) & foreground
     distance = ndimage.gaussian_filter(ndimage.distance_transform_edt(interior), 1.0)
-    peaks = h_maxima(distance, max(1.0, SEED_H * radius))
+    peaks = h_maxima(distance, max(1.0, seed_h * radius))
     markers, _ = ndimage.label(peaks, structure=_EIGHT)
 
     # Foreground regions with no seed still become one object each, so a
@@ -90,9 +90,9 @@ def seeded_instances(classes: np.ndarray) -> np.ndarray:
     return out
 
 
-def decode_instances(classes: np.ndarray, decoder: str = PRODUCT_DECODER) -> np.ndarray:
+def decode_instances(classes: np.ndarray, decoder: str = PRODUCT_DECODER, seed_h: float = SEED_H) -> np.ndarray:
     if decoder == "connected":
         return connected_instances(classes)
     if decoder == "seeded":
-        return seeded_instances(classes)
+        return seeded_instances(classes, seed_h)
     raise ValueError(f"Unknown decoder {decoder!r}; choose one of {DECODERS}")

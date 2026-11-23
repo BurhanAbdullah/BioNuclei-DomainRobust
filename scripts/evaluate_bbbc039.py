@@ -12,17 +12,17 @@ from scipy import ndimage
 from skimage.io import imread
 
 from bionuclei.data import decode_instance_mask, read_fluorescence_image
-from bionuclei.decode import DECODERS, decode_instances
+from bionuclei.decode import DECODERS, SEED_H, decode_instances
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
 
 IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
 
 
-def split_instances(logits: torch.Tensor, decoder: str = "connected") -> np.ndarray:
+def split_instances(logits: torch.Tensor, decoder: str = "connected", seed_h: float = SEED_H) -> np.ndarray:
     """Decode logits to instances. "connected" reproduces the published evidence."""
     classes = logits.argmax(dim=1).cpu().numpy()[0]
-    return decode_instances(classes, decoder)
+    return decode_instances(classes, decoder, seed_h)
 
 
 def boundary_band(mask: np.ndarray) -> np.ndarray:
@@ -92,6 +92,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("outputs/bbbc039_eval"))
     parser.add_argument("--decoder", choices=DECODERS, default="connected",
                         help="connected = published decoder; seeded = product decoder")
+    parser.add_argument("--seed-h", type=float, default=SEED_H, help="seeded decoder peak height, as a fraction of nucleus radius")
+    parser.add_argument("--tag", default="", help="suffix for the metrics file name")
     args = parser.parse_args()
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
@@ -118,7 +120,7 @@ def main() -> None:
         x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
         with torch.no_grad():
             logits = model(torch.from_numpy(x[None, None]).float())
-        pred = split_instances(logits, args.decoder)
+        pred = split_instances(logits, args.decoder, args.seed_h)
         results.append({
             "image": name,
             "dice": dice_coefficient(pred > 0, target > 0),
@@ -132,12 +134,13 @@ def main() -> None:
     summary = {
         "split": args.split,
         "decoder": args.decoder,
+        "seed_h": args.seed_h if args.decoder == "seeded" else None,
         "n_images": len(results),
         "mean": {k: float(np.mean([r[k] for r in results])) for k in ("dice", "iou", "aji", "boundary_f1")},
         "per_image": results,
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / f"{args.split}_metrics{'' if args.decoder == 'connected' else '_' + args.decoder}.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (args.output / f"{args.split}_metrics{'' if args.decoder == 'connected' else '_' + args.decoder}{args.tag}.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary["mean"], indent=2))
 
 

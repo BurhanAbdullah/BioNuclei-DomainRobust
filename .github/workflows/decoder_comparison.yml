@@ -47,14 +47,10 @@ jobs:
           sha256sum outputs/decoder_comparison/bionuclei_bbbc039.pt | tee outputs/decoder_comparison/checkpoint.sha256
       - name: Evaluate both decoders on the held-out test split
         run: |
-          for decoder in connected seeded; do
-            python scripts/evaluate_bbbc039.py \
-              --checkpoint outputs/decoder_comparison/bionuclei_bbbc039.pt \
-              --manifest data/manifests/bbbc039_official_split.json \
-              --data-root data/raw/BBBC039 \
-              --split test \
-              --decoder "$decoder" \
-              --output outputs/decoder_comparison
+          common="--checkpoint outputs/decoder_comparison/bionuclei_bbbc039.pt --manifest data/manifests/bbbc039_official_split.json --data-root data/raw/BBBC039 --split test --output outputs/decoder_comparison"
+          python scripts/evaluate_bbbc039.py $common --decoder connected
+          for h in 0.05 0.1 0.2 0.3 0.5; do
+            python scripts/evaluate_bbbc039.py $common --decoder seeded --seed-h "$h" --tag "_h$h"
           done
       - name: Summarize
         run: |
@@ -62,13 +58,16 @@ jobs:
           import json, statistics
           from pathlib import Path
           root = Path("outputs/decoder_comparison")
-          print("| Decoder | Dice | IoU | AJI | Boundary F1 | Mean abs. count error |")
-          print("|---|---|---|---|---|---|")
-          for name, file in (("connected (published)", "test_metrics.json"), ("seeded (Lab)", "test_metrics_seeded.json")):
+          files = [("connected (published)", "test_metrics.json")] + [
+              (f"seeded h={h}", f"test_metrics_seeded_h{h}.json") for h in ("0.05", "0.1", "0.2", "0.3", "0.5")]
+          print("| Decoder | Dice | AJI | Boundary F1 | Mean abs. count error | Mean count bias | Mean true count |")
+          print("|---|---|---|---|---|---|---|")
+          for name, file in files:
               data = json.loads((root / file).read_text())
-              m = data["mean"]
-              err = statistics.mean(abs(r["n_pred"] - r["n_true"]) for r in data["per_image"])
-              print(f"| {name} | {m['dice']:.4f} | {m['iou']:.4f} | {m['aji']:.4f} | {m['boundary_f1']:.4f} | {err:.2f} |")
+              m, rows = data["mean"], data["per_image"]
+              err = [r["n_pred"] - r["n_true"] for r in rows]
+              print(f"| {name} | {m['dice']:.4f} | {m['aji']:.4f} | {m['boundary_f1']:.4f} | "
+                    f"{statistics.mean(map(abs, err)):.2f} | {statistics.mean(err):+.2f} | {statistics.mean(r['n_true'] for r in rows):.1f} |")
           PY
       - name: Upload comparison artifacts
         if: always()
