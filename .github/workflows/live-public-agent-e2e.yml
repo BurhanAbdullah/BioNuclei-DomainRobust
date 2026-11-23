@@ -1,34 +1,48 @@
 name: Live public agent E2E
 
 on:
-  schedule:
-    - cron: "23 * * * *"
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - "webapp/**"
-      - "src/bionuclei/**"
-      - "docs/bionuclei-app.html"
-      - "docs/assets/bionuclei-analyzer.js"
-      - "docs/assets/bionuclei-specialist-verification.js"
-      - "scripts/live_public_agent_e2e.py"
-      - ".github/workflows/live-public-agent-e2e.yml"
   pull_request:
     paths:
       - "scripts/live_public_agent_e2e.py"
+      - "scripts/render_runtime_parity.py"
+      - "scripts/public_e2e_schedule_watchdog.py"
+      - "tests/test_render_runtime_parity.py"
+      - "tests/test_public_e2e_schedule_watchdog.py"
+      - "webapp/community.Dockerfile"
+      - "webapp/Dockerfile"
+      - "render.yaml"
+      - ".github/workflows/live-public-agent-e2e.yml"
+      - ".github/workflows/public-e2e-schedule-watchdog.yml"
 
 permissions:
   contents: read
-
 concurrency:
   group: live-public-agent-e2e
   # Queue revisions until the current disposable analysis has finished, so a
   # newly fixed harness does not cancel a live GPU/CPU inference mid-run.
   cancel-in-progress: false
-
 jobs:
+  # Pull requests validate the harness offline and never contact the public service.
+  validate-harness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile public E2E, parity helper, and watchdog
+        run: python -m py_compile scripts/live_public_agent_e2e.py scripts/render_runtime_parity.py scripts/public_e2e_schedule_watchdog.py
+      - name: Test Docker-aware runtime path classification and dispatch pause
+        run: python -m unittest discover -s tests -p 'test_render_runtime_parity.py' -v
+      - name: Test watchdog decisions
+        run: python -m unittest discover -s tests -p 'test_public_e2e_schedule_watchdog.py' -v
+      - name: Validate workflow YAML syntax
+        run: ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0)); YAML.parse_file(ARGV.fetch(1)); puts "YAML syntax OK"' .github/workflows/live-public-agent-e2e.yml .github/workflows/public-e2e-schedule-watchdog.yml
+
   public-upload-to-agent:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
