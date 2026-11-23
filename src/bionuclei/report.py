@@ -78,7 +78,7 @@ def _input_lines(payload: dict[str, Any]) -> list[str]:
         lines.append(f"Analyzed plane size: {plane[0]} x {plane[1]} px, {meta.get('selected_plane_dtype', meta.get('dtype', ''))}.")
     size = meta.get("pixel_size")
     if isinstance(size, dict) and size.get("x"):
-        lines.append(f"Pixel size from {size.get('source', 'metadata')}: {size['x']:.4g} {size.get('unit', '')}. Measurements remain in pixels.")
+        lines.append(f"Pixel size from {size.get('source', 'metadata')}: {size['x']:.4g} {size.get('unit', '')}. Area and perimeter are also given in calibrated units; other values are unitless or in pixels.")
     else:
         lines.append("No pixel size was found in the file metadata. All measurements are in pixels.")
     for note in meta.get("notes") or []:
@@ -162,6 +162,12 @@ def _review_flags(payload: dict[str, Any], areas: list[float]) -> list[str]:
             flags.append(f"One object covers {largest / image_area:.0%} of the image. A single nucleus this large is implausible; the segmentation is very likely invalid for this image.")
         if len(areas) > image_area / 40:
             flags.append(f"{len(areas):,} objects in {image_area:,.0f} px suggests over-segmentation (fewer than 40 px per object).")
+    if len(areas) >= 10:
+        plausible = sorted(a for a in areas if a >= 30)
+        typical = float(plausible[len(plausible) // 2]) if plausible else 30.0
+        tiny = sum(1 for a in areas if a < max(30.0, 0.1 * typical))
+        if tiny / len(areas) > 0.2:
+            flags.append(f"{tiny} of {len(areas)} objects are far smaller than a typical nucleus in this image. These are likely fragments, so the count is probably inflated.")
     for meta_note in (payload.get("input_metadata") or {}).get("notes", []) or []:
         if str(meta_note).startswith("Warning:"):
             flags.append(_clean(meta_note).removeprefix("Warning: "))
@@ -175,7 +181,7 @@ def _sections(payload: dict[str, Any]) -> dict[str, list[str]]:
     cnn = plan.get("cnn_pattern_check") or {}
     count = reports.get("nuclei_count", payload.get("n_instances"))
     summary = [
-        "This report was produced by an evidence-based quantitative bioimaging workflow. Image quality was assessed before the released Boundary U-Net model segmented nuclei. The network-based analysability check is a gate, not a calibrated diagnostic classifier.",
+        "This report was produced by an evidence-based quantitative bioimaging workflow. Image quality was assessed before the released Boundary U-Net model segmented nuclei. The network-based analyzability check is a gate, not a calibrated diagnostic classifier.",
     ]
     if count is not None:
         n = int(count)
@@ -184,7 +190,7 @@ def _sections(payload: dict[str, Any]) -> dict[str, list[str]]:
     if profile:
         quality.append(f"Intensity profile of the analyzed plane: median {_num(profile.get('median'))}, standard deviation {_num(profile.get('std'))}, saturated pixels {_num(100 * float(profile.get('saturation_fraction') or 0))}%.")
     if cnn:
-        quality.append(f"Network analysability check: {_clean(cnn.get('status', 'NOT RUN'))}. Foreground fraction {_num(cnn.get('foreground_fraction'))}, mean class confidence {_num(cnn.get('mean_class_confidence'))}, connected components {_num(cnn.get('connected_components'))}.")
+        quality.append(f"Network analyzability check: {_clean(cnn.get('status', 'NOT RUN'))}. Foreground fraction {_num(cnn.get('foreground_fraction'))}, mean class confidence {_num(cnn.get('mean_class_confidence'))}, connected components {_num(cnn.get('connected_components'))}.")
     measures = []
     if reports.get("morphology"):
         measures.append("Morphology describes nuclear geometry. Area, perimeter, eccentricity, solidity and circularity capture different aspects of shape and should be read together. Values are in pixels unless a calibrated pixel size is reported.")
@@ -194,12 +200,55 @@ def _sections(payload: dict[str, Any]) -> dict[str, list[str]]:
     return {"summary": summary, "quality": quality, "measures": measures, "closing": [closing]}
 
 
+def _pdf_fonts() -> tuple[str, str]:
+    """Bitstream Vera ships with ReportLab and covers µ and ²; Helvetica is the fallback."""
+    try:
+        import os
+
+        import reportlab
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        root = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
+        if "BNVera" not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont("BNVera", os.path.join(root, "Vera.ttf")))
+            pdfmetrics.registerFont(TTFont("BNVera-Bold", os.path.join(root, "VeraBd.ttf")))
+        return "BNVera", "BNVera-Bold"
+    except Exception:  # pragma: no cover - font files missing in a stripped install
+        return "Helvetica", "Helvetica-Bold"
+
+
+def _micron_scale(payload: dict[str, Any]) -> float | None:
+    """Pixel edge length in µm when the file metadata gives a square calibrated pixel."""
+    size = (payload.get("input_metadata") or {}).get("pixel_size")
+    if not isinstance(size, dict):
+        return None
+    try:
+        x, y = float(size.get("x")), float(size.get("y", size.get("x")))
+    except (TypeError, ValueError):
+        return None
+    unit = str(size.get("unit", "")).replace("\u03bc", "µ").lower()
+    factor = {"µm": 1.0, "um": 1.0, "micron": 1.0, "nm": 1e-3, "mm": 1e3}.get(unit)
+    if factor is None or x <= 0 or abs(x - y) > 1e-6 * max(x, y):
+        return None
+    return x * factor
+
+
 def _measure_rows(payload: dict[str, Any]) -> list[tuple[str, str]]:
     reports = payload.get("reports", {}) or {}
     m, i = reports.get("morphology", {}) or {}, reports.get("intensity", {}) or {}
     rows = [("Mean area (px²)", m.get("mean_area")), ("Median area (px²)", m.get("median_area")), ("Mean perimeter (px)", m.get("mean_perimeter")),
             ("Mean eccentricity", m.get("mean_eccentricity")), ("Mean solidity", m.get("mean_solidity")), ("Mean circularity", m.get("mean_circularity")),
             ("Mean nuclear intensity", i.get("mean_nuclear_intensity")), ("Median nuclear intensity", i.get("median_nuclear_intensity"))]
+    um = _micron_scale(payload)
+    if um:
+        calibrated = []
+        for key, factor, label in (("mean_area", um * um, "Mean area (µm²)"), ("median_area", um * um, "Median area (µm²)"),
+                                   ("mean_perimeter", um, "Mean perimeter (µm)")):
+            value = m.get(key)
+            if isinstance(value, (int, float)):
+                calibrated.append((label, value * factor))
+        rows = rows[:3] + calibrated + rows[3:]
     return [(k, _num(v)) for k, v in rows if v is not None] or [("Measurements", "Not available")]
 
 
@@ -245,7 +294,7 @@ def _repro_rows(payload: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 LIMITATIONS = [
-    "The network analysability gate is not a calibrated diagnostic classifier.",
+    "The network analyzability gate is not a calibrated diagnostic classifier.",
     "Object counts and morphology depend on segmentation quality and acquisition conditions.",
     "Fluorescence intensity depends on acquisition and staining conditions.",
     "Quantitative morphology does not establish a biological mechanism without appropriate controls.",
@@ -274,10 +323,10 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
     model = payload.get("model", {}) or {}
     training = _training_status(payload)
     sec = _sections(payload)
-    regular, bold = "Helvetica", "Helvetica-Bold"
+    regular, bold = _pdf_fonts()
     doc = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
                             title="BioNuclei Quantitative Bioimaging Analysis Report", author="BioNuclei")
-    title = ParagraphStyle("t", fontName=bold, fontSize=17, leading=21, textColor=ink, spaceAfter=2, alignment=TA_LEFT)
+    title = ParagraphStyle("t", fontName=bold, fontSize=15, leading=19, textColor=ink, spaceAfter=2, alignment=TA_LEFT)
     sub = ParagraphStyle("s", fontName=regular, fontSize=9.5, leading=13, textColor=grey, spaceAfter=10)
     heading = ParagraphStyle("h", fontName=bold, fontSize=11.5, leading=15, textColor=wine, spaceBefore=10, spaceAfter=5)
     body = ParagraphStyle("b", fontName=regular, fontSize=9.5, leading=13.5, textColor=ink, spaceAfter=5)
@@ -312,7 +361,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
         story += [Paragraph(esc(line), body) for line in input_lines]
     story.append(Paragraph("1. Executive Summary", heading))
     story += [Paragraph(esc(t), body) for t in sec["summary"]]
-    story.append(Paragraph("2. Image Quality and Analysability", heading))
+    story.append(Paragraph("2. Image Quality and Analyzability", heading))
     story += [Paragraph(esc(t), body) for t in sec["quality"] or ["No image-quality profile was recorded."]]
     story.append(Paragraph("3. Nuclear Measurements", heading))
     story += [table(_measure_rows(payload))] + [Paragraph(esc(t), body) for t in sec["measures"]]
@@ -327,7 +376,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
     if counts:
         d = Drawing(84 * mm, 62 * mm)
         chart = VerticalBarChart()
-        chart.x, chart.y, chart.width, chart.height = 22, 20, 84 * mm - 30, 62 * mm - 36
+        chart.x, chart.y, chart.width, chart.height = 22, 28, 84 * mm - 30, 62 * mm - 42
         chart.data = [counts]
         chart.bars[0].fillColor = wine
         chart.bars[0].strokeColor = None
@@ -336,7 +385,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
         chart.categoryAxis.categoryNames = [f"{edges[k]:,.0f}" if k % 3 == 0 else "" for k in range(len(counts))]
         chart.categoryAxis.labels.fontSize = 6.5
         d.add(chart)
-        d.add(String(84 * mm / 2, 4, "Nuclear area (square pixels)", fontSize=7, textAnchor="middle", fillColor=grey))
+        d.add(String(84 * mm / 2, 3, "Nuclear area (square pixels)", fontSize=7, textAnchor="middle", fillColor=grey))
         figures.append([d, Paragraph(f"Figure 2. Distribution of nuclear area, {len(areas):,} {_plural(len(areas), 'object', 'objects')}.", small)])
     if figures:
         story.append(Paragraph("Figures", heading))
@@ -412,7 +461,7 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
     page = (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>BioNuclei Analysis Report</title><style>{style}</style></head><body>"
             f"<h1>BioNuclei Quantitative Bioimaging Analysis Report</h1><p class='sub'>Evidence-based nuclear image analysis. Measurements in pixels unless stated otherwise.</p>"
             f"<table>{summary_rows}</table>{flag_html}{input_section}"
-            f"<h2>1. Executive summary</h2>{para(sec['summary'])}<h2>2. Image quality and analysability</h2>{para(sec['quality'] or ['No image-quality profile was recorded.'])}"
+            f"<h2>1. Executive summary</h2>{para(sec['summary'])}<h2>2. Image quality and analyzability</h2>{para(sec['quality'] or ['No image-quality profile was recorded.'])}"
             f"<h2>3. Nuclear measurements</h2><table>{rows(_measure_rows(payload))}</table>{para(sec['measures'])}{figure_html}"
             f"<h2>4. Specialist execution and evidence status</h2><ul class='agents'>{agents}</ul>"
             f"<p><strong>Model weights are not updated during user analysis.</strong> {esc(training_text)}</p>"

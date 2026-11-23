@@ -108,7 +108,7 @@ def test_report_lines_describe_recognition_and_units(tmp_path):
     lines = _input_lines({"input_metadata": record})
     text = " ".join(lines)
     assert "Recognized as: 16-bit 2-D fluorescence image" in text
-    assert "0.325" in text and "Measurements remain in pixels" in text
+    assert "0.325" in text and "calibrated units" in text
 
 
 def test_fluorophore_identification_by_name_and_wavelength():

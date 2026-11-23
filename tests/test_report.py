@@ -126,3 +126,23 @@ def test_clean_result_has_no_review_flags(tmp_path: Path) -> None:
     page = (tmp_path / "analysis_report.html").read_text(encoding="utf-8")
     assert "No automatic quality flags" in page and "Review before using" not in page
     assert "29 nuclear objects" in page
+
+
+def test_review_flags_fragments_that_inflate_the_count():
+    from bionuclei.report import _review_flags
+    areas = [1200.0] * 40 + [5.0] * 60
+    flags = _review_flags({"n_instances": 100, "image_shape": [512, 512]}, areas)
+    assert any("likely fragments" in f for f in flags)
+    clean = _review_flags({"n_instances": 40, "image_shape": [512, 512]}, [1200.0] * 40)
+    assert not any("fragments" in f for f in clean)
+
+
+def test_calibrated_area_rows_use_micron_pixel_size():
+    from bionuclei.report import _measure_rows
+    payload = {"input_metadata": {"pixel_size": {"x": 0.5, "y": 0.5, "unit": "µm", "source": "ImageJ"}},
+               "reports": {"morphology": {"mean_area": 400.0, "median_area": 100.0, "mean_perimeter": 80.0}}}
+    rows = dict(_measure_rows(payload))
+    num = lambda k: float(rows[k].replace(",", ""))
+    assert num("Mean area (µm²)") == 100 and num("Median area (µm²)") == 25 and num("Mean perimeter (µm)") == 40
+    plain = dict(_measure_rows({"reports": {"morphology": {"mean_area": 400.0}}}))
+    assert not any("µm" in k for k in plain)

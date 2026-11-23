@@ -105,7 +105,9 @@
     const email = $('signupEmail').value.trim();
     const password = $('signupPassword').value;
     if (!email || password.length < 8) { msg('signupMsg', 'Enter an email and a password of at least 8 characters.'); return; }
-    const { data, error } = await supa.auth.signUp({ email, password, options: { emailRedirectTo: location.href } });
+    let data, error;
+    try { ({ data, error } = await supa.auth.signUp({ email, password, options: { emailRedirectTo: location.href } })); }
+    catch (_) { msg('signupMsg', 'Could not reach the account service. Check your connection and try again, or continue as guest.'); return; }
     if (error) { msg('signupMsg', error.message); return; }
     if (data.session) {
       currentToken = data.session.access_token;
@@ -122,8 +124,10 @@
     const email = $('loginEmail').value.trim();
     const password = $('loginPassword').value;
     if (!email || !password) { msg('loginMsg', 'Enter your email and password.'); return; }
-    const { data, error } = await supa.auth.signInWithPassword({ email, password });
-    if (error) { msg('loginMsg', error.message); return; }
+    let data, error;
+    try { ({ data, error } = await supa.auth.signInWithPassword({ email, password })); }
+    catch (_) { msg('loginMsg', 'Could not reach the account service. Check your connection and try again, or continue as guest.'); return; }
+    if (error) { msg('loginMsg', /invalid login credentials/i.test(error.message) ? 'Email or password is incorrect.' : error.message); return; }
     currentToken = data.session?.access_token || '';
     guestToken = '';
     if (currentToken) showWorkspace(true);
@@ -133,9 +137,11 @@
     if (!supa) { msg('loginMsg', 'Account service is unavailable.'); return; }
     const email = $('loginEmail').value.trim();
     if (!email) { msg('loginMsg', 'Enter your email first.'); return; }
-    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.href });
+    let error;
+    try { ({ error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.href })); }
+    catch (_) { msg('loginMsg', 'Could not reach the account service. Check your connection and try again.'); return; }
     if (error) msg('loginMsg', error.message);
-    else msg('loginMsg', 'If password reset is available for this account, Supabase will send the reset message.');
+    else msg('loginMsg', 'If an account exists for this email, a password reset link is on its way.');
   }
 
   async function signOut() {
@@ -556,6 +562,9 @@
     $('signupButton').addEventListener('click', signUp);
     $('signinButton').addEventListener('click', signIn);
     $('resetButton').addEventListener('click', resetPassword);
+    const submitOnEnter = (ids, action) => ids.forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); action(); } }));
+    submitOnEnter(['loginEmail', 'loginPassword'], signIn);
+    submitOnEnter(['signupEmail', 'signupPassword'], signUp);
     $('guestButton').addEventListener('click', ensureGuest);
     $('signout').addEventListener('click', signOut);
     $('image').addEventListener('change', e => setFile(e.target.files[0]));

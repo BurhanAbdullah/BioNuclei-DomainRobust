@@ -12,17 +12,17 @@ from scipy import ndimage
 from skimage.io import imread
 
 from bionuclei.data import decode_instance_mask, read_fluorescence_image
+from bionuclei.decode import DECODERS, decode_instances
 from bionuclei.metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 from bionuclei.models import BoundaryUNet
 
 IMAGE_EXTENSIONS = (".tif", ".tiff", ".png", ".jpg", ".jpeg")
 
 
-def split_instances(logits: torch.Tensor) -> np.ndarray:
+def split_instances(logits: torch.Tensor, decoder: str = "connected") -> np.ndarray:
+    """Decode logits to instances. "connected" reproduces the published evidence."""
     classes = logits.argmax(dim=1).cpu().numpy()[0]
-    foreground = classes != 0
-    instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
-    return instances.astype(np.int32)
+    return decode_instances(classes, decoder)
 
 
 def boundary_band(mask: np.ndarray) -> np.ndarray:
@@ -90,6 +90,8 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--split", choices=("train", "validation", "test"), default="test")
     parser.add_argument("--output", type=Path, default=Path("outputs/bbbc039_eval"))
+    parser.add_argument("--decoder", choices=DECODERS, default="connected",
+                        help="connected = published decoder; seeded = product decoder")
     args = parser.parse_args()
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
@@ -116,23 +118,26 @@ def main() -> None:
         x = np.clip(x / max(float(scale), 1.0), 0.0, 1.0)
         with torch.no_grad():
             logits = model(torch.from_numpy(x[None, None]).float())
-        pred = split_instances(logits)
+        pred = split_instances(logits, args.decoder)
         results.append({
             "image": name,
             "dice": dice_coefficient(pred > 0, target > 0),
             "iou": iou_score(pred > 0, target > 0),
             "aji": aji_score(pred, target),
             "boundary_f1": boundary_f1(boundary_band(pred), boundary_band(target)),
+            "n_pred": int(pred.max()),
+            "n_true": int(len(np.unique(target)) - 1),
         })
 
     summary = {
         "split": args.split,
+        "decoder": args.decoder,
         "n_images": len(results),
         "mean": {k: float(np.mean([r[k] for r in results])) for k in ("dice", "iou", "aji", "boundary_f1")},
         "per_image": results,
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / f"{args.split}_metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (args.output / f"{args.split}_metrics{'' if args.decoder == 'connected' else '_' + args.decoder}.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary["mean"], indent=2))
 
 
