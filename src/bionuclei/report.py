@@ -56,14 +56,14 @@ def _agent_lines(payload: dict[str, Any]) -> list[str]:
 
 
 def _input_lines(payload: dict[str, Any]) -> list[str]:
-    """Describe how the uploaded file was recognised and which plane was analysed."""
+    """Describe how the uploaded file was recognized and which plane was analyzed."""
     meta = payload.get("input_metadata") or {}
     if not meta:
         return []
     lines = []
     fmt = meta.get("input_format")
     if meta.get("recognized_as"):
-        lines.append(f"Recognised as: {meta['recognized_as']} ({fmt}).")
+        lines.append(f"Recognized as: {meta['recognized_as']} ({fmt}).")
     elif fmt:
         lines.append(f"Input format: {fmt}.")
     axes = meta.get("source_axes")
@@ -72,10 +72,10 @@ def _input_lines(payload: dict[str, Any]) -> list[str]:
         lines.append(f"Source axes {axes} with shape {shape}.")
     selected = meta.get("selected_indices") or {}
     if selected:
-        lines.append("Analysed plane: " + ", ".join(f"{k} {v}" for k, v in selected.items()) + ".")
+        lines.append("Analyzed plane: " + ", ".join(f"{k} {v}" for k, v in selected.items()) + ".")
     plane = meta.get("selected_plane_shape")
     if plane:
-        lines.append(f"Analysed plane size: {plane[0]} x {plane[1]} px, {meta.get('selected_plane_dtype', meta.get('dtype', ''))}.")
+        lines.append(f"Analyzed plane size: {plane[0]} x {plane[1]} px, {meta.get('selected_plane_dtype', meta.get('dtype', ''))}.")
     size = meta.get("pixel_size")
     if isinstance(size, dict) and size.get("x"):
         lines.append(f"Pixel size from {size.get('source', 'metadata')}: {size['x']:.4g} {size.get('unit', '')}. Measurements remain in pixels.")
@@ -155,7 +155,7 @@ def _review_flags(payload: dict[str, Any], areas: list[float]) -> list[str]:
     shape = (plan.get("profile") or {}).get("shape") or payload.get("image_shape")
     image_area = float(shape[0]) * float(shape[1]) if isinstance(shape, (list, tuple)) and len(shape) == 2 else None
     if count == 0:
-        flags.append("No nuclei were detected. Check that the analysed channel contains a nuclear stain.")
+        flags.append("No nuclei were detected. Check that the analyzed channel contains a nuclear stain.")
     if image_area and areas:
         largest = max(areas)
         if largest > 0.25 * image_area:
@@ -179,10 +179,10 @@ def _sections(payload: dict[str, Any]) -> dict[str, list[str]]:
     ]
     if count is not None:
         n = int(count)
-        summary.append(f"The pipeline detected {n:,} {_plural(n, 'nuclear object', 'nuclear objects')} in the analysed plane. This is a computational count, not biological ground truth, and it should be read together with the review notes above.")
+        summary.append(f"The pipeline detected {n:,} {_plural(n, 'nuclear object', 'nuclear objects')} in the analyzed plane. This is a computational count, not biological ground truth, and it should be read together with the review notes above.")
     quality = []
     if profile:
-        quality.append(f"Intensity profile of the analysed plane: median {_num(profile.get('median'))}, standard deviation {_num(profile.get('std'))}, saturated pixels {_num(100 * float(profile.get('saturation_fraction') or 0))}%.")
+        quality.append(f"Intensity profile of the analyzed plane: median {_num(profile.get('median'))}, standard deviation {_num(profile.get('std'))}, saturated pixels {_num(100 * float(profile.get('saturation_fraction') or 0))}%.")
     if cnn:
         quality.append(f"Network analysability check: {_clean(cnn.get('status', 'NOT RUN'))}. Foreground fraction {_num(cnn.get('foreground_fraction'))}, mean class confidence {_num(cnn.get('mean_class_confidence'))}, connected components {_num(cnn.get('connected_components'))}.")
     measures = []
@@ -297,7 +297,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
     story = [Paragraph("BioNuclei Quantitative Bioimaging Analysis Report", title),
              Paragraph("Evidence-based nuclear image analysis. Measurements in pixels unless stated otherwise.", sub),
              table([("Result", verdict), ("Quality gate", plan.get("status", "UNKNOWN")), ("Nuclei detected", _num(count)),
-                    ("Analysed plane", f"{profile.get('shape', ['?', '?'])[0]} × {profile.get('shape', ['?', '?'])[1]} px, {profile.get('dtype', 'unknown type')}" if profile.get("shape") else "Not available"),
+                    ("Analyzed plane", f"{profile.get('shape', ['?', '?'])[0]} × {profile.get('shape', ['?', '?'])[1]} px, {profile.get('dtype', 'unknown type')}" if profile.get("shape") else "Not available"),
                     ("Model", model.get("architecture", "Boundary U-Net")), ("Training reference", model.get("training_reference", "Not established")),
                     ("Specialist reviewers", str(len((payload.get("expert_agents") or {}).get("agents", []))))])]
     if flags:
@@ -322,7 +322,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
         img = Image(io.BytesIO(overlay))
         scale = min(84 * mm / img.drawWidth, 84 * mm / img.drawHeight)
         img.drawWidth, img.drawHeight = img.drawWidth * scale, img.drawHeight * scale
-        figures.append([img, Paragraph("Figure 1. Analysed plane with detected nuclear boundaries.", small)])
+        figures.append([img, Paragraph("Figure 1. Analyzed plane with detected nuclear boundaries.", small)])
     counts, edges = _histogram(areas)
     if counts:
         d = Drawing(84 * mm, 62 * mm)
@@ -383,14 +383,14 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
     verdict = "Review required before use" if flags else "No automatic quality flags"
     rows = lambda pairs: "".join(f"<tr><th>{esc(k)}</th><td>{esc(v)}</td></tr>" for k, v in pairs)
     summary_rows = rows([("Result", verdict), ("Quality gate", plan.get("status", "UNKNOWN")), ("Nuclei detected", _num(count)),
-                         ("Analysed plane", f"{profile['shape'][0]} × {profile['shape'][1]} px, {profile.get('dtype', '')}" if profile.get("shape") else "Not available"),
+                         ("Analyzed plane", f"{profile['shape'][0]} × {profile['shape'][1]} px, {profile.get('dtype', '')}" if profile.get("shape") else "Not available"),
                          ("Model", model.get("architecture", "Boundary U-Net")), ("Training reference", model.get("training_reference", "Not established"))])
     flag_html = ("<aside class='review'><b>Review before using these numbers</b><ul>" + "".join(f"<li>{esc(f)}</li>" for f in flags) + "</ul></aside>") if flags else ""
     input_html = "".join(f"<li>{esc(line)}</li>" for line in _input_lines(payload))
     input_section = f"<h2>Input recognition</h2><ul>{input_html}</ul>" if input_html else ""
     figs = []
     if overlay:
-        figs.append(f"<figure><img alt='Analysed plane with detected nuclear boundaries' src='data:image/png;base64,{base64.b64encode(overlay).decode()}'><figcaption>Figure 1. Analysed plane with detected nuclear boundaries.</figcaption></figure>")
+        figs.append(f"<figure><img alt='Analyzed plane with detected nuclear boundaries' src='data:image/png;base64,{base64.b64encode(overlay).decode()}'><figcaption>Figure 1. Analyzed plane with detected nuclear boundaries.</figcaption></figure>")
     counts, edges = _histogram(areas)
     if counts:
         peak = max(counts) or 1

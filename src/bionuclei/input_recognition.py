@@ -1,4 +1,4 @@
-"""Recognise whether an uploaded TIFF is a suitable input for BioNuclei.
+"""Recognize whether an uploaded TIFF is a suitable input for BioNuclei.
 
 BioNuclei segments nuclei in 2-D fluorescence images: bright nuclei on a dark
 background, one intensity channel. Real uploads are often something else: an
@@ -80,7 +80,7 @@ def _tiff_channels(tif: tifffile.TiffFile) -> list[dict[str, Any]]:
     return channels
 
 
-def _channel_notes(record: dict[str, Any], analysed: int | None) -> None:
+def _channel_notes(record: dict[str, Any], analyzed: int | None) -> None:
     info = record.get("channel_identification") or {}
     channels = info.get("channels") or []
     if not channels:
@@ -92,8 +92,8 @@ def _channel_notes(record: dict[str, Any], analysed: int | None) -> None:
             kind = "nuclear stain" if ch.get("nuclear_stain") else "not a nuclear stain" if ch.get("nuclear_stain") is False else "nuclear status unclear"
             record["notes"].append(f"Channel {ch['index']} identified as {label}{peaks}, {kind}, from {ch.get('source', 'metadata')}.")
     nuclear = info.get("nuclear_channel")
-    if analysed is not None and nuclear is not None and analysed != nuclear:
-        record["notes"].append(f"Warning: channel {analysed} was analysed, but the metadata identifies channel {nuclear} as the nuclear stain.")
+    if analyzed is not None and nuclear is not None and analyzed != nuclear:
+        record["notes"].append(f"Warning: channel {analyzed} was analyzed, but the metadata identifies channel {nuclear} as the nuclear stain.")
 
 
 def _contrast_profile(plane: np.ndarray) -> dict[str, float]:
@@ -117,10 +117,10 @@ def _looks_like_transmitted_light(profile: dict[str, float]) -> bool:
 
 
 def _pick_rgb_channel(rgb: np.ndarray) -> tuple[int, str]:
-    """Choose the colour channel that carries the fluorescence signal."""
+    """Choose the color channel that carries the fluorescence signal."""
     channels = [rgb[..., i].astype(np.float64) for i in range(min(3, rgb.shape[-1]))]
     if all(np.array_equal(channels[0], c) for c in channels[1:]):
-        return 0, "All colour channels are identical, so the RGB file is a greyscale image; channel 0 was used."
+        return 0, "All color channels are identical, so the RGB file is a greyscale image; channel 0 was used."
     contrast = []
     for c in channels:
         step = max(1, c.size // 250_000)
@@ -128,7 +128,7 @@ def _pick_rgb_channel(rgb: np.ndarray) -> tuple[int, str]:
         contrast.append(float(np.percentile(s, 99.5) - np.median(s)))
     best = int(np.argmax(contrast))
     names = ["red", "green", "blue"]
-    return best, f"RGB colour image: the {names[best]} channel carries the strongest signal and was analysed."
+    return best, f"RGB color image: the {names[best]} channel carries the strongest signal and was analyzed."
 
 
 def recognize_tiff(source: Path, destination: Path, *, channel: int = 0, time: int = 0, z: int = 0, field: int = 0) -> dict[str, Any]:
@@ -205,11 +205,11 @@ def recognize_tiff(source: Path, destination: Path, *, channel: int = 0, time: i
         profile_rgb = _contrast_profile(plane[..., :3].mean(axis=-1))
         if _looks_like_transmitted_light(profile_rgb) and "identical" not in note:
             raise InputRejected(
-                "This looks like a colour brightfield or stained-histology image (bright background with darker objects). "
+                "This looks like a color brightfield or stained-histology image (bright background with darker objects). "
                 "BioNuclei is built for fluorescence images where nuclei are bright on a dark background, such as DAPI or Hoechst."
             )
         plane = plane[..., best]
-        selected["colour channel"] = best
+        selected["color channel"] = best
         record["notes"].append(note)
         kinds.append("RGB")
 
@@ -245,7 +245,7 @@ def recognize_tiff(source: Path, destination: Path, *, channel: int = 0, time: i
     })
     if selected and not rgb_axis:
         described = ", ".join(f"{k} {v}" for k, v in selected.items())
-        record["notes"].append(f"Multi-dimensional TIFF ({axes}); analysed {described}.")
+        record["notes"].append(f"Multi-dimensional TIFF ({axes}); analyzed {described}.")
     _channel_notes(record, selected.get("channel", 0 if "C" in axes else None))
     tifffile.imwrite(destination, np.ascontiguousarray(plane))
     return record

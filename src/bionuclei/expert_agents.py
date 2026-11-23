@@ -263,17 +263,17 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     population_observations: list[str] = []
     population_observations.append(f"Measured population size: {nuclei_count} detected nuclei." if count_valid else "Measured population size is unavailable.")
     distance_fields = (
-        ("mean_nearest_neighbor_distance_px", "Mean nearest-neighbour distance"),
-        ("median_nearest_neighbor_distance_px", "Median nearest-neighbour distance"),
-        ("min_nearest_neighbor_distance_px", "Minimum nearest-neighbour distance"),
-        ("max_nearest_neighbor_distance_px", "Maximum nearest-neighbour distance"),
+        ("mean_nearest_neighbor_distance_px", "Mean nearest-neighbor distance"),
+        ("median_nearest_neighbor_distance_px", "Median nearest-neighbor distance"),
+        ("min_nearest_neighbor_distance_px", "Minimum nearest-neighbor distance"),
+        ("max_nearest_neighbor_distance_px", "Maximum nearest-neighbor distance"),
     )
     for key, label in distance_fields:
         value = spatial.get(key)
         if is_number(value):
             population_observations.append(f"{label}: {display_number(value)} pixels.")
     if not any(is_number(spatial.get(key)) for key, _ in distance_fields):
-        population_observations.append("Nearest-neighbour distances are unavailable for this measured population or lack valid centroids.")
+        population_observations.append("Nearest-neighbor distances are unavailable for this measured population or lack valid centroids.")
     findings.append(AgentFinding(
         "population_agent",
         tuple(population_observations),

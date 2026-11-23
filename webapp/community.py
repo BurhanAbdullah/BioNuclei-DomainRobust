@@ -496,7 +496,7 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
     destination = root / "input_plane.tif"
     if image_path.suffix.lower() != ".nd2":
-        # Recognise the TIFF (axes, RGB, stacks, brightfield-like contrast) and
+        # Recognize the TIFF (axes, RGB, stacks, brightfield-like contrast) and
         # write exactly one analysable 2-D plane, or reject with a user-facing reason.
         return destination, recognize_tiff(image_path, destination, channel=channel, time=time, z=z, field=field)
     try:

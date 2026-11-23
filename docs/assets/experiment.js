@@ -1,6 +1,6 @@
 /* BioNuclei experiment tray.
- * Recognises several microscopy files in the browser, numbers them, lets the
- * user choose which to analyse, runs the chosen ones one after another on the
+ * Recognizes several microscopy files in the browser, numbers them, lets the
+ * user choose which to analyze, runs the chosen ones one after another on the
  * BioNuclei server and builds an experiment summary from the returned results.
  *
  * Nothing is uploaded until "Analyze selected". Files are held in page memory
@@ -184,7 +184,7 @@
     if (fileDye && !fileDye.nuclear && item.verdict === 'ready') item.warnings.push(`File name suggests ${fileDye.name}, which is not a nuclear stain.`);
   }
 
-  async function recognise(item) {
+  async function recognize(item) {
     const f = item.file;
     const lower = f.name.toLowerCase();
     item.warnings = [];
@@ -223,15 +223,15 @@
     try { await decodePreview(item, buf, h); } catch (_) { item.warnings.push('Preview unavailable; the server will check contrast.'); }
     if (item.contrast) {
       if (item.contrast.sd === 0 || item.contrast.p995 === item.contrast.p01) { item.verdict = 'rejected'; item.reason = 'The first plane is blank (no intensity variation).'; return; }
-      if (item.contrast.relMedian > 0.55 && item.contrast.skew < -0.5) { item.verdict = 'rejected'; item.reason = rgb ? 'Looks like a colour brightfield or stained-histology image (bright background, darker objects).' : 'Looks like brightfield or phase contrast (bright background, darker objects).'; return; }
+      if (item.contrast.relMedian > 0.55 && item.contrast.skew < -0.5) { item.verdict = 'rejected'; item.reason = rgb ? 'Looks like a color brightfield or stained-histology image (bright background, darker objects).' : 'Looks like brightfield or phase contrast (bright background, darker objects).'; return; }
     }
     item.verdict = (axes.C > 1 || axes.Z > 1 || axes.T > 1) ? 'plane' : 'ready';
-    item.reason = item.verdict === 'plane' ? 'Multi-dimensional: one 2-D plane will be analysed.' : rgb ? 'RGB export: the server analyses the colour channel with the strongest signal.' : '2-D fluorescence plane.';
+    item.reason = item.verdict === 'plane' ? 'Multi-dimensional: one 2-D plane will be analyzed.' : rgb ? 'RGB export: the server analyzes the color channel with the strongest signal.' : '2-D fluorescence plane.';
     annotateChannels(item);
     if (item.verdict === 'plane' && item.nuclearChannel != null) {
       const dye = (item.channelInfo.find(c => c.index === item.nuclearChannel) || {}).dye;
       item.verdict = 'ready';
-      item.reason = `Nuclear stain found in channel ${item.nuclearChannel}${dye ? ` (${dye})` : ''}; that channel will be analysed. Change C, Z or T if needed.`;
+      item.reason = `Nuclear stain found in channel ${item.nuclearChannel}${dye ? ` (${dye})` : ''}; that channel will be analyzed. Change C, Z or T if needed.`;
     }
   }
 
@@ -258,7 +258,7 @@
       else if (i.job.status === 'failed') result = `<span class="ws-err" title="${esc(i.job.error)}">Failed</span><br><small>${esc(i.job.error).slice(0, 110)}</small>`;
       else if (i.job.status === 'deleted') result = '<span class="ws-muted-s">Deleted from server</span>';
       return `<tr class="${cls}">
-        <td><input type="checkbox" data-pick="${i.n}" ${i.selected ? 'checked' : ''} ${runnable(i) && !running ? '' : 'disabled'} aria-label="Analyse image ${i.n}"></td>
+        <td><input type="checkbox" data-pick="${i.n}" ${i.selected ? 'checked' : ''} ${runnable(i) && !running ? '' : 'disabled'} aria-label="Analyze image ${i.n}"></td>
         <td class="ws-num">${i.n}</td>
         <td><div class="ws-file">${i.thumb ? `<img src="${i.thumb}" alt="" width="40" height="40">` : '<span class="ws-thumb"></span>'}<div><b title="${esc(i.file.name)}">${esc(i.file.name)}</b><small>${(i.file.size / 1048576).toFixed(2)} MiB</small></div></div></td>
         <td><input class="ws-cell" value="${esc(i.condition)}" data-edit="condition" data-n="${i.n}" aria-label="Condition for image ${i.n}"></td>
@@ -271,12 +271,12 @@
     const picked = items.filter(i => i.selected && runnable(i));
     const done = items.filter(i => i.job.status === 'completed');
     const conditions = new Set(items.map(i => i.condition));
-    qs('[data-exp-summary]').textContent = `${items.length} image${items.length === 1 ? '' : 's'} · ${conditions.size} condition${conditions.size === 1 ? '' : 's'} · ${ready.length} suitable · ${picked.length} selected${done.length ? ` · ${done.length} analysed` : ''}`;
+    qs('[data-exp-summary]').textContent = `${items.length} image${items.length === 1 ? '' : 's'} · ${conditions.size} condition${conditions.size === 1 ? '' : 's'} · ${ready.length} suitable · ${picked.length} selected${done.length ? ` · ${done.length} analyzed` : ''}`;
     const all = qs('[data-exp-all]');
     if (all) { all.checked = ready.length > 0 && picked.length === ready.length; all.indeterminate = picked.length > 0 && picked.length < ready.length; all.disabled = running; }
     const run = qs('[data-exp-run]');
     run.disabled = running || picked.length === 0;
-    run.textContent = running ? 'Analysing…' : `Analyze selected (${picked.length})`;
+    run.textContent = running ? 'Analyzing…' : `Analyze selected (${picked.length})`;
     qs('[data-exp-stop]').hidden = !running;
     qs('[data-exp-csv]').disabled = !items.some(i => i.job.status === 'completed' || i.job.status === 'failed');
     qs('[data-exp-delete]').disabled = running || !items.some(i => i.job.id && i.job.status !== 'deleted');
@@ -296,7 +296,7 @@
     items.push(...added);
     render();
     for (const item of added) {
-      try { await recognise(item); } catch (e) { item.verdict = 'rejected'; item.reason = `Could not read the file (${e.message}).`; }
+      try { await recognize(item); } catch (e) { item.verdict = 'rejected'; item.reason = `Could not read the file (${e.message}).`; }
       item.selected = runnable(item);
       render();
     }
@@ -334,7 +334,7 @@
             nuclei: rep.nuclei_count ?? r.n_instances ?? null,
             meanArea: rep.morphology?.mean_area ?? null, medianArea: rep.morphology?.median_area ?? null,
             meanCircularity: rep.morphology?.mean_circularity ?? null, meanIntensity: rep.intensity?.mean_nuclear_intensity ?? null,
-            gate: r.adaptive_plan?.status || '', recognised: r.input_metadata?.recognized_as || r.input_metadata?.input_format || '',
+            gate: r.adaptive_plan?.status || '', recognized: r.input_metadata?.recognized_as || r.input_metadata?.input_format || '',
             notes: (r.input_metadata?.notes || []).join(' ')
           });
           return;
@@ -357,20 +357,20 @@
     for (const item of queue) {
       if (stopRequested) break;
       k += 1;
-      status(`Analysing ${k} of ${queue.length}: #${item.n} ${item.file.name}. Images run one at a time on the server.`);
+      status(`Analyzing ${k} of ${queue.length}: #${item.n} ${item.file.name}. Images run one at a time on the server.`);
       await runOne(bridge, item);
     }
     running = false; window.__BIONUCLEI_ANALYSIS_ACTIVE = false;
     const ok = queue.filter(i => i.job.status === 'completed').length, failed = queue.filter(i => i.job.status === 'failed').length;
-    status(`${stopRequested ? 'Stopped. ' : ''}${ok} analysed, ${failed} failed. Server results expire after the retention window; download the summary and any reports you need.`);
+    status(`${stopRequested ? 'Stopped. ' : ''}${ok} analyzed, ${failed} failed. Server results expire after the retention window; download the summary and any reports you need.`);
     render();
   }
 
   /* ---------- Summary export ---------- */
   function csvCell(v) { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
   function downloadCsv() {
-    const head = ['image_number', 'file_name', 'condition', 'replicate', 'sha256', 'recognised_in_browser', 'server_recognised_as', 'channel', 'z', 'time', 'status', 'nuclei_count', 'mean_area_px', 'median_area_px', 'mean_circularity', 'mean_nuclear_intensity', 'quality_gate', 'job_id', 'error', 'server_notes'];
-    const rows = items.map(i => [i.n, i.file.name, i.condition, i.replicate, i.sha256 || '', [i.kind, i.dims].filter(Boolean).join(' '), i.job.recognised || '', i.plane.channel, i.plane.z, i.plane.time, i.job.status || i.verdict, i.job.nuclei ?? '', i.job.meanArea ?? '', i.job.medianArea ?? '', i.job.meanCircularity ?? '', i.job.meanIntensity ?? '', i.job.gate || '', i.job.id || '', i.job.error || (runnable(i) ? '' : i.reason), i.job.notes || '']);
+    const head = ['image_number', 'file_name', 'condition', 'replicate', 'sha256', 'recognized_in_browser', 'server_recognized_as', 'channel', 'z', 'time', 'status', 'nuclei_count', 'mean_area_px', 'median_area_px', 'mean_circularity', 'mean_nuclear_intensity', 'quality_gate', 'job_id', 'error', 'server_notes'];
+    const rows = items.map(i => [i.n, i.file.name, i.condition, i.replicate, i.sha256 || '', [i.kind, i.dims].filter(Boolean).join(' '), i.job.recognized || '', i.plane.channel, i.plane.z, i.plane.time, i.job.status || i.verdict, i.job.nuclei ?? '', i.job.meanArea ?? '', i.job.medianArea ?? '', i.job.meanCircularity ?? '', i.job.meanIntensity ?? '', i.job.gate || '', i.job.id || '', i.job.error || (runnable(i) ? '' : i.reason), i.job.notes || '']);
     const csv = [head, ...rows].map(r => r.map(csvCell).join(',')).join('\n') + '\n';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
