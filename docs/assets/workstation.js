@@ -111,26 +111,6 @@
     });
   }
 
-  /* ---------- Compact specialist cards (content untouched, only clamped) ---------- */
-  function enhanceAgents() {
-    qsa('#agentDetails .agent-finding:not([data-ws])').forEach(card => {
-      card.dataset.ws = '1';
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'ws-agent-toggle';
-      button.setAttribute('aria-expanded', 'false');
-      button.textContent = 'Show evidence';
-      button.addEventListener('click', () => {
-        const open = card.classList.toggle('is-open');
-        button.setAttribute('aria-expanded', String(open));
-        button.textContent = open ? 'Hide evidence' : 'Show evidence';
-      });
-      card.appendChild(button);
-    });
-  }
-  const agents = $('agentDetails');
-  if (agents) new MutationObserver(enhanceAgents).observe(agents, { childList: true });
-
   /* ---------- Live server status from GET /health ---------- */
   const api = String((window.BIONUCLEI_CONFIG || {}).apiBase || '').replace(/\/$/, '');
   const pill = qs('[data-server-pill]');

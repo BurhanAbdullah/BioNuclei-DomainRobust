@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use BioNuclei in your research, please cite it as below."
+title: "BioNuclei: domain-robust nuclear instance segmentation and quantification for fluorescence microscopy"
+type: software
+authors:
+  - family-names: Abdullah
+    given-names: Burhan
+    affiliation: "SRM University Delhi-NCR"
+repository-code: "https://github.com/BurhanAbdullah/BioNuclei-DomainRobust"
+url: "https://burhanabdullah.github.io/BioNuclei-DomainRobust/"
+license: MIT
+version: 0.1.0
+date-released: 2026-11-23
+keywords:
+  - nuclear segmentation
+  - instance segmentation
+  - fluorescence microscopy
+  - bioimage analysis
+  - domain robustness
+  - U-Net
