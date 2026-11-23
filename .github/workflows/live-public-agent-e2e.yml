@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   public-upload-to-agent:
+    # A fork's own main branch is not the production release branch. Only the
+    # upstream repository's main may contact the public Render analyzer.
+    if: ${{ github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -41,10 +44,42 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install browser E2E dependencies
+        id: install_browser_e2e_deps
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install numpy tifffile requests playwright "pypdf>=5.0"
-          python -m playwright install --with-deps chromium
+          set -euo pipefail
+          python -m pip install --upgrade pip 2>&1 | tee browser-setup.log
+          python -m pip install numpy tifffile requests playwright "pypdf>=5.0" 2>&1 | tee -a browser-setup.log
+          python -m playwright install --with-deps chromium 2>&1 | tee -a browser-setup.log
+      - name: Record browser setup failure before the public harness starts
+        if: failure() && steps.install_browser_e2e_deps.outcome == 'failure'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "status": "FAIL",
+              "failure_stage": "browser_dependency_install",
+              "failure_step": "Install browser E2E dependencies",
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+              "head_sha": os.environ.get("GITHUB_SHA"),
+              "runner_os": os.environ.get("RUNNER_OS"),
+              "runner_arch": os.environ.get("RUNNER_ARCH"),
+              "public_upload_attempted": False,
+              "public_inference_attempted": False,
+              "guest_token_seen": False,
+              "job_id_seen": False,
+              "cleanup_attempted": False,
+              "cleanup_verified": False,
+              "note": "Browser dependency installation failed before the public E2E harness started.",
+          }
+          Path("live-agent-e2e-failure.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
       - name: Validate test syntax
         run: python -m py_compile scripts/live_public_agent_e2e.py
       - name: Exercise public upload and real scientific pipeline
@@ -60,6 +95,7 @@ jobs:
         with:
           name: live-public-agent-e2e-failure-${{ github.run_id }}
           path: |
+            browser-setup.log
             live-agent-e2e-failure.png
             live-agent-e2e-failure.json
           if-no-files-found: ignore
