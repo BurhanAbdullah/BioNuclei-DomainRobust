@@ -22,6 +22,45 @@ def sha256(path: Path) -> str:
             h.update(b)
     return h.hexdigest()
 
+def bind_metrics_digest(provenance: dict[str, object], metrics_path: Path) -> dict[str, object]:
+    """Bind the exact evaluation bytes to the E5 provenance record."""
+    if not metrics_path.is_file():
+        raise FileNotFoundError(f'E5 metrics file missing: {metrics_path}')
+    bound = dict(provenance)
+    bound['metrics_file'] = str(metrics_path)
+    bound['metrics_sha256'] = sha256(metrics_path)
+    return bound
+
+
+def verify_metrics_digest(
+    provenance: dict[str, object],
+    *,
+    root: Path = Path.cwd(),
+) -> str:
+    """Fail closed if an E5 artifact's metrics no longer match its provenance."""
+    metrics_file = provenance.get('metrics_file')
+    expected = provenance.get('metrics_sha256')
+    if not isinstance(metrics_file, str) or not metrics_file:
+        raise RuntimeError('E5 provenance is missing metrics_file')
+    if (
+        not isinstance(expected, str)
+        or len(expected) != 64
+        or any(char not in '0123456789abcdef' for char in expected)
+    ):
+        raise RuntimeError('E5 provenance is missing a valid metrics SHA-256')
+
+    metrics_path = Path(metrics_file)
+    if not metrics_path.is_absolute():
+        metrics_path = root / metrics_path
+    if not metrics_path.is_file():
+        raise RuntimeError(f'E5 metrics file is missing: {metrics_path}')
+    actual = sha256(metrics_path)
+    if actual != expected:
+        raise RuntimeError(
+            f'E5 metrics SHA-256 mismatch: expected {expected}, got {actual}'
+        )
+    return actual
+
 
 def require_manifest(path: Path, label: str) -> None:
     if not path.is_file():
@@ -90,7 +129,10 @@ def main():
             'evaluator': 'scripts/evaluate_s_biad634.py',
             'metrics_file': str(eval_out / 'metrics.json'),
         }
-        (out / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+        provenance = bind_metrics_digest(provenance, eval_out / 'metrics.json')
+        provenance_path = out / 'provenance.json'
+        provenance_path.write_text(json.dumps(provenance, indent=2) + '\n')
+        verify_metrics_digest(provenance, root=Path.cwd())
     print(f'E5 completed variants: {", ".join(names)}')
 
 
