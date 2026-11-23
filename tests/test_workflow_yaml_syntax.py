@@ -26,3 +26,18 @@ def test_every_github_actions_workflow_parses_as_yaml() -> None:
         assert isinstance(document.get("jobs"), dict) and document["jobs"], (
             f"{path} must declare at least one job"
         )
+
+
+def test_live_render_endpoint_requires_explicit_main_dispatch_opt_in() -> None:
+    workflow = yaml.safe_load(
+        Path(".github/workflows/community_analyzer_validation.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    inputs = triggers["workflow_dispatch"]["inputs"]
+    assert inputs["allow_live_render"]["default"] is False
+    condition = workflow["jobs"]["live"]["if"]
+    assert "github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust'" in condition
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "github.ref == 'refs/heads/main'" in condition
+    assert "inputs.allow_live_render == true" in condition
+    assert "ephemeral guest-session creation" in inputs["allow_live_render"]["description"]

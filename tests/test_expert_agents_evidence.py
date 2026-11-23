@@ -57,12 +57,15 @@ def test_uint16_raw_profile_reaches_intensity_agent_and_is_evidence_bound() -> N
     assert len(output["agents"]) == 8
 
     intensity = next(agent for agent in output["agents"] if agent["agent"] == "intensity_agent")
+    assert "Raw image min: 0" in intensity["observations"]
+    assert "Raw image dynamic range: 65535 raw intensity units." in intensity["observations"]
     assert "Raw image max: 65535" in intensity["observations"]
     assert "Maximum per-instance nuclear intensity: 65535 raw intensity units." in intensity["observations"]
     assert "Raw image dtype: uint16" in intensity["observations"]
     assert "reports.intensity.max_nuclear_intensity" in intensity["evidence_references"]
     assert any(claim["reference"] == "reports.intensity.max_nuclear_intensity" and claim["value"] == 65535 for claim in intensity["quantitative_claims"])
     assert "adaptive_plan.profile" in intensity["evidence_references"]
+    assert any(claim["reference"] == "adaptive_plan.profile.min" and claim["value"] == 0 for claim in intensity["quantitative_claims"])
     assert "reports.intensity" in intensity["evidence_references"]
     assert len(intensity["evidence_sha256"]) == 64
 
