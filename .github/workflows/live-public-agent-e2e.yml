@@ -17,6 +17,8 @@ on:
   pull_request:
     paths:
       - "scripts/live_public_agent_e2e.py"
+      - "tests/test_public_e2e_health_probe.py"
+      - ".github/workflows/live-public-agent-e2e.yml"
 
 permissions:
   contents: read
@@ -28,7 +30,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-harness:
+    if: github.event_name == 'pull_request'
+    name: Validate E2E harness without public upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact tested revision
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install offline harness test dependencies
+        run: python -m pip install pytest pyyaml
+      - name: Validate E2E syntax and health gate
+        run: |
+          python -m py_compile scripts/live_public_agent_e2e.py
+          python -m pytest -q tests/test_public_e2e_health_probe.py
+
   public-upload-to-agent:
+    if: ${{ github.event_name != 'pull_request' && github.repository == 'BurhanAbdullah/BioNuclei-DomainRobust' && github.ref == 'refs/heads/main' }}
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
