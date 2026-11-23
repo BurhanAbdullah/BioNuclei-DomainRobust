@@ -33,17 +33,49 @@ def digest(path: Path, algorithm: str = "sha256", chunk_size: int = 1024 * 1024)
     return h.hexdigest()
 
 
+
+RETRY_DELAYS_SECONDS = (10, 30, 60, 120)
+
+
+def _open_with_retry(url: str, timeout: int):
+    """Open a URL, retrying server errors, rate limits and network drops.
+
+    Public archives (BioImage Archive, Broad, Kaggle mirrors) return
+    occasional HTTP 500/502/503 responses. Client errors such as 404 fail
+    at once, because retrying cannot fix them.
+    """
+    import time
+    import urllib.error
+
+    for attempt, delay in enumerate((*RETRY_DELAYS_SECONDS, None), start=1):
+        try:
+            return urllib.request.urlopen(url, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if delay is None or not (exc.code >= 500 or exc.code == 429):
+                raise
+            reason = f"HTTP {exc.code}"
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            if delay is None:
+                raise
+            reason = type(exc).__name__
+        print(f"download attempt {attempt} for {url} failed ({reason}); retrying in {delay}s", flush=True)
+        time.sleep(delay)
+    raise RuntimeError("unreachable")
+
 def download(url: str, destination: Path) -> dict[str, str | int | None]:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=120) as response, destination.open("wb") as out:
+    partial = destination.with_suffix(destination.suffix + ".part")
+    with _open_with_retry(url, timeout=120) as response, partial.open("wb") as out:
         shutil.copyfileobj(response, out)
         content_length = response.headers.get("Content-Length")
-        return {
+        result = {
             "downloaded_at_utc": datetime.now(timezone.utc).isoformat(),
             "content_length_bytes": int(content_length) if content_length else None,
             "etag": response.headers.get("ETag"),
             "last_modified": response.headers.get("Last-Modified"),
         }
+    partial.replace(destination)
+    return result
 
 
 def inventory(root: Path) -> list[str]:

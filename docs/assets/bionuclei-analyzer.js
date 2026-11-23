@@ -100,6 +100,9 @@
     } catch (e) { msg('guestMsg', e.message); return false; }
   }
 
+  const UNREACHABLE = 'Account sign-in is unavailable right now. You can continue as guest and analyze images without an account.';
+  const authFailure = (error) => /failed to fetch|networkerror|load failed|fetch failed/i.test(error?.message || '') || error?.name === 'AuthRetryableFetchError' || error?.status === 0;
+
   async function signUp() {
     if (!supa) { msg('signupMsg', 'Account service is unavailable. Guest analysis remains available.'); return; }
     const email = $('signupEmail').value.trim();
@@ -107,8 +110,8 @@
     if (!email || password.length < 8) { msg('signupMsg', 'Enter an email and a password of at least 8 characters.'); return; }
     let data, error;
     try { ({ data, error } = await supa.auth.signUp({ email, password, options: { emailRedirectTo: location.href } })); }
-    catch (_) { msg('signupMsg', 'Could not reach the account service. Check your connection and try again, or continue as guest.'); return; }
-    if (error) { msg('signupMsg', error.message); return; }
+    catch (_) { msg('signupMsg', UNREACHABLE); return; }
+    if (error) { msg('signupMsg', authFailure(error) ? UNREACHABLE : error.message); return; }
     if (data.session) {
       currentToken = data.session.access_token;
       guestToken = '';
@@ -126,8 +129,8 @@
     if (!email || !password) { msg('loginMsg', 'Enter your email and password.'); return; }
     let data, error;
     try { ({ data, error } = await supa.auth.signInWithPassword({ email, password })); }
-    catch (_) { msg('loginMsg', 'Could not reach the account service. Check your connection and try again, or continue as guest.'); return; }
-    if (error) { msg('loginMsg', /invalid login credentials/i.test(error.message) ? 'Email or password is incorrect.' : error.message); return; }
+    catch (_) { msg('loginMsg', UNREACHABLE); return; }
+    if (error) { msg('loginMsg', authFailure(error) ? UNREACHABLE : /invalid login credentials/i.test(error.message) ? 'Email or password is incorrect.' : error.message); return; }
     currentToken = data.session?.access_token || '';
     guestToken = '';
     if (currentToken) showWorkspace(true);
@@ -139,8 +142,8 @@
     if (!email) { msg('loginMsg', 'Enter your email first.'); return; }
     let error;
     try { ({ error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.href })); }
-    catch (_) { msg('loginMsg', 'Could not reach the account service. Check your connection and try again.'); return; }
-    if (error) msg('loginMsg', error.message);
+    catch (_) { msg('loginMsg', UNREACHABLE); return; }
+    if (error) msg('loginMsg', authFailure(error) ? UNREACHABLE : error.message);
     else msg('loginMsg', 'If an account exists for this email, a password reset link is on its way.');
   }
 
