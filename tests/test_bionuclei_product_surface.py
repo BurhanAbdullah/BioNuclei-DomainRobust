@@ -58,7 +58,7 @@ def test_bionuclei_overview_is_concise_and_user_facing():
     for text in ["see the nuclei.", "what it does", "one focused workflow, now inspectable.", "the model",
                  "ai predicts. scientific code measures.", "no online training", "adaptive analysis",
                  "deterministic specialist reviewers", "your result", "do not stop at the mask.",
-                 "open the analyzer", "not benchmark data", "not used as evidence"]:
+                 "open the lab", "not benchmark data", "not used as evidence"]:
         assert text in html
     for stale in ["which ai is actually being used?", "api base url", "inspect an image", "evaluate against ground truth"]:
         assert stale not in html

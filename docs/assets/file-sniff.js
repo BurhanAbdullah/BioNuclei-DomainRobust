@@ -18,7 +18,7 @@
     if (eq(h, 0, [0, 0, 0, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a])) return name.endsWith('.nd2') ? K('nd2_legacy', 'Legacy Nikon ND2 file (JPEG 2000 based)', false, EXPORT) : K('jp2', 'This is a JPEG 2000 image', false, 'Upload the original TIFF, OME-TIFF or ND2 from the microscope.');
     if (eq(h, 0, str('ZISRAWFILE'))) return K('czi', 'This is a Zeiss CZI microscopy file, which BioNuclei cannot read yet', false, EXPORT);
     if (eq(h, 0, [0x70, 0, 0, 0]) && name.endsWith('.lif')) return K('lif', 'This is a Leica LIF microscopy project, which BioNuclei cannot read yet', false, EXPORT);
-    if (h.length >= 132 && eq(h, 128, str('DICM'))) return K('dicom', 'This is a DICOM medical image, which BioNuclei does not analyse', false, 'BioNuclei is built for fluorescence microscopy, not clinical imaging.');
+    if (h.length >= 132 && eq(h, 128, str('DICM'))) return K('dicom', 'This is a DICOM medical image, which BioNuclei does not analyze', false, 'BioNuclei is built for fluorescence microscopy, not clinical imaging.');
     if (eq(h, 0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return K('png', 'This is a PNG image', false, PHOTO);
     if (eq(h, 0, [0xff, 0xd8, 0xff])) return K('jpeg', 'This is a JPEG photo', false, PHOTO);
     if (eq(h, 0, str('GIF87a')) || eq(h, 0, str('GIF89a'))) return K('gif', 'This is a GIF image', false, PHOTO);
@@ -35,7 +35,7 @@
     if (eq(h, 0, str('SIMPLE  ='))) return K('fits', 'This is a FITS astronomy image', false, 'Convert it to TIFF first.');
     if (!h.length) return K('empty', 'This file is empty', false, 'Check the file and upload it again.');
     if (Array.from(h.slice(0, 256)).every(b => (b >= 32 && b < 127) || b === 9 || b === 10 || b === 13)) return K('text', 'This is a text file (for example CSV, notes or code), not an image', false, IMAGE_ITSELF);
-    return K('unknown', 'This file type could not be recognised', false, 'BioNuclei accepts TIFF, OME-TIFF and Nikon ND2.');
+    return K('unknown', 'This file type could not be recognized', false, 'BioNuclei accepts TIFF, OME-TIFF and Nikon ND2.');
   }
 
   function checkUpload(h, filename) {

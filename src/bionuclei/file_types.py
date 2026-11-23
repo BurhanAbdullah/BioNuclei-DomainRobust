@@ -19,7 +19,7 @@ ACCEPTED = {"tiff", "bigtiff", "nd2"}
 class FileKind:
     kind: str          # machine id, e.g. "tiff", "jpeg", "pdf"
     label: str         # what it is, for people
-    accepted: bool     # can BioNuclei analyse it directly?
+    accepted: bool     # can BioNuclei analyze it directly?
     advice: str        # what to do next
 
     def message(self, filename: str = "") -> str:
@@ -51,7 +51,7 @@ def sniff(head: bytes, filename: str = "") -> FileKind:
     if h[:4] == b"\x70\x00\x00\x00" and name.endswith(".lif"):
         return FileKind("lif", "This is a Leica LIF microscopy project, which BioNuclei cannot read yet", False, _MICROSCOPY_EXPORT)
     if len(h) >= 132 and h[128:132] == b"DICM":
-        return FileKind("dicom", "This is a DICOM medical image, which BioNuclei does not analyse", False, "BioNuclei is built for fluorescence microscopy, not clinical imaging.")
+        return FileKind("dicom", "This is a DICOM medical image, which BioNuclei does not analyze", False, "BioNuclei is built for fluorescence microscopy, not clinical imaging.")
     if h[:8] == b"\x89PNG\r\n\x1a\n":
         return _photo("png", "PNG image")
     if h[:3] == b"\xff\xd8\xff":
@@ -86,7 +86,7 @@ def sniff(head: bytes, filename: str = "") -> FileKind:
         return FileKind("text", "This is a text file (for example CSV, notes or code), not an image", False, "Upload the microscopy image itself as TIFF, OME-TIFF or ND2.")
     if not h:
         return FileKind("empty", "This file is empty", False, "Check the file and upload it again.")
-    return FileKind("unknown", "This file type could not be recognised", False, "BioNuclei accepts TIFF, OME-TIFF and Nikon ND2.")
+    return FileKind("unknown", "This file type could not be recognized", False, "BioNuclei accepts TIFF, OME-TIFF and Nikon ND2.")
 
 
 def check_upload(head: bytes, filename: str) -> FileKind:

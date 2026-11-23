@@ -1,4 +1,4 @@
-/* BioNuclei Lab workstation behaviour.
+/* BioNuclei Lab workstation behavior.
  * Layout and state presentation only. Authentication, upload, job polling,
  * results and deletion stay in bionuclei-analyzer.js and bionuclei-progress.js.
  * Nothing here stores image data: files move only from a drop event into the

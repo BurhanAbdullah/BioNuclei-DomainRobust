@@ -138,3 +138,9 @@ pre{font-size:.85rem;line-height:1.65}
 :root{--harvard:var(--wine);--cream:var(--soft);--line:var(--border-subtle);--ink-legacy:var(--ink)}
 /* Fact boxes: label on its own line */
 .meta div>b:first-child,.fact>b:first-child{display:block;margin-bottom:3px;color:var(--ink)}
+/* consistency pass: footer link stacking and eyepiece text room on pages with their own styles */
+.foot-grid a,.footer-grid a{display:block;margin:0 0 8px;text-decoration:none;width:fit-content}
+.foot-grid h4,.footer-grid h4{margin:0 0 12px}
+@media(min-width:721px){.has-eyepiece h1,.has-eyepiece .lead,.has-eyepiece>p,.has-eyepiece .wrap>p{max-width:min(760px,56%)!important}}
+@media(max-width:720px){.foot-grid,.footer-grid{grid-template-columns:1fr 1fr}}
+.visual img[src*="microscopy-illustration"]{aspect-ratio:1400/820;object-fit:contain;height:auto}

@@ -53,7 +53,7 @@ def test_rgb_export_uses_the_channel_with_the_signal(tmp_path):
     src, dst = tmp_path / "dapi_rgb.tif", tmp_path / "plane.tif"
     tifffile.imwrite(src, rgb, photometric="rgb")
     record = recognize_tiff(src, dst)
-    assert record["selected_indices"]["colour channel"] == 2
+    assert record["selected_indices"]["color channel"] == 2
     assert "blue channel" in " ".join(record["notes"])
     assert np.array_equal(tifffile.imread(dst), rgb[..., 2])
 
@@ -107,7 +107,7 @@ def test_report_lines_describe_recognition_and_units(tmp_path):
     record = recognize_tiff(src, tmp_path / "plane.tif")
     lines = _input_lines({"input_metadata": record})
     text = " ".join(lines)
-    assert "Recognised as: 16-bit 2-D fluorescence image" in text
+    assert "Recognized as: 16-bit 2-D fluorescence image" in text
     assert "0.325" in text and "Measurements remain in pixels" in text
 
 
@@ -132,7 +132,7 @@ def test_ome_channels_identify_the_nuclear_channel_and_warn_on_mismatch(tmp_path
     assert info["channels"][1]["emission_peak_nm"] == 461
     notes = " ".join(record["notes"])
     assert "Channel 1 identified as DAPI" in notes
-    assert "channel 0 was analysed, but the metadata identifies channel 1" in notes
+    assert "channel 0 was analyzed, but the metadata identifies channel 1" in notes
 
 
 def test_browser_fluorophore_table_matches_python_source():
