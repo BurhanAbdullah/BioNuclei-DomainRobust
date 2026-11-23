@@ -27,6 +27,8 @@ import tifffile
 from bionuclei.adaptive_agent import build_plan, to_dict
 from bionuclei.expert_agents import SPECIALIST_AGENTS, run_expert_agents
 from bionuclei.inference import predict
+from bionuclei.input_recognition import InputRejected, recognize_tiff
+from bionuclei.file_types import check_upload
 from bionuclei.report import build_report
 from .app import _checkpoint
 
@@ -375,6 +377,9 @@ def _remove_job_artifacts(job_id: str, root: Path) -> bool:
     return not cleanup_failed
 
 
+INPUT_REJECTED_PREFIX = "Input not suitable for analysis."
+
+
 def _cleanup_failed_job(
     job_id: str,
     root: Path,
@@ -466,19 +471,38 @@ def _nd2_to_tiff(source: Path, destination: Path, *, channel: int = 0, time: int
                 raise ValueError(f"ND2 axis {axis} index {value} outside [0, {size - 1}]")
             indexers.append(value)
             selected[axis] = value
+        channel_meta = []
+        try:
+            for ch in (ndfile.metadata.channels or []):
+                meta = ch.channel
+                channel_meta.append({"index": int(meta.index), "name": meta.name or "", "excitation_nm": meta.excitationLambdaNm,
+                                     "emission_nm": meta.emissionLambdaNm, "source": "ND2 metadata"})
+        except Exception:
+            channel_meta = []
         arr = np.asarray(ndfile.asarray())
         plane = np.squeeze(arr[tuple(indexers)])
         if plane.ndim != 2:
             raise ValueError(f"Selected ND2 plane is not 2-D: shape={plane.shape}, axes={axes}, sizes={sizes}")
         tifffile.imwrite(destination, plane)
-        return {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline"}
+        record = {"input_format":"ND2","reader":"nd2","reader_version":getattr(nd2,"__version__","unknown"),"source_shape":list(shape),"source_sizes":sizes,"source_axes":axes,"selected_indices":selected,"selected_plane_shape":list(plane.shape),"conversion":"ND2 plane extracted to TIFF for the 2-D BioNuclei inference pipeline","notes":[]}
+        if channel_meta:
+            from bionuclei.fluorophores import describe_channels
+            from bionuclei.input_recognition import _channel_notes
+            record["channel_identification"] = describe_channels(channel_meta)
+            _channel_notes(record, selected.get("C"))
+        return record
 
 
 def _prepare_input(image_path: Path, root: Path, *, channel: int, time: int, z: int, field: int) -> tuple[Path, dict[str, object]]:
-    if image_path.suffix.lower() != ".nd2":
-        return image_path, {"input_format": "TIFF", "conversion": None}
     destination = root / "input_plane.tif"
-    return destination, _nd2_to_tiff(image_path, destination, channel=channel, time=time, z=z, field=field)
+    if image_path.suffix.lower() != ".nd2":
+        # Recognise the TIFF (axes, RGB, stacks, brightfield-like contrast) and
+        # write exactly one analysable 2-D plane, or reject with a user-facing reason.
+        return destination, recognize_tiff(image_path, destination, channel=channel, time=time, z=z, field=field)
+    try:
+        return destination, _nd2_to_tiff(image_path, destination, channel=channel, time=time, z=z, field=field)
+    except ValueError as exc:
+        raise InputRejected(str(exc)) from exc
 
 
 def _extended_reports(inference_input: Path, output: Path, modules: set[str]) -> dict[str, object]:
@@ -547,7 +571,7 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         output.mkdir(parents=True, exist_ok=True)
         (output / "adaptive_plan.json").write_text(json.dumps(to_dict(plan), indent=2) + "\n")
         if plan.status == "BLOCKED":
-            raise ValueError("Adaptive input-quality gate blocked inference: " + "; ".join(plan.warnings))
+            raise InputRejected("The input-quality gate blocked inference: " + "; ".join(plan.warnings))
         _set_job(job_id, status="running")
         with INFERENCE_LOCK:
             result = predict(inference_input, checkpoint, output, device="cpu")
@@ -574,7 +598,11 @@ def _run(job_id: str, user_id: str, image_path: Path, original_name: str, resear
         _set_job(job_id,status="completed",expires_at=expiry.isoformat(),input_sha256=input_sha256,input_name=original_name,retained_copy=0,research_consent=0)
     except Exception as exc:
         try:
-            _cleanup_failed_job(job_id, root)
+            if isinstance(exc, InputRejected):
+                # Deterministic, user-safe reason: tell the user what to change.
+                _cleanup_failed_job(job_id, root, failure_message=f"{INPUT_REJECTED_PREFIX} {exc}")
+            else:
+                _cleanup_failed_job(job_id, root)
         except Exception as cleanup_exc:
             print(f"bionuclei failure cleanup warning for {job_id}: {type(cleanup_exc).__name__}: {cleanup_exc}",flush=True)
         print(f"bionuclei job {job_id} failed: {type(exc).__name__}: {exc}",flush=True)
@@ -617,8 +645,14 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"Upload exceeds {MAX_UPLOAD_BYTES} bytes")
     suffix = Path(original_name or "").suffix.lower()
+    # Identify the file by its contents first: the name is not trusted.
+    kind = check_upload(data[:512], original_name or "")
+    if not kind.accepted:
+        raise ValueError(kind.message())
     if suffix not in ALLOWED_UPLOAD_SUFFIXES:
         raise ValueError("Unsupported image format. Upload a TIFF (.tif/.tiff) or Nikon ND2 (.nd2) file.")
+    if (kind.kind == "nd2") != (suffix == ".nd2"):
+        raise ValueError(f"The file name ends in {suffix} but the contents are a {kind.label}. Rename it with the correct extension and upload again.")
     if algorithm_profile not in {"auto", "nucleus-segmentation"}:
         raise ValueError("Unsupported analysis profile")
     modules = set(analysis_modules or ["nuclei", "morphology", "intensity"])

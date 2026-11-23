@@ -569,6 +569,20 @@
     setMetric('area');
   }
 
+  // Narrow bridge for the experiment tray (assets/experiment.js). It reuses
+  // this session's authorization without exposing the token itself.
+  window.BioNucleiAnalyzer = Object.freeze({
+    authenticated: () => authenticated(),
+    request: (path, options) => jsonFetch(path, options),
+    async openJob(jobId) {
+      clearResult();
+      currentJob = String(jobId);
+      const body = await jsonFetch(`/jobs/${encodeURIComponent(currentJob)}`);
+      if (String(body?.status || '').toLowerCase() !== 'completed') throw new Error('This analysis is not complete.');
+      await showResult(body);
+    }
+  });
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })();

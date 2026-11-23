@@ -24,6 +24,19 @@ from webapp import community_app
             "cleanup was verified",
         ),
         (
+            community_app.community_service.INPUT_REJECTED_PREFIX
+            + " The file could not be read as a TIFF image.",
+            "verified",
+            "could not be read as a tiff image",
+        ),
+        (
+            community_app.community_service.INPUT_REJECTED_PREFIX
+            + " The file could not be read as a TIFF image."
+            + community_app.community_service._FAILED_JOB_CLEANUP_SUFFIX,
+            "incomplete",
+            "transient artifacts may remain",
+        ),
+        (
             "Legacy failure record with no cleanup evidence",
             "unknown",
             "cleanup status is unknown",

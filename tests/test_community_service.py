@@ -18,7 +18,7 @@ def isolated_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_create_job_rejects_unknown_algorithm(isolated_jobs):
     with pytest.raises(ValueError, match="Unsupported analysis profile"):
-        isolated_jobs.create_job(b"x", "x.tif", "user-1", False, "unknown")
+        isolated_jobs.create_job(b"II*\x00" + b"\x00" * 64, "x.tif", "user-1", False, "unknown")
 
 
 def test_delete_research_copy_requires_existing_job(isolated_jobs):
