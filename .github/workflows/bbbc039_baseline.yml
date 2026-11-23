@@ -18,7 +18,7 @@ on:
       epochs:
         description: 'Training epochs for the reproducible run'
         required: false
-        default: '20'
+        default: '100'
       seed:
         description: 'Random seed'
         required: false
@@ -54,7 +54,7 @@ jobs:
             --output data/manifests/bbbc039_official_split.json
       - name: Train boundary-aware U-Net baseline
         env:
-          EPOCHS: ${{ inputs.epochs || '20' }}
+          EPOCHS: ${{ inputs.epochs || '100' }}
         run: |
           python scripts/train_bbbc039.py \
             --config configs/bbbc039_baseline.yaml \
