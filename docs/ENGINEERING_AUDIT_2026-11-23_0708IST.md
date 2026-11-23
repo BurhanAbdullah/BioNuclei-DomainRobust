@@ -85,3 +85,17 @@ These are runner tests, not BioStudies availability/real dataset evidence. Conso
 - **M7: not ready.** Acceptance evidence incomplete.
 
 Schedule risk remains **HIGH** (about 39 days to 2027-01-01). Prioritize: reconcile #82/#187/#188 runtime guards; verify deployment only after explicit authorization; integrate #136/#140/#158 downloader stack; then rerun fresh exact-main scientific evaluation and release monitor. No source-code edit, local test, inference, public upload, deployment or merge was performed in this audit run.
+
+
+## Follow-up: S-BIAD634 failure root cause confirmed from complete job log
+
+Run [45077440306](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/45077440306), job `137377712207`, is current-main SHA and failed at `Download and inventory S-BIAD634`. I retrieved the complete log and isolated the failure line: `Corrupt ZIP member: rawimages/Neuroblastoma_4.tif`. This is **confirmed archive corruption/CRC failure**, not a demonstrated transient network exception. Baseline artifact `14775742324` was downloaded successfully and its expected digest `09a46f635762b27a9179836e4ede92fe4d58d04fbe5872eb6a8b67a725e07788` is printed in the log; evaluation and metrics were skipped.
+
+Failure artifact `14775299939`:
+- ZIP SHA-256: `0dc2c8298f2d490bade6d5a53c81c185ab350d12e80f1000edfc3e1a26e5a213`.
+- Extracted `outputs/s_biad634_zero_shot/provenance.json` SHA-256: `1d8bd92691d05a33d19f8ca62ed8a2fc2997978dff029ce692b1a7aee3f6576c`.
+- Parsed JSON records only repository, current-main commit, workflow run ID and baseline run ID; it contains no dataset inventory or metrics.
+
+Current main `scripts/download_s_biad634.py` blob `d6e5a27f55cc6c4bd77ef8700aecb891e93a3e3f` downloads once directly to the destination with a 120-second socket timeout, then runs `ZipFile.testzip()`. It detects the corrupt member but has no retry/atomic temporary publication, so the transfer can leave a corrupt destination. PR #136's retry/atomic download alone does not validate CRC before publishing. PR #140 adds resource-bounded ZIP validation and retries corrupt archives; PR #158 is stacked on #140 and adds a total monotonic deadline/socket timeout control. Exact-head CI on these PRs is runner evidence only. A review comment was added to #158 (review ID `6015698282`) to prioritize the #140/#158 stack, rebase and avoid merging #136 separately without reconciliation.
+
+This follow-up strengthens the root-cause evidence but does not complete M2: a real external dataset download, verified manifest, evaluation and metrics remain absent.
