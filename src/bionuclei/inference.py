@@ -19,6 +19,7 @@ from skimage.io import imread
 from skimage.measure import regionprops
 
 from .data import decode_instance_mask
+from .decode import PRODUCT_DECODER, decode_instances
 from .metrics import boundary_f1, dice_coefficient, iou_score
 from .models import BoundaryUNet
 
@@ -91,9 +92,7 @@ def _load_model(checkpoint: Path, device: str = "cpu") -> torch.nn.Module:
 
 def _split_instances(logits: torch.Tensor) -> np.ndarray:
     classes = logits.argmax(dim=1).detach().cpu().numpy()[0]
-    foreground = classes != 0
-    instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
-    return instances.astype(np.int32)
+    return decode_instances(classes, PRODUCT_DECODER)
 
 
 def _measure(instances: np.ndarray) -> list[dict[str, float | int]]:
@@ -253,10 +252,8 @@ def _predict_classes(
     return assembled[:original_height, :original_width].copy()
 
 
-def _instances_from_classes(classes: np.ndarray) -> np.ndarray:
-    foreground = classes != 0
-    instances, _ = ndimage.label(foreground, structure=np.ones((3, 3), dtype=np.uint8))
-    return instances.astype(np.int32)
+def _instances_from_classes(classes: np.ndarray, decoder: str = PRODUCT_DECODER) -> np.ndarray:
+    return decode_instances(classes, decoder)
 
 
 def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu") -> dict:
@@ -300,7 +297,7 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
             for row in measurements
         ) + ("\n" if measurements else "")
     )
-    results = {"n_instances": len(measurements), "image_shape": list(image.shape)}
+    results = {"n_instances": len(measurements), "image_shape": list(image.shape), "decoder": PRODUCT_DECODER}
     (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")
     _write_provenance(output, input_path, checkpoint, device, "predict")
     return results
@@ -330,6 +327,7 @@ def _write_provenance(output: Path, input_path: Path, checkpoint: Path, device: 
         "input": str(input_path.resolve()),
         "checkpoint": str(checkpoint.resolve()),
         "device": device,
+        "decoder": PRODUCT_DECODER,
         "package": "bionuclei-domainrobust",
         "python": platform.python_version(),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),

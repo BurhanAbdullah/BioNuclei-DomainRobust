@@ -1,0 +1,79 @@
+name: Decoder comparison on BBBC039
+
+# Scores the published decoder ("connected") and the Lab decoder ("seeded") on
+# the same released checkpoint and the official BBBC039 held-out test split.
+# The released checkpoint is not retrained here; only decoding differs.
+
+on:
+  push:
+    paths:
+      - 'src/bionuclei/decode.py'
+      - 'scripts/evaluate_bbbc039.py'
+      - '.github/workflows/decoder_comparison.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch and package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm imagecodecs
+          python -m pip install -e . --no-deps
+      - name: Download official BBBC039v1 archives
+        run: python scripts/download_bbbc039.py --data-root data/raw/BBBC039
+      - name: Verify dataset and build official manifest
+        run: |
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py \
+            --metadata-root data/raw/BBBC039/metadata \
+            --output data/manifests/bbbc039_official_split.json
+      - name: Download released checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p outputs/decoder_comparison
+          gh release download checkpoint-bbbc039-v1 -p bionuclei_bbbc039.pt -D outputs/decoder_comparison
+          sha256sum outputs/decoder_comparison/bionuclei_bbbc039.pt | tee outputs/decoder_comparison/checkpoint.sha256
+      - name: Evaluate both decoders on the held-out test split
+        run: |
+          common="--checkpoint outputs/decoder_comparison/bionuclei_bbbc039.pt --manifest data/manifests/bbbc039_official_split.json --data-root data/raw/BBBC039 --split test --output outputs/decoder_comparison"
+          python scripts/evaluate_bbbc039.py $common --decoder connected
+          for h in 0.05 0.1 0.2 0.3 0.5; do
+            python scripts/evaluate_bbbc039.py $common --decoder seeded --seed-h "$h" --tag "_h$h"
+          done
+      - name: Summarize
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, statistics
+          from pathlib import Path
+          root = Path("outputs/decoder_comparison")
+          files = [("connected (published)", "test_metrics.json")] + [
+              (f"seeded h={h}", f"test_metrics_seeded_h{h}.json") for h in ("0.05", "0.1", "0.2", "0.3", "0.5")]
+          print("| Decoder | Dice | AJI | Boundary F1 | Mean abs. count error | Mean count bias | Mean true count |")
+          print("|---|---|---|---|---|---|---|")
+          for name, file in files:
+              data = json.loads((root / file).read_text())
+              m, rows = data["mean"], data["per_image"]
+              err = [r["n_pred"] - r["n_true"] for r in rows]
+              print(f"| {name} | {m['dice']:.4f} | {m['aji']:.4f} | {m['boundary_f1']:.4f} | "
+                    f"{statistics.mean(map(abs, err)):.2f} | {statistics.mean(err):+.2f} | {statistics.mean(r['n_true'] for r in rows):.1f} |")
+          PY
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decoder-comparison-bbbc039
+          path: |
+            outputs/decoder_comparison/*.json
+            outputs/decoder_comparison/checkpoint.sha256
