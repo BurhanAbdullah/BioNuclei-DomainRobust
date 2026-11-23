@@ -179,13 +179,10 @@ body.ws img:not([src]){visibility:hidden}
 @media(max-width:480px){.ws-actions.sticky{flex-direction:column}.ws-actions.sticky .ws-btn{width:100%}}
 .ws-actions .ws-btn{white-space:nowrap}
 /* Specialist evidence cards */
-body.ws #agentDetails{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-body.ws .agent-finding{position:relative;max-height:168px;overflow:hidden;padding:16px 16px 52px;border:1px solid var(--border-subtle);border-radius:12px;background:#fff;font-size:.84rem;line-height:1.5}
-body.ws .agent-finding::after{content:"";position:absolute;left:0;right:0;bottom:0;height:72px;background:linear-gradient(transparent,#fff 62%);pointer-events:none}
-body.ws .agent-finding.is-open{max-height:none}
-body.ws .agent-finding.is-open::after{display:none}
-body.ws .agent-finding h4{margin:0 0 4px;font-size:.9rem;text-transform:capitalize}
-body.ws .agent-finding h4+p{margin:0 0 8px;color:var(--wine);font-weight:600;font-size:.78rem}
+body.ws #agentDetails{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+body.ws .agent-finding{position:relative;padding:16px;border:1px solid var(--border-subtle);border-radius:12px;background:#fff;font-size:.84rem;line-height:1.5}
+body.ws .agent-finding h4{margin:0 0 4px;font-size:.92rem}
+body.ws .agent-finding .agent-role{margin:2px 0 8px;color:var(--grey);font-weight:400;font-size:.8rem}
 body.ws .agent-finding ul{margin:4px 0 10px;padding-left:18px;color:var(--grey);overflow-wrap:anywhere}
 body.ws .agent-finding p{overflow-wrap:anywhere}
 .ws-agent-toggle{position:absolute;left:16px;bottom:12px;z-index:1;appearance:none;border:1px solid var(--border-subtle);background:#fff;border-radius:999px;padding:5px 12px;font-size:.78rem;font-weight:600;color:var(--ink);cursor:pointer}
@@ -266,3 +263,28 @@ body.ws .agent-finding p{overflow-wrap:anywhere}
 .ws-exp-table .ws-why{max-width:none}
 .ws-exp-table td:nth-child(8){min-width:130px}
 .ws-brand img{border-radius:7px}
+/* specialist review cards */
+.agent-finding{border:1px solid var(--border-subtle,#e6e1e3);border-radius:14px;padding:16px 18px;margin:0 0 12px;background:#fff}
+.agent-finding h4{margin:0;font-size:1rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.agent-finding .agent-status{font-size:.72rem;font-weight:600;letter-spacing:.02em;padding:2px 9px;border-radius:999px;background:#e9f6ee;color:#1d6b3a}
+.agent-finding .agent-status.is-other{background:#fdf1e6;color:#8a4b12}
+.agent-finding .agent-role{margin:4px 0 10px;color:var(--grey,#6b6466);font-size:.86rem}
+.agent-finding h5{margin:12px 0 4px;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--grey,#6b6466)}
+.agent-finding ul{margin:0;padding-left:18px}
+.agent-finding li{margin:3px 0;font-size:.9rem;line-height:1.45}
+.agent-finding details{margin-top:12px;border-top:1px dashed var(--border-subtle,#e6e1e3);padding-top:10px}
+.agent-finding summary{cursor:pointer;font-size:.84rem;color:var(--wine,#7b1638);font-weight:600}
+.agent-finding .evidence-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.82rem}
+.agent-finding .evidence-table td{padding:4px 6px;border-bottom:1px solid #f1eeef;vertical-align:top}
+.agent-finding .evidence-table td:last-child{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.agent-finding .digest{font-family:var(--mono,'JetBrains Mono',monospace);font-size:.72rem;color:var(--grey,#6b6466);word-break:break-all;margin:8px 0 0}
+
+body.ws #agentDetails>p,body.ws #agentDetails>.raw-image-profile{grid-column:1/-1}
+.raw-image-profile{border:1px solid var(--border-subtle);border-radius:12px;padding:14px 16px;background:#fff}
+.raw-image-profile h4{margin:0 0 8px;font-size:.92rem}
+.raw-image-profile dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 16px;margin:0}
+.raw-image-profile dt{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--grey)}
+.raw-image-profile dd{margin:0;font-variant-numeric:tabular-nums;font-weight:600}
+.ws-sample{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:12px 0 4px;font-size:.88rem}
+.ws-sample>span:first-child{font-weight:600}
+.ws-btn.small{height:34px;padding:0 14px;font-size:.84rem}

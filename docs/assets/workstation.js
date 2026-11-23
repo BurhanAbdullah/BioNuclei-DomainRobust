@@ -111,25 +111,41 @@
     });
   }
 
-  /* ---------- Compact specialist cards (content untouched, only clamped) ---------- */
-  function enhanceAgents() {
-    qsa('#agentDetails .agent-finding:not([data-ws])').forEach(card => {
-      card.dataset.ws = '1';
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'ws-agent-toggle';
-      button.setAttribute('aria-expanded', 'false');
-      button.textContent = 'Show evidence';
-      button.addEventListener('click', () => {
-        const open = card.classList.toggle('is-open');
-        button.setAttribute('aria-expanded', String(open));
-        button.textContent = open ? 'Hide evidence' : 'Show evidence';
-      });
-      card.appendChild(button);
-    });
+
+  /* ---------- Sample image (public CC0 BBBC039 test image) ---------- */
+  const SAMPLE_URL = 'assets/showcase/sample_bbbc039.tif';
+  const SAMPLE_NAME = 'BBBC039_sample_U2OS_Hoechst.tif';
+  async function loadSample() {
+    const input = $('image');
+    const button = $('sampleButton');
+    if (!input) return;
+    if (button) { button.disabled = true; button.textContent = 'Loading sample…'; }
+    try {
+      const response = await fetch(SAMPLE_URL, { cache: 'force-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([blob], SAMPLE_NAME, { type: 'image/tiff' }));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      if (button) button.textContent = 'Sample loaded';
+    } catch (error) {
+      if (button) { button.disabled = false; button.textContent = 'Use a sample image'; }
+      const info = $('fileInfo');
+      if (info) { info.hidden = false; info.textContent = `The sample image could not be loaded (${error.message}). Please try again.`; }
+    }
   }
-  const agents = $('agentDetails');
-  if (agents) new MutationObserver(enhanceAgents).observe(agents, { childList: true });
+  $('sampleButton')?.addEventListener('click', loadSample);
+  if (new URLSearchParams(location.search).get('sample') === 'bbbc039') {
+    const workspace = $('workspace');
+    const fire = () => { if (workspace && !workspace.hidden && !$('image')?.files?.length) { loadSample(); return true; } return false; };
+    if (!fire() && workspace) {
+      const watcher = new MutationObserver(() => { if (fire()) watcher.disconnect(); });
+      watcher.observe(workspace, { attributes: true, attributeFilter: ['hidden'] });
+    }
+    const note = $('guestMsg');
+    if (note && !note.textContent.trim()) note.textContent = 'Start a guest session and the BBBC039 sample image will load automatically.';
+  }
 
   /* ---------- Live server status from GET /health ---------- */
   const api = String((window.BIONUCLEI_CONFIG || {}).apiBase || '').replace(/\/$/, '');

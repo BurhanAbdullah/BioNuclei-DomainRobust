@@ -1,0 +1,24 @@
+{
+  "dataset": "BBBC039 v1 (Broad Bioimage Benchmark Collection), official held-out test split",
+  "dataset_license": "CC0 1.0",
+  "dataset_url": "https://bbbc.broadinstitute.org/BBBC039",
+  "selection": "test image whose AJI is closest to the split median (typical, not best)",
+  "decoder": "seeded",
+  "seed_h": 0.1,
+  "checkpoint_sha256": "7209a6990514380804210292ac208b0f3b0b0a054338a145e1916044762d7c92",
+  "sample_sha256": "0d93fbe37721d75105462100d1aceee5ae89285f95a0faf8049bf462ca8ff381",
+  "image": {
+    "image": "IXMtest_K05_s9_w1647AEF60-D7B0-4D83-AFA5-2B05E968468F.png",
+    "dice": 0.9748307127281088,
+    "aji": 0.8914371926930132,
+    "n_pred": 131,
+    "n_true": 142
+  },
+  "split": {
+    "n_images": 50,
+    "mean_dice": 0.9695364053402039,
+    "mean_aji": 0.87266970168974,
+    "median_aji": 0.8912692823221164,
+    "mean_abs_count_error": 12.7
+  }
+}

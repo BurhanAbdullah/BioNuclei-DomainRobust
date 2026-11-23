@@ -1,0 +1,57 @@
+name: Website showcase from BBBC039
+
+# Runs the released checkpoint with the Lab decoder on the BBBC039 held-out
+# test split and publishes real outputs for the website to the
+# `showcase-assets` branch (docs/assets/showcase/). BBBC039 is CC0.
+
+on:
+  push:
+    paths:
+      - 'scripts/make_showcase.py'
+      - '.github/workflows/showcase_assets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  showcase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch and package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy scipy pandas scikit-image scikit-learn tifffile pyyaml tqdm imagecodecs pillow
+          python -m pip install -e . --no-deps
+      - name: Download BBBC039 and build the official split
+        run: |
+          python scripts/download_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/verify_bbbc039.py --data-root data/raw/BBBC039
+          python scripts/build_bbbc039_split.py --metadata-root data/raw/BBBC039/metadata \
+            --output data/manifests/bbbc039_official_split.json
+      - name: Download released checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download checkpoint-bbbc039-v1 -p bionuclei_bbbc039.pt -D /tmp/ckpt
+      - name: Build showcase
+        run: |
+          PYTHONPATH=scripts python scripts/make_showcase.py --checkpoint /tmp/ckpt/bionuclei_bbbc039.pt \
+            --manifest data/manifests/bbbc039_official_split.json --data-root data/raw/BBBC039 \
+            --output /tmp/showcase
+          cat /tmp/showcase/showcase.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish to showcase-assets branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B showcase-assets
+          mkdir -p docs/assets/showcase
+          cp /tmp/showcase/* docs/assets/showcase/
+          git add -f docs/assets/showcase
+          git commit -m "Showcase assets from BBBC039 test split (source ${GITHUB_SHA::7})"
+          git push -f origin showcase-assets

@@ -419,42 +419,88 @@
       failed.textContent = `Specialist evidence was not verified for this job: ${specialistVerificationReason}. Specialist findings and downloads are withheld.`;
       agentContainer.appendChild(failed);
     } else if (agents.length) {
+      const ROLES = {
+        image_quality_agent: 'Checks bit depth, dynamic range, saturation and whether the image suits analysis.',
+        segmentation_quality_agent: 'Checks the instance mask for fragments, merges and edge effects.',
+        morphology_agent: 'Summarizes nuclear size and shape.',
+        intensity_agent: 'Summarizes nuclear stain intensity.',
+        population_agent: 'Describes the population: counts, spread and spatial layout.',
+        biological_interpretation_agent: 'States what the measurements can and cannot support biologically.',
+        scientific_review_agent: 'Audits every claim against the measured evidence and training provenance.',
+        report_agent: 'Assembles the report from verified values only.'
+      };
+      const prettyName = raw => {
+        const words = String(raw || 'specialist').replace(/_agent$/i, '').split(/[_\s]+/).filter(Boolean);
+        const text = words.join(' ');
+        const name = text.charAt(0).toUpperCase() + text.slice(1);
+        return /review$/i.test(name) ? name : name + ' review';
+      };
+      const tidyNumber = value => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || String(value).trim() === '') return String(value);
+        if (Number.isInteger(n)) return n.toLocaleString();
+        const abs = Math.abs(n);
+        return n.toLocaleString(undefined, { maximumFractionDigits: abs >= 100 ? 1 : abs >= 1 ? 2 : 4 });
+      };
+      const tidyText = text => String(text).replace(/-?\d+\.\d{5,}/g, m => tidyNumber(m)).replace(/\s*pixels?\^2/g, ' px²').replace(/\bpx\^2/g, 'px²').replace(/([a-z])_([a-z])/g, '$1 $2');
+      const prettyKey = ref => {
+        const parts = String(ref).split('.').filter(p => !/^(reports|adaptive_plan|raw_image)$/.test(p));
+        return parts.map(p => p.replace(/_/g, ' ')).join(' · ') || String(ref);
+      };
+      const prettyUnit = unit => {
+        const u = String(unit || '').replace(/_/g, ' ').trim();
+        if (!u || /^(unitless|fraction|raw intensity units?)$/i.test(u)) return '';
+        return ' ' + u.replace(/pixels?\^2|px\^2/g, 'px²');
+      };
       agents.slice(0, 8).forEach(agent => {
         const card = document.createElement('section');
         card.className = 'agent-finding';
+        const key = String(agent.agent || agent.name || '').toLowerCase();
         const title = document.createElement('h4');
-        title.textContent = agent.agent || agent.name || 'Specialist';
-        card.appendChild(title);
+        title.textContent = prettyName(agent.agent || agent.name);
         const status = agent.status ?? agent.execution_status;
-        const statusLine = document.createElement('p');
-        statusLine.textContent = status == null
-          ? 'Per-agent execution status is not included in this result schema.'
-          : `Execution status: ${String(status)}`;
-        card.appendChild(statusLine);
+        const chip = document.createElement('span');
+        const ok = String(status || '').toLowerCase() === 'completed';
+        chip.className = 'agent-status' + (ok ? '' : ' is-other');
+        chip.textContent = status == null ? 'Status not reported' : (ok ? 'Completed' : String(status));
+        title.appendChild(chip);
+        card.appendChild(title);
+        if (ROLES[key]) {
+          const role = document.createElement('p');
+          role.className = 'agent-role';
+          role.textContent = ROLES[key];
+          card.appendChild(role);
+        }
         const observations = Array.isArray(agent.observations)
           ? agent.observations
           : [agent.statement ?? agent.finding ?? agent.summary].filter(value => value != null && String(value).trim() !== '');
-        appendList(card, 'Observed evidence', observations);
-        appendList(card, 'Limitations', Array.isArray(agent.limitations) ? agent.limitations : []);
-        if (Array.isArray(agent.quantitative_claims)) {
-          appendList(card, 'Verified quantitative claims', agent.quantitative_claims.map(claim =>
-            `${claim.reference}: ${String(claim.value)} ${claim.unit}`
-          ));
-        }
+        appendList(card, 'Findings', observations.map(tidyText));
+        appendList(card, 'Limitations', Array.isArray(agent.limitations) ? agent.limitations.map(tidyText) : []);
+        const claims = Array.isArray(agent.quantitative_claims) ? agent.quantitative_claims : [];
         const references = Array.isArray(agent.evidence_references)
           ? agent.evidence_references
           : (Array.isArray(agent.evidence_refs) ? agent.evidence_refs : []);
-        appendList(card, 'Evidence references', references);
         const digest = agent.evidence_digest || agent.evidence_sha256 || agent.sha256;
-        if (digest) {
-          const digestLine = document.createElement('p');
-          digestLine.textContent = `Evidence SHA-256: ${String(digest)}`;
-          card.appendChild(digestLine);
-        } else {
-          const evidenceNote = document.createElement('p');
-          evidenceNote.textContent = 'Per-agent evidence references and digests are not included in this result schema.';
-          card.appendChild(evidenceNote);
+        const trail = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = `Evidence trail · ${claims.length} verified value${claims.length === 1 ? '' : 's'}`;
+        trail.appendChild(summary);
+        if (claims.length) {
+          const table = document.createElement('table');
+          table.className = 'evidence-table';
+          claims.forEach(claim => {
+            const row = table.insertRow();
+            row.insertCell().textContent = prettyKey(claim.reference);
+            row.insertCell().textContent = tidyNumber(claim.value) + prettyUnit(claim.unit);
+          });
+          trail.appendChild(table);
         }
+        if (references.length) appendList(trail, 'Sources', references.map(prettyKey));
+        const digestLine = document.createElement('p');
+        digestLine.className = 'digest';
+        digestLine.textContent = digest ? `Evidence SHA-256: ${String(digest)}` : 'Evidence SHA-256: not included in this result schema.';
+        trail.appendChild(digestLine);
+        card.appendChild(trail);
         agentContainer.appendChild(card);
       });
     } else {
@@ -472,7 +518,7 @@
       const card = document.createElement('section');
       card.className = 'raw-image-profile';
       const title = document.createElement('h4');
-      title.textContent = 'Computed raw-image intensity profile';
+      title.textContent = 'Raw image intensity profile';
       card.appendChild(title);
       const fields = [
         ['Shape', Array.isArray(profile.shape) ? profile.shape.join(' × ') : profile.shape],
@@ -488,12 +534,21 @@
         ['Zero fraction', profile.zero_fraction],
         ['All values finite', profile.finite]
       ];
+      const list = document.createElement('dl');
       fields.forEach(([label, value]) => {
         if (value === undefined || value === null) return;
-        const line = document.createElement('p');
-        line.textContent = `${label}: ${String(value)}`;
-        card.appendChild(line);
+        const term = document.createElement('dt');
+        term.textContent = label;
+        const detail = document.createElement('dd');
+        const n = Number(value);
+        detail.textContent = typeof value === 'boolean' ? (value ? 'Yes' : 'No')
+          : (typeof value === 'number' && Number.isFinite(n)) ? (Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: Math.abs(n) >= 100 ? 1 : 4 }))
+          : String(value);
+        const pair = document.createElement('div');
+        pair.append(term, detail);
+        list.appendChild(pair);
       });
+      card.appendChild(list);
       agentContainer.appendChild(card);
     }
 

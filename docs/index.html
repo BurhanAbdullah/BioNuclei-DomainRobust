@@ -3,7 +3,7 @@
 <meta name="description" content="BioNuclei is open scientific software for nuclear instance segmentation and quantification in fluorescence microscopy images.">
 <meta property="og:title" content="BioNuclei | Nuclear instance segmentation and quantification">
 <meta property="og:description" content="Turn fluorescence microscopy images into reproducible nuclear measurements, with every step inspectable.">
-<meta property="og:type" content="website">
+<meta property="og:type" content="website"><meta property="og:url" content="https://burhanabdullah.github.io/BioNuclei-DomainRobust/"><meta property="og:image" content="https://burhanabdullah.github.io/BioNuclei-DomainRobust/assets/social-card.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="BioNuclei nucleus outlines on a BBBC039 test image, with Dice 0.970 and AJI 0.873"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://burhanabdullah.github.io/BioNuclei-DomainRobust/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"BioNuclei","description":"Open-source nuclear instance segmentation and quantification for fluorescence microscopy, with a browser Lab, per-nucleus measurements and auditable reports.","codeRepository":"https://github.com/BurhanAbdullah/BioNuclei-DomainRobust","programmingLanguage":"Python","license":"https://opensource.org/licenses/MIT","url":"https://burhanabdullah.github.io/BioNuclei-DomainRobust/","version":"0.1.0","author":{"@type":"Person","name":"Burhan Abdullah","affiliation":{"@type":"Organization","name":"SRM University Delhi-NCR"}},"keywords":"nuclear segmentation, instance segmentation, fluorescence microscopy, bioimage analysis, U-Net"}</script>
 <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/source-serif-4-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -68,6 +68,34 @@
     <a class="lp-scroll" href="#pipeline" aria-label="Scroll to how it works"><span></span></a>
   </section>
 
+  <section id="evidence" class="lp-section lp-evidence" aria-labelledby="evTitle">
+    <div class="lp-wrap">
+      <div class="lp-head" data-reveal>
+        <p class="lp-kicker">Measured, not claimed</p>
+        <h2 id="evTitle">Real output on a held-out benchmark image.</h2>
+        <p>The released model with the Lab&rsquo;s decoder on <a href="https://bbbc.broadinstitute.org/BBBC039">BBBC039</a>, a public benchmark of U2OS nuclei with expert outlines. This is the test image with the median score, not the best one.</p>
+      </div>
+      <figure class="lp-ev-figure" data-reveal>
+        <div class="lp-ev-panels">
+          <div><img src="assets/showcase/showcase_raw.webp" width="696" height="520" loading="lazy" alt="Hoechst-stained U2OS nuclei, BBBC039 test image, contrast stretched"><span>Input &middot; 16-bit Hoechst</span></div>
+          <div><img src="assets/showcase/showcase_prediction.webp" width="696" height="520" loading="lazy" alt="The same image with BioNuclei nucleus outlines in wine red"><span>BioNuclei &middot; 131 nuclei</span></div>
+          <div><img src="assets/showcase/showcase_truth.webp" width="696" height="520" loading="lazy" alt="The same image with expert ground-truth outlines in teal"><span>Expert ground truth &middot; 142 nuclei</span></div>
+        </div>
+        <figcaption>On this image: Dice 0.975, aggregated Jaccard index (AJI) 0.891. The misses are mostly touching nuclei merged into one, the main remaining error across the benchmark.</figcaption>
+      </figure>
+      <dl class="lp-ev-stats" data-reveal>
+        <div><dt>Dice</dt><dd>0.970</dd><p>Pixel overlap with expert masks</p></div>
+        <div><dt>AJI</dt><dd>0.873</dd><p>Instance-level agreement, penalizes merges and splits</p></div>
+        <div><dt>Test images</dt><dd>50</dd><p>Official held-out split, never used in training</p></div>
+        <div><dt>Count error</dt><dd>12.7</dd><p>Mean nuclei per image; dense clusters are undercounted</p></div>
+      </dl>
+      <div class="lp-actions" data-reveal>
+        <a class="lp-btn primary" href="bionuclei-app.html?sample=bbbc039">Try this image in the Lab</a>
+        <a class="lp-btn glass" href="bionuclei-science.html#model">How it was measured</a>
+      </div>
+    </div>
+  </section>
+
   <section id="pipeline" class="lp-section lp-pipeline" aria-labelledby="pipeTitle">
     <div class="lp-wrap">
       <div class="lp-head" data-reveal>
@@ -129,6 +157,35 @@
     </div>
   </section>
 
+  <section id="cite" class="lp-section lp-cite" aria-labelledby="citeTitle">
+    <div class="lp-wrap lp-cite-grid">
+      <div data-reveal>
+        <p class="lp-kicker">For your research</p>
+        <h2 id="citeTitle">Open, reproducible and citable.</h2>
+        <ul class="lp-cite-points">
+          <li><b>Open source.</b> MIT-licensed code, released checkpoint and every evaluation script on GitHub.</li>
+          <li><b>Reproducible.</b> Each result records the checkpoint SHA-256, decoder, input hash and software version.</li>
+          <li><b>Private by design.</b> Uploads are deleted after processing and never used to train the model.</li>
+          <li><b>Honest scope.</b> 2-D fluorescence nuclei. Not for clinical diagnosis or whole-cell segmentation.</li>
+        </ul>
+        <div class="lp-actions"><a class="lp-btn glass" href="https://github.com/BurhanAbdullah/BioNuclei-DomainRobust">View on GitHub</a><a class="lp-btn glass" href="research.html">Validation record</a></div>
+      </div>
+      <div class="lp-cite-box" data-reveal>
+        <div class="lp-cite-bar"><span>Cite BioNuclei</span><button type="button" class="lp-copy" data-copy="#bibtex">Copy BibTeX</button></div>
+<pre id="bibtex">@software{abdullah_bionuclei_2026,
+  author  = {Abdullah, Burhan},
+  title   = {BioNuclei: domain-robust nuclear instance
+             segmentation and quantification for
+             fluorescence microscopy},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/BurhanAbdullah/BioNuclei-DomainRobust},
+  license = {MIT}
+}</pre>
+      </div>
+    </div>
+  </section>
+
   <section data-dark class="lp-section lp-boundary" aria-labelledby="boundTitle">
     <div class="lp-wrap">
       <div class="lp-glass lp-boundary-card" data-reveal>
@@ -150,5 +207,5 @@
   </div>
   <div class="lp-wrap lp-foot-bottom"><span>BioNuclei scientific software · <span data-year></span></span><span>Evidence before claims.</span></div>
 </footer>
-<script src="assets/field.js" defer></script><script src="assets/landing.js" defer></script>
+<script>document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if(!b)return;const n=document.querySelector(b.dataset.copy);const t=n?n.textContent:'';const done=()=>{b.textContent='Copied';setTimeout(()=>{b.textContent='Copy BibTeX'},1800)};if(navigator.clipboard){navigator.clipboard.writeText(t).then(done).catch(()=>{});}else{const r=document.createRange();r.selectNodeContents(n);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);b.textContent='Press Ctrl+C';}});</script><script src="assets/field.js" defer></script><script src="assets/landing.js" defer></script>
 </body></html>
