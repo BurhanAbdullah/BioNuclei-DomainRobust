@@ -28,7 +28,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # PRs validate the harness offline; public upload is reserved for main.
+  validate-harness:
+    if: github.event_name == 'pull_request'
+    name: Validate E2E harness without public upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact tested revision
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile public E2E harness
+        run: python -m py_compile scripts/live_public_agent_e2e.py
+
   public-upload-to-agent:
+    if: github.ref == 'refs/heads/main'
     name: Public upload → real inference → verified specialists → UI/reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -53,6 +70,7 @@ jobs:
           BIONUCLEI_PUBLIC_API_URL: https://bionuclei-community-analyzer.onrender.com
           BIONUCLEI_ANALYSIS_TIMEOUT_MS: "1200000"
           BIONUCLEI_JOB_STALL_TIMEOUT_SECONDS: "240"
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/live_public_agent_e2e.py
       - name: Upload browser failure evidence
         if: failure()

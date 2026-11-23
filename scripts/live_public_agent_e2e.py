@@ -17,6 +17,11 @@ import time
 import zipfile
 from pathlib import Path
 
+try:
+    from .github_api_auth import github_api_headers
+except ImportError:  # Running this file directly from the scripts directory.
+    from github_api_auth import github_api_headers
+
 import numpy as np
 import requests
 import tifffile
@@ -272,7 +277,10 @@ def main() -> None:
             # it must not be used to validate a code revision it does not contain.
             main_commit_response = requests.get(
                 "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/commits/main",
-                headers={"Accept": "application/vnd.github+json"},
+                headers=github_api_headers(
+                    os.environ.get("GITHUB_TOKEN"),
+                    user_agent="bionuclei-live-public-agent-e2e",
+                ),
                 timeout=20,
             )
             state["latest_main_commit_http_status"] = main_commit_response.status_code
@@ -289,7 +297,10 @@ def main() -> None:
             comparison = requests.get(
                 "https://api.github.com/repos/BurhanAbdullah/BioNuclei-DomainRobust/compare/"
                 f"{deployed_commit}...{expected_main_commit}",
-                headers={"Accept": "application/vnd.github+json"},
+                headers=github_api_headers(
+                    os.environ.get("GITHUB_TOKEN"),
+                    user_agent="bionuclei-live-public-agent-e2e",
+                ),
                 timeout=20,
             )
             state["render_main_comparison_http_status"] = comparison.status_code
