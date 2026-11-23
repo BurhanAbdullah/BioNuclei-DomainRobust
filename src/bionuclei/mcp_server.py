@@ -6,6 +6,8 @@ scientific functions, and exposes read-only research resources.
 """
 from __future__ import annotations
 
+import hmac
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -28,6 +30,77 @@ from .inference import evaluate, predict
 from .metrics import aji_score, boundary_f1, dice_coefficient, iou_score
 
 SERVER_NAME = "BioMCP-BioNuclei"
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Return True only for a literal loopback IP address."""
+    candidate = host.strip()
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
+def _validated_http_token(host: str, token: str | None) -> str | None:
+    """Require a strong bearer token whenever Streamable HTTP binds off-loopback."""
+    if not token:
+        if not _is_loopback_host(host):
+            raise RuntimeError(
+                "Refusing a non-loopback BioMCP HTTP bind without "
+                "BIOMCP_MCP_BEARER_TOKEN"
+            )
+        return None
+    if len(token) < 32 or not token.isascii() or any(character.isspace() for character in token):
+        raise RuntimeError(
+            "BIOMCP_MCP_BEARER_TOKEN must contain at least 32 ASCII characters "
+            "and no whitespace"
+        )
+    return token
+
+
+class _BearerTokenASGIMiddleware:
+    """Protect every hosted MCP HTTP request with one configured bearer token."""
+
+    def __init__(self, app: Any, token: str):
+        self.app = app
+        self._token = token.encode("utf-8")
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        authorization = [
+            value for name, value in scope.get("headers", ()) if name.lower() == b"authorization"
+        ]
+        authorized = False
+        if len(authorization) == 1:
+            parts = authorization[0].split()
+            authorized = (
+                len(parts) == 2
+                and parts[0].lower() == b"bearer"
+                and hmac.compare_digest(parts[1], self._token)
+            )
+        if not authorized:
+            body = b'{"error":"unauthorized"}'
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode("ascii")),
+                        (b"cache-control", b"no-store"),
+                        (b"www-authenticate", b"Bearer"),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        await self.app(scope, receive, send)
 
 
 def _require_sdk() -> Any:
@@ -139,13 +212,25 @@ def main() -> None:
 
 
 def main_http() -> None:
-    """Run the MCP server over canonical Streamable HTTP at /mcp."""
-    host = os.getenv("BIOMCP_MCP_HOST", "0.0.0.0")
+    """Run Streamable HTTP locally or behind a bearer-token-protected remote bind."""
+    host = os.getenv("BIOMCP_MCP_HOST", "127.0.0.1")
     port = int(os.getenv("BIOMCP_MCP_PORT", "8001"))
     path = os.getenv("BIOMCP_STREAMABLE_HTTP_PATH", "/mcp")
-    # MCPServer currently owns the Streamable HTTP ASGI runner. The path is
-    # intentionally kept explicit for clients and deployment manifests.
-    build_server().run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
+    token = _validated_http_token(host, os.getenv("BIOMCP_MCP_BEARER_TOKEN"))
+
+    server = build_server()
+    app = server.streamable_http_app(streamable_http_path=path, host=host)
+    if token is not None:
+        app = _BearerTokenASGIMiddleware(app, token)
+
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover - deployment dependency
+        raise RuntimeError(
+            "Hosted BioMCP requires uvicorn. Install with: "
+            "python -m pip install -e '.[mcp]'"
+        ) from exc
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
