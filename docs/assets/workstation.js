@@ -64,9 +64,11 @@
       }
       const file = files && files[0];
       if (!file) return;
-      if (!/\.(tif|tiff|nd2)$/i.test(file.name)) {
-        const info = $('fileInfo');
-        if (info) { info.hidden = false; info.textContent = `${file.name} is not a supported format. Use TIFF/TIF or Nikon ND2.`; }
+      if (!/\.(tif|tiff|nd2)$/i.test(file.name) && window.BioNucleiSniff) {
+        window.BioNucleiSniff.sniffFile(file).then(kind => {
+          const info = $('fileInfo');
+          if (info) { info.hidden = false; info.textContent = `${file.name}: ${kind.message}`; }
+        });
         return;
       }
       const transfer = new DataTransfer();
@@ -74,7 +76,24 @@
       input.files = transfer.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    input.addEventListener('change', syncSteps);
+    input.addEventListener('change', async () => {
+      syncSteps();
+      const file = input.files && input.files[0];
+      if (!file || !window.BioNucleiSniff) return;
+      const kind = await window.BioNucleiSniff.sniffFile(file);
+      const info = $('fileInfo');
+      if (!kind.accepted) {
+        // Use the normal "Remove selected file" path so the analyzer and UI guard both drop the file.
+        $('clearButton')?.click();
+        setTimeout(() => {
+          if (info) { info.hidden = false; info.textContent = `${file.name}: ${kind.message}`; }
+          const run = $('runMsg'); if (run) run.innerHTML = '';
+          syncSteps();
+        }, 0);
+      } else if (info && !info.hidden) {
+        info.textContent = `${info.textContent.split(' · held')[0]} · ${kind.label} · held in browser memory only`;
+      }
+    });
   }
   $('clearButton')?.addEventListener('click', () => setTimeout(syncSteps, 0));
 

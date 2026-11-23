@@ -59,12 +59,12 @@
   </section>
 </main>
 
-<script>(function(){'use strict';const $=id=>document.getElementById(id);let localUrl=null;
+<script src="assets/file-sniff.js"></script><script>(function(){'use strict';const $=id=>document.getElementById(id);let localUrl=null;
 function setState(s,d){$('state').textContent=s;$('state2').textContent=s;$('detail').textContent=d}
 function mib(n){return (n/1048576).toFixed(2)+' MiB'}
 function loadUtif(){return window.UTIF?Promise.resolve():new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s)})}
 function reset(){if(localUrl){URL.revokeObjectURL(localUrl);localUrl=null}}
-async function preview(f){reset();const lower=f.name.toLowerCase();if(!/\.(nd2|tif|tiff)$/.test(lower)){setState('Unsupported file',f.name+' is not a TIFF/TIF or Nikon ND2 file.');return}
+async function preview(f){reset();const lower=f.name.toLowerCase();if(window.BioNucleiSniff){const k=await window.BioNucleiSniff.sniffFile(f);if(!k.accepted){$('image').hidden=true;$('empty').hidden=false;$('empty').querySelector('b').textContent='Not a usable microscopy file';$('empty').querySelector('span').textContent=k.message;$('fileTitle').textContent=f.name;$('format').textContent=k.kind.toUpperCase();$('size').textContent=mib(f.size);setState('Unsupported file',k.message);return}}else if(!/\.(nd2|tif|tiff)$/.test(lower)){setState('Unsupported file',f.name+' is not a TIFF/TIF or Nikon ND2 file.');return}
 $('fileTitle').textContent=f.name;$('fileMeta').textContent=mib(f.size)+' · held in this tab only';$('format').textContent=lower.endsWith('.nd2')?'Nikon ND2':'TIFF';$('size').textContent=mib(f.size);$('depth').textContent='Not decoded';$('pages').textContent='Not decoded';
 $('aiMsg').textContent='The selected file remains in browser memory only. Choose it again in the analysis workspace after navigation; it is never written to browser storage.';
 const img=$('image');if(lower.endsWith('.nd2')){img.hidden=true;$('empty').hidden=false;$('empty').querySelector('b').textContent='ND2 selected';$('empty').querySelector('span').textContent='ND2 previews are not decoded in the browser. Plane selection happens in the analysis workspace.';$('shape').textContent='ND2 acquisition';setState('Image ready','Selected file remains in this page only; choose it again in the analysis workspace after navigation.');return}

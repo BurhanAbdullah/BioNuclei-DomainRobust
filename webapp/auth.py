@@ -75,3 +75,23 @@ def authenticate_optional(request: Request) -> AuthenticatedUser:
     if request.headers.get("Authorization", "").startswith("Bearer "):
         return authenticate(request)
     return authenticate_guest(request)
+
+
+def authenticate_backup(request: Request) -> None:
+    """Allow only the scheduled backup client.
+
+    The server stores just the SHA-256 of the backup token
+    (BIONUCLEI_BACKUP_TOKEN_SHA256). The token grants backup download and
+    nothing else: no account, no job and no admin access.
+    """
+    import hmac
+
+    expected = os.getenv("BIONUCLEI_BACKUP_TOKEN_SHA256", "").strip().lower()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Backups are not configured on this server")
+    token = request.headers.get("X-BioNuclei-Backup-Token", "").strip()
+    if len(token) < 32:
+        raise HTTPException(status_code=401, detail="Backup token required")
+    actual = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(actual, expected):
+        raise HTTPException(status_code=403, detail="Invalid backup token")

@@ -188,7 +188,11 @@
     const f = item.file;
     const lower = f.name.toLowerCase();
     item.warnings = [];
-    if (!/\.(tiff?|nd2)$/.test(lower)) { item.verdict = 'rejected'; item.reason = 'Unsupported format. Use TIFF/TIF or Nikon ND2.'; return; }
+    if (window.BioNucleiSniff) {
+      const kind = await window.BioNucleiSniff.sniffFile(f);
+      item.kind = kind.accepted ? kind.label : '';
+      if (!kind.accepted) { item.verdict = 'rejected'; item.reason = kind.message; return; }
+    } else if (!/\.(tiff?|nd2)$/.test(lower)) { item.verdict = 'rejected'; item.reason = 'Unsupported format. Use TIFF/TIF or Nikon ND2.'; return; }
     const limit = window.__BIONUCLEI_MAX_UPLOAD || 64 * 1048576;
     if (f.size > limit) { item.verdict = 'rejected'; item.reason = `Larger than the ${Math.round(limit / 1048576)} MiB upload limit.`; return; }
     const buf = await f.arrayBuffer();
