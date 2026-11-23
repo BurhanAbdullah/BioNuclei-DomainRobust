@@ -100,3 +100,30 @@ Deadline risk: **high** (39 days to 2027-01-01). Runtime parity/security gates, 
 ## Next action
 
 Continue M0 source/PR audit, then integrate M1 guard changes deliberately as one coherent stack after source/check/log/artifact review. Do not merge, deploy, inspect Render, dispatch public E2E, or perform manual public upload without the required authorization. No source-code change or scientific evaluation was made in this run.
+
+
+## Dataset downloader PR-stack review — 2026-11-23
+
+The exact-main downloader audit found an unbounded ZIP extraction path. Three open PRs provide related, but stacked/separate, fixes. Their exact-head CI jobs and full logs were refreshed; all are runner-only evidence.
+
+
+### PR #136 — transient download retry
+
+- Head `a85ea1801a58f4146b9540e9e075e0c1f00fd228`, base current main `d4a653e94501e8b9f1ec9de09ff71720f90ab340` (now stale).
+- Exact-head CI [43723583459](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43723583459), job `132840586924`: **151 passed, 1 skipped**.
+- Retries only transient transport and retryable HTTP failures, writes to temporary files, atomically replaces the prior archive only after successful transfer/CRC validation, and preserves previous destination on failure.
+
+### PR #140 — bounded archive and expansion
+
+- Head `dc42500e447c297682a4f7296833af952b40ee56`, base PR #139 head `1fd0de5f7660148ba1341c6087c1fdcc7c3143d5`.
+- Exact-head CI [43727201964](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/43727201964), job `132851635754`: **172 passed, 1 skipped**.
+- Limits compressed size to 600 MiB, 512 ZIP entries, 64 MiB per member and 768 MiB total expansion; validates canonical paths, duplicates and special member types before CRC scanning/extraction. These are explicit ceilings, not measured archive sizes.
+
+### PR #158 — total download deadline (stacked on #140)
+
+- Head `b00a0558a51bc3daa5ddd42808268d5038c26d7a`, base PR #140 head `dc42500e447c297682a4f7296833af952b40ee56`.
+- Exact-head CI [44051271731](https://github.com/BurhanAbdullah/BioNuclei-DomainRobust/actions/runs/44051271731), job `133929411739`: **176 passed, 1 skipped**.
+- Adds a 10-minute monotonic total deadline, 10-second inactivity timeout, bounded `read1(64 KiB)` streaming and a slow-trickle regression test. It inherits #140's archive/expansion checks.
+
+
+The current-main downloader has none of these changes. #136 is a separate retry-only stack; #140/#158 depend on #139/#140 and overlap the same downloader. Do not merge the stacks independently. Compare and integrate a single coherent version retaining retry/atomic replacement, archive/member limits, path validation, CRC validation and total-time bounds. Exact-head CI success is not a live BioStudies download or evaluation. The current failure's exception is not visible in its artifact/log; the historical #136 evidence identifies a prior `RemoteDisconnected`, but that does not prove the cause of run 45077440306.
