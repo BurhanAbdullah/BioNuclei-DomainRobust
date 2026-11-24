@@ -1,0 +1,27 @@
+{
+  "title": "BioNuclei: domain-robust nuclear instance segmentation and quantification for fluorescence microscopy",
+  "upload_type": "software",
+  "description": "<p>BioNuclei is open-source software for nuclear instance segmentation and per-nucleus quantification in 2-D fluorescence microscopy. It combines a Boundary U-Net with a seeded watershed decoder, per-nucleus measurements, quality control and an evidence-bound report, and runs as a Python package, a FastAPI service and a browser Lab.</p><p>On the BBBC039 held-out test split (50 images) the released checkpoint scores Dice 0.970 and aggregated Jaccard index 0.873. Each result records the checkpoint SHA-256, decoder, input hash and software version.</p><p>Research software. Not for clinical diagnosis.</p>",
+  "creators": [
+    {
+      "name": "Abdullah, Burhan",
+      "affiliation": "SRM University Delhi-NCR"
+    }
+  ],
+  "license": "MIT",
+  "keywords": [
+    "nuclear segmentation",
+    "instance segmentation",
+    "fluorescence microscopy",
+    "bioimage analysis",
+    "domain robustness",
+    "U-Net"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://burhanabdullah.github.io/BioNuclei-DomainRobust/",
+      "relation": "isDocumentedBy",
+      "resource_type": "publication-softwaredocumentation"
+    }
+  ]
+}
