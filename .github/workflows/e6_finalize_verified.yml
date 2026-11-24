@@ -67,11 +67,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          meta="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}")"
-          test "$(jq -r '.expired' <<<"$meta")" = "false"
-          test "$(jq -r '.digest' <<<"$meta")" = "$EXPECTED_E4_DIGEST"
+          # Artifact 12183110279 expired on 2026-11-18; fetch the byte-identical
+          # copy (same digest) from the evidence-package-40061151659 release.
+          test "${E4_ARTIFACT_ID}" = "12183110279"
+          bash scripts/fetch_frozen_e4.sh e4_frozen
+          cp e4_frozen/e4-checkpoint.zip e4-checkpoint.zip
           echo "E4 artifact verified: ${E4_ARTIFACT_ID} / ${EXPECTED_E4_DIGEST}"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4-checkpoint.zip
           unzip -q e4-checkpoint.zip -d e4-checkpoint
           checkpoint_file="$(find e4-checkpoint -type f -path '*/outputs/e4_domain_robust/last.pt' -print -quit)"
           test -n "$checkpoint_file" || { echo "The verified E4 artifact has no expected last.pt checkpoint"; exit 1; }

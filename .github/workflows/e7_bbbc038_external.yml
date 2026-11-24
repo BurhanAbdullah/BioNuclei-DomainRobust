@@ -77,21 +77,16 @@ jobs:
           assert not torch.cuda.is_available(), 'Unexpected CUDA runtime on CPU validation runner'
           PY
 
-      - name: Verify retained E4 artifact identity
+      - name: Fetch and verify frozen E4 checkpoint (permanent release copy)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          digest="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}" --jq '.digest')"
-          echo "Artifact digest: ${digest}"
-          test "${digest}" = "${EXPECTED_E4_DIGEST}"
-
-      - name: Download retained E4 artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${E4_ARTIFACT_ID}/zip" > e4.zip
+          # Artifact 12183110279 expired on 2026-11-18. The byte-identical archive
+          # (same digest) lives in the evidence-package-40061151659 release.
+          test "${E4_ARTIFACT_ID}" = "12183110279"
+          bash scripts/fetch_frozen_e4.sh e4_frozen
+          cp e4_frozen/e4-checkpoint.zip e4.zip
           unzip -q e4.zip -d e4_artifact
           test -f e4_artifact/outputs/e4_domain_robust/last.pt
 
