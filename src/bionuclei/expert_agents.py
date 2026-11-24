@@ -166,7 +166,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     if is_number(profile.get("min")) and is_number(profile.get("max")):
         profile_observations.append(f"Raw image dynamic range: {display_number(profile['max'] - profile['min'])} raw intensity units.")
     if profile.get("dtype") == "uint16" and is_number(profile.get("max")) and profile["max"] > 255:
-        profile_observations.append(f"Raw uint16 intensities exceed the 8-bit range; maximum recorded value: {display_number(profile['max'])}.")
+        profile_observations.append(f"Raw uint16 intensities exceed the 8-bit range. Maximum recorded value: {display_number(profile['max'])}.")
 
     nuclei_count = reports.get("nuclei_count", results.get("n_instances"))
     count_valid = isinstance(nuclei_count, int) and not isinstance(nuclei_count, bool) and nuclei_count >= 0
@@ -191,7 +191,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
         AgentFinding(
             "image_quality_agent",
             tuple(image_observations),
-            tuple(warnings) or ("No QC warnings were emitted; visual inspection is still recommended.",),
+            tuple(warnings) or ("No QC warnings were emitted. Visual inspection is still recommended.",),
             ("adaptive_plan.status", "adaptive_plan.warnings", "adaptive_plan.profile", "adaptive_plan.cnn_pattern_check"),
         ),
     ]
@@ -200,7 +200,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     segmentation_observations.append(f"Measured nuclear instance count: {nuclei_count}." if count_valid else "A valid measured nuclear instance count is unavailable.")
     segmentation_observations.extend(cnn_observations)
     if count_valid and nuclei_count == 0:
-        segmentation_observations.append("No nuclear instances were detected; object-level summaries may be unavailable.")
+        segmentation_observations.append("No nuclear instances were detected. Object-level summaries may be unavailable.")
     reported_instances = results.get("n_instances")
     if count_valid and isinstance(reported_instances, int) and not isinstance(reported_instances, bool):
         if reported_instances != nuclei_count:
@@ -210,7 +210,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     findings.append(AgentFinding(
         "segmentation_quality_agent",
         tuple(segmentation_observations),
-        ("The foreground count is not an accuracy metric; no per-upload ground-truth comparison was performed.",
+        ("The foreground count is not an accuracy metric. No per-upload ground-truth comparison was performed.",
          "Review the returned mask and overlay before interpreting the detected instances."),
         ("reports.nuclei_count", "adaptive_plan.cnn_pattern_check", "reports.spatial.instance_count"),
     ))
@@ -232,7 +232,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     findings.append(AgentFinding(
         "morphology_agent",
         tuple(morphology_observations),
-        ("Morphology describes measured geometry only; it does not establish a biological mechanism or phenotype.",),
+        ("Morphology describes measured geometry only. It does not establish a biological mechanism or phenotype.",),
         ("reports.morphology", "reports.nuclei_count"),
     ))
 
@@ -249,7 +249,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
             intensity_observations.append(f"{label}: {display_number(value)} raw intensity units.")
             intensity_value_count += 1
     if intensity_value_count == 0:
-        intensity_observations.append("No finite per-nucleus intensity summary was produced; confirm that instances were detected and the intensity module ran.")
+        intensity_observations.append("No finite per-nucleus intensity summary was produced. Confirm that instances were detected and the intensity module ran.")
     intensity_evidence_refs = ["reports.intensity", "adaptive_plan.profile"]
     if is_number(intensity.get("max_nuclear_intensity")):
         intensity_evidence_refs.append("reports.intensity.max_nuclear_intensity")
@@ -333,7 +333,7 @@ def run_expert_agents(results: dict[str, Any]) -> dict[str, Any]:
     findings.append(AgentFinding(
         "report_agent",
         tuple(report_observations),
-        ("The report summarizes computed evidence; it does not create new measurements or validate model accuracy.",),
+        ("The report summarizes computed evidence. It does not create new measurements or validate model accuracy.",),
         ("input_sha256", "analysis_modules", "reports", "reports.spatial", "model"),
     ))
 

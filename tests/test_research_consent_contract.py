@@ -22,5 +22,5 @@ def test_analyze_rejects_unimplemented_research_consent(monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["detail"] == (
-        "Research retention is not implemented; uploads are processed transiently and are not used for training."
+        "Research retention is not implemented. Uploads are processed transiently and are not used for training."
     )

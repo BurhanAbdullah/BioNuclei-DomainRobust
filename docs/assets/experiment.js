@@ -220,7 +220,7 @@
     item.dims = dims.join(' · ');
     if (Math.min(h.width, h.height) < MIN_SIDE) { item.verdict = 'rejected'; item.reason = `Only ${h.width}×${h.height} px; needs ${MIN_SIDE} px per side.`; return; }
     if (h.sampleFormat === 3 && h.bits === 64) item.warnings.push('64-bit float data.');
-    try { await decodePreview(item, buf, h); } catch (_) { item.warnings.push('Preview unavailable; the server will check contrast.'); }
+    try { await decodePreview(item, buf, h); } catch (_) { item.warnings.push('Preview unavailable. The server will check contrast.'); }
     if (item.contrast) {
       if (item.contrast.sd === 0 || item.contrast.p995 === item.contrast.p01) { item.verdict = 'rejected'; item.reason = 'The first plane is blank (no intensity variation).'; return; }
       if (item.contrast.relMedian > 0.55 && item.contrast.skew < -0.5) { item.verdict = 'rejected'; item.reason = rgb ? 'Looks like a color brightfield or stained-histology image (bright background, darker objects).' : 'Looks like brightfield or phase contrast (bright background, darker objects).'; return; }
@@ -238,7 +238,7 @@
   /* ---------- Rendering ---------- */
   const VERDICT = { pending: ['Checking…', 'is-pending'], ready: ['Ready', 'is-ready'], plane: ['Choose plane', 'is-plane'], rejected: ['Not suitable', 'is-rejected'], duplicate: ['Duplicate', 'is-rejected'] };
   const runnable = i => i.verdict === 'ready' || i.verdict === 'plane';
-  function fmtNum(v, d = 1) { return v == null || !Number.isFinite(+v) ? '—' : (+v).toLocaleString(undefined, { maximumFractionDigits: d }); }
+  function fmtNum(v, d = 1) { return v == null || !Number.isFinite(+v) ? 'n/a' : (+v).toLocaleString(undefined, { maximumFractionDigits: d }); }
 
   function render() {
     const body = qs('[data-exp-body]');

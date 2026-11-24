@@ -120,7 +120,7 @@ def _pick_rgb_channel(rgb: np.ndarray) -> tuple[int, str]:
     """Choose the color channel that carries the fluorescence signal."""
     channels = [rgb[..., i].astype(np.float64) for i in range(min(3, rgb.shape[-1]))]
     if all(np.array_equal(channels[0], c) for c in channels[1:]):
-        return 0, "All color channels are identical, so the RGB file is a greyscale image; channel 0 was used."
+        return 0, "All color channels are identical, so the RGB file is a greyscale image. Channel 0 was used."
     contrast = []
     for c in channels:
         step = max(1, c.size // 250_000)
@@ -185,7 +185,7 @@ def recognize_tiff(source: Path, destination: Path, *, channel: int = 0, time: i
                 value = 0
             if value < 0 or value >= size:
                 name = _AXIS_NAMES.get(axis, axis)
-                raise InputRejected(f"The image has {size} {name} {'entries' if size != 1 else 'entry'} (0 to {size - 1}); index {value} is out of range.")
+                raise InputRejected(f"The image has {size} {name} {'entries' if size != 1 else 'entry'} (0 to {size - 1}). Index {value} is out of range.")
             indexers.append(value)
             if size > 1:
                 selected[_AXIS_NAMES.get(axis, axis)] = value
@@ -225,7 +225,7 @@ def recognize_tiff(source: Path, destination: Path, *, channel: int = 0, time: i
 
     profile = _contrast_profile(plane)
     if profile["std"] == 0 or profile["p995"] == profile["p01"]:
-        raise InputRejected("The selected plane has no intensity variation; it appears blank.")
+        raise InputRejected("The selected plane has no intensity variation. It appears blank.")
     if _looks_like_transmitted_light(profile):
         raise InputRejected(
             "Most pixels are bright and the objects are darker than the background. This looks like a brightfield, "
@@ -245,7 +245,7 @@ def recognize_tiff(source: Path, destination: Path, *, channel: int = 0, time: i
     })
     if selected and not rgb_axis:
         described = ", ".join(f"{k} {v}" for k, v in selected.items())
-        record["notes"].append(f"Multi-dimensional TIFF ({axes}); analyzed {described}.")
+        record["notes"].append(f"Multi-dimensional TIFF ({axes}). Analyzed {described}.")
     _channel_notes(record, selected.get("channel", 0 if "C" in axes else None))
     tifffile.imwrite(destination, np.ascontiguousarray(plane))
     return record

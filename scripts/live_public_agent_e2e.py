@@ -921,7 +921,7 @@ def main() -> None:
                     for required_text in (
                         "BioNuclei Quantitative Bioimaging Analysis Report",
                         "Specialist execution and evidence status",
-                        "Training provenance is not established; no training-image count is claimed.",
+                        "Training provenance is not established. No training-image count is claimed.",
                     ):
                         require(required_text in html_text,
                                 f"ZIP HTML report omitted required evidence/policy text: {required_text!r}")

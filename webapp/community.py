@@ -169,7 +169,7 @@ def _validate_specialist_artifact(results: dict[str, object], expert: object) ->
         if unselected:
             empty_payload = "{}"
             expected_observation = "Not applicable: required analysis module(s) not selected: " + ", ".join(unselected) + "."
-            expected_limitation = "This reviewer did not execute because its required modules were not selected; no findings or quantitative claims are asserted."
+            expected_limitation = "This reviewer did not execute because its required modules were not selected. No findings or quantitative claims are asserted."
             if agent.get("status") != "not_applicable":
                 reject("reviewer should be not_applicable because required modules were not selected: " + name)
             if agent.get("observations") != [expected_observation] or agent.get("limitations") != [expected_limitation]:
@@ -310,8 +310,8 @@ _INTERRUPTED_JOB_ERROR = (
     "Analysis worker stopped before completing this job. Please retry the analysis."
 )
 _FAILED_JOB_CLEANUP_SUFFIX = (
-    " Cleanup is incomplete; transient artifacts may remain. "
-    "Automatic cleanup retries will continue; please retry the analysis later."
+    " Cleanup is incomplete. Transient artifacts may remain. "
+    "Automatic cleanup retries will continue. Please retry the analysis later."
 )
 
 
@@ -686,7 +686,7 @@ def create_job(data: bytes, original_name: str, user_id: str, research_consent: 
         with ACTIVE_JOB_THREADS_LOCK:
             ACTIVE_JOB_THREADS.pop(job_id, None)
         _cleanup_failed_job(job_id, root)
-        raise RuntimeError("Could not start the analysis worker; the job was recorded as failed.") from exc
+        raise RuntimeError("Could not start the analysis worker. The job was recorded as failed.") from exc
     return job_id
 
 
@@ -844,7 +844,7 @@ def delete_job(job_id: str, user_id: str) -> bool:
         # Keep the owner-scoped row so the owner can retry deletion. Never report
         # success or erase metadata while source/result bytes may still exist.
         raise OSError(
-            "Could not remove all transient job artifacts; job metadata was retained for retry"
+            "Could not remove all transient job artifacts. Job metadata was retained for retry"
         ) from exc
 
     with DB_LOCK, _db() as conn:
@@ -875,7 +875,7 @@ def delete_research_copy(job_id: str, user_id: str) -> bool:
     except OSError as exc:
         # Preserve consent/retention metadata until deletion is confirmed.
         raise OSError(
-            "Could not remove the retained research copy; metadata was retained for retry"
+            "Could not remove the retained research copy. Metadata was retained for retry"
         ) from exc
 
     with DB_LOCK, _db() as conn:
@@ -919,7 +919,7 @@ def recover_interrupted_jobs(
     cutoff = (current_time - lease).isoformat()
     message = (
         "Analysis worker stopped before completing this job. Artifact cleanup is being "
-        "verified; please retry the analysis."
+        "verified. Please retry the analysis."
     )
     interrupted: list[str] = []
     active_statuses = ("queued", "planning", "running", "measuring", "expert_review", "packaging")

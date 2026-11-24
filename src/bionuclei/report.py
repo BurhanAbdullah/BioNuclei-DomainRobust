@@ -44,11 +44,11 @@ def _agent_lines(payload: dict[str, Any]) -> list[str]:
         observations = observations + "." if observations else observations
         limitations = limitations + "." if limitations else limitations
         if status == "not_applicable":
-            text = f"{name}: NOT APPLICABLE — {observations or 'Required analysis module was not selected.'}"
+            text = f"{name}: NOT APPLICABLE: {observations or 'Required analysis module was not selected.'}"
         elif status != "completed":
-            text = f"{name}: INCOMPLETE — {observations or 'Specialist execution did not complete.'}"
+            text = f"{name}: INCOMPLETE: {observations or 'Specialist execution did not complete.'}"
         else:
-            text = f"{name}: COMPLETED — {observations or 'No additional observation.'}"
+            text = f"{name}: COMPLETED: {observations or 'No additional observation.'}"
         if limitations:
             text += f" Limitation: {limitations}"
         lines.append(text)
@@ -78,7 +78,7 @@ def _input_lines(payload: dict[str, Any]) -> list[str]:
         lines.append(f"Analyzed plane size: {plane[0]} x {plane[1]} px, {meta.get('selected_plane_dtype', meta.get('dtype', ''))}.")
     size = meta.get("pixel_size")
     if isinstance(size, dict) and size.get("x"):
-        lines.append(f"Pixel size from {size.get('source', 'metadata')}: {size['x']:.4g} {size.get('unit', '')}. Area and perimeter are also given in calibrated units; other values are unitless or in pixels.")
+        lines.append(f"Pixel size from {size.get('source', 'metadata')}: {size['x']:.4g} {size.get('unit', '')}. Area and perimeter are also given in calibrated units. Other values are unitless or in pixels.")
     else:
         lines.append("No pixel size was found in the file metadata. All measurements are in pixels.")
     for note in meta.get("notes") or []:
@@ -159,7 +159,7 @@ def _review_flags(payload: dict[str, Any], areas: list[float]) -> list[str]:
     if image_area and areas:
         largest = max(areas)
         if largest > 0.25 * image_area:
-            flags.append(f"One object covers {largest / image_area:.0%} of the image. A single nucleus this large is implausible; the segmentation is very likely invalid for this image.")
+            flags.append(f"One object covers {largest / image_area:.0%} of the image. A single nucleus this large is implausible. The segmentation is very likely invalid for this image.")
         if len(areas) > image_area / 40:
             flags.append(f"{len(areas):,} objects in {image_area:,.0f} px suggests over-segmentation (fewer than 40 px per object).")
     if len(areas) >= 10:
@@ -399,7 +399,7 @@ def _build_pdf(payload: dict[str, Any], output_dir: Path, areas: list[float], fl
         story.append(Paragraph(esc(line), small))
     training_text = (f"Verified specialist training corpus: {training['validated_images']} validated images."
                      if training["verified"] and training["claim_allowed"] and training["validated_images"] is not None
-                     else "Training provenance is not established; no training-image count is claimed.")
+                     else "Training provenance is not established. No training-image count is claimed.")
     story.append(Paragraph(esc(training_text + " Model weights are not updated during user analysis."), body))
     story.append(Paragraph("5. Limitations", heading))
     story += [Paragraph(esc(item), body, bulletText="•") for item in LIMITATIONS + sec["closing"]]
@@ -443,13 +443,13 @@ def build_report(payload: dict[str, Any], output_dir: Path) -> Path:
     counts, edges = _histogram(areas)
     if counts:
         peak = max(counts) or 1
-        bars = "".join(f"<rect x='{8 + k * 24}' y='{150 - 130 * c / peak:.1f}' width='20' height='{130 * c / peak:.1f}' fill='#7B1638'><title>{edges[k]:,.0f}–{edges[k + 1]:,.0f} px²: {c}</title></rect>" for k, c in enumerate(counts))
+        bars = "".join(f"<rect x='{8 + k * 24}' y='{150 - 130 * c / peak:.1f}' width='20' height='{130 * c / peak:.1f}' fill='#7B1638'><title>{edges[k]:,.0f} to {edges[k + 1]:,.0f} px²: {c}</title></rect>" for k, c in enumerate(counts))
         figs.append(f"<figure><svg viewBox='0 0 300 175' role='img' aria-label='Histogram of nuclear area'>{bars}<line x1='4' y1='150' x2='296' y2='150' stroke='#999'/><text x='4' y='168' font-size='9' fill='#64646D'>{edges[0]:,.0f}</text><text x='296' y='168' font-size='9' fill='#64646D' text-anchor='end'>{edges[-1]:,.0f} px²</text></svg><figcaption>Figure 2. Distribution of nuclear area, {len(areas):,} {_plural(len(areas), 'object', 'objects')}.</figcaption></figure>")
     figure_html = f"<h2>Figures</h2><div class='figs'>{''.join(figs)}</div>" if figs else ""
     agents = "".join(f"<li>{esc(line)}</li>" for line in _agent_lines(payload)) or "<li>No specialist agent findings were recorded for this run.</li>"
     training_text = (f"Verified specialist training corpus: {training['validated_images']} validated images."
                      if training["verified"] and training["claim_allowed"] and training["validated_images"] is not None
-                     else "Training provenance is not established; no training-image count is claimed.")
+                     else "Training provenance is not established. No training-image count is claimed.")
     para = lambda items: "".join(f"<p>{esc(t)}</p>" for t in items)
     style = ("body{font-family:Inter,Segoe UI,Arial,sans-serif;max-width:920px;margin:40px auto;padding:0 24px;line-height:1.55;color:#111}"
              "h1{font-family:Georgia,serif;font-size:1.9rem;margin:0 0 4px}h2{color:#7B1638;font-size:1.1rem;margin-top:1.8em}"

@@ -43,7 +43,7 @@ def test_out_of_range_plane_index_is_rejected_with_reason(tmp_path):
     stack = np.stack([_fluorescence(seed=i) for i in range(3)])
     src = tmp_path / "z.tif"
     tifffile.imwrite(src, stack, imagej=True, metadata={"axes": "ZYX"})
-    with pytest.raises(InputRejected, match=r"3 z entries \(0 to 2\); index 5"):
+    with pytest.raises(InputRejected, match=r"3 z entries \(0 to 2\)\. Index 5"):
         recognize_tiff(src, tmp_path / "plane.tif", z=5)
 
 

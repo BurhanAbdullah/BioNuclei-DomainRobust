@@ -655,7 +655,7 @@ def test_delete_job_preserves_metadata_when_physical_cleanup_fails(community, mo
         return original_rmtree(path, *args, **kwargs)
 
     monkeypatch.setattr(module.shutil, "rmtree", fail_job_root)
-    with pytest.raises(OSError, match="metadata was retained for retry"):
+    with pytest.raises(OSError, match="Job metadata was retained for retry"):
         module.delete_job(job_id, user_id)
 
     row = module._get_job(job_id, user_id)
@@ -689,7 +689,7 @@ def test_delete_research_copy_preserves_consent_metadata_when_cleanup_fails(
         return original_rmtree(path, *args, **kwargs)
 
     monkeypatch.setattr(module.shutil, "rmtree", fail_research_copy)
-    with pytest.raises(OSError, match="metadata was retained for retry"):
+    with pytest.raises(OSError, match="Metadata was retained for retry"):
         module.delete_research_copy(job_id, user_id)
 
     row = module._get_job(job_id, user_id)
