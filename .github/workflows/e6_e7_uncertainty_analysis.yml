@@ -161,6 +161,11 @@ jobs:
           echo "$selected_artifact" > evidence/e7_artifact_id.txt
           echo "Selected E7 run $selected_run artifact $selected_artifact"
 
+      - name: Fetch and verify frozen E4 checkpoint metadata (permanent release copy)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch_frozen_e4.sh e4_frozen
+
       - name: Verify evidence layout, provenance, and record exact artifact identities
         env:
           GH_TOKEN: ${{ github.token }}
@@ -199,8 +204,10 @@ jobs:
           records['e7']={'artifact_id':e7_meta['id'],'name':e7_meta['name'],'digest':e7_meta['digest'],'run_id':e7_meta['workflow_run']['id'],'source_commit':e7_meta['workflow_run']['head_sha']}
           final_meta=json.loads(root.joinpath('e6-final-artifact-metadata.json').read_text())
           records['e6_final']={'artifact_id':final_meta['id'],'name':final_meta['name'],'digest':final_meta['digest'],'run_id':final_meta['workflow_run']['id'],'source_commit':final_meta['workflow_run']['head_sha']}
-          e4_meta=json.loads(__import__('subprocess').check_output(['gh','api','repos/'+__import__('os').environ['GITHUB_REPOSITORY']+'/actions/artifacts/12183110279'],text=True))
-          assert e4_meta['expired'] is False and e4_meta['digest']=='sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d'
+          # Artifact 12183110279 expired on 2026-11-18; its metadata and byte-identical
+          # archive come from the evidence-package-40061151659 release (fetched above).
+          e4_meta=json.loads(Path('e4_frozen/e4-artifact-metadata.json').read_text())
+          assert e4_meta['id']==12183110279 and e4_meta['digest']=='sha256:89e66617e272d30ec46471c8403950c404c772780ad778dd6f0e992fc795df0d'
           metadata={
               'e4_artifact_id':12183110279,'e4_artifact_digest':e4_meta['digest'],
               'e6_source_run_id':int(Path('evidence/e6_source_run_id.txt').read_text()),
