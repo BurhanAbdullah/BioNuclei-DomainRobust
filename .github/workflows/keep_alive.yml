@@ -1,0 +1,59 @@
+name: Keep services awake
+
+# Render Free web services sleep after 15 minutes without traffic, so the
+# first visitor waits about a minute. Free accounts share 750 instance hours
+# a month, and running out suspends every free service until the month ends.
+# This pings the analysis server only from 06:00 to 24:00 India time
+# (00:30 to 18:30 UTC), about 560 hours a month, leaving a safe margin.
+#
+# Supabase Free projects pause after about a week of inactivity, which takes
+# account sign-in offline. One daily request to the auth and REST APIs keeps
+# the project active. Both keys used here are the public browser keys.
+
+on:
+  schedule:
+    - cron: '*/10 0-18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ANALYZER: https://bionuclei-community-analyzer.onrender.com
+      SUPABASE_URL: https://neokbveqyydrfxgebvcf.supabase.co
+      SUPABASE_KEY: sb_publishable_lqjnxrtMfZqZJLNFzgyErw_8uadb6fp
+    steps:
+      - name: Wake analysis server
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            code="$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 90 "$ANALYZER/health" || true)"
+            if [ "$code" = "200" ]; then
+              echo "Analysis server healthy: $(cat /tmp/health.json)"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP $code; retrying in 20 s"
+            sleep 20
+          done
+          echo "::warning::Analysis server did not answer /health with HTTP 200"
+      - name: Keep Supabase active (once a day)
+        run: |
+          # Run the Supabase requests at most once per day, on the first ping after 03:00 UTC.
+          hour="$(date -u +%H)"; minute="$(date -u +%M)"
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] && { [ "$hour" != "03" ] || [ "$minute" -ge 10 ]; }; then
+            echo "Not the daily Supabase slot ($hour:$minute UTC); skipping."
+            exit 0
+          fi
+          auth="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/auth/v1/health" || true)"
+          rest="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/" || true)"
+          echo "Supabase auth: HTTP $auth, REST: HTTP $rest"
+          if [ "$auth" != "200" ]; then
+            echo "::warning::Supabase auth did not answer with HTTP 200. The project may be paused; resume it from the Supabase dashboard."
+          fi

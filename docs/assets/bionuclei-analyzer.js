@@ -291,7 +291,7 @@
     return row.area;
   }
 
-  function fmt(value) { return value == null ? '—' : Number(value).toFixed(2); }
+  function fmt(value) { return value == null ? 'n/a' : Number(value).toFixed(2); }
 
   function renderTable() {
     const body = $('measurementBody');

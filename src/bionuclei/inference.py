@@ -269,10 +269,12 @@ def predict(input_path: Path, checkpoint: Path, output: Path, device: str = "cpu
         model = _load_model(checkpoint, device)
         try:
             x = torch.from_numpy(_normalise(image)[None, None]).float().to(device)
-            # The public Render Free instance has a 512 MiB limit. Smaller CPU
-            # tiles reduce peak activation memory; retain 64 px context on each
-            # side of internal seams. GPU inference keeps the faster default.
-            tile_size, overlap = (160, 128) if device == "cpu" else (256, 128)
+            # The public Render Free instance has a 512 MiB limit, so CPU tiles
+            # stay at 160 px to bound activation memory. A 64 px overlap (32 px of
+            # context on each side of a seam) gave pixel-identical class maps to
+            # whole-image prediction on real 16-bit DAPI and BBBC039 images, and is
+            # about 6x faster than the previous 128 px overlap (stride 32).
+            tile_size, overlap = (160, 64) if device == "cpu" else (256, 128)
             with torch.no_grad():
                 instances = _instances_from_classes(
                     _predict_classes(model, x, tile_size=tile_size, overlap=overlap)

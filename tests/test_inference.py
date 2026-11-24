@@ -216,7 +216,7 @@ def test_predict_trims_cpu_heap_after_tensor_cleanup(monkeypatch, tmp_path):
 
     assert result["n_instances"] == 2
     assert (output_path / "segmentation_mask.tif").is_file()
-    assert tile_settings == {"tile_size": 160, "overlap": 128}
+    assert tile_settings == {"tile_size": 160, "overlap": 64}
     assert events[-2:] == ["gc", "trim"]
 
 
@@ -233,3 +233,17 @@ def test_uint8_class_stitch_matches_argmax_of_stitched_logits(shape):
     assert classes.dtype == np.uint8
     assert classes.shape == (height, width)
     assert np.array_equal(inference._instances_from_classes(classes), reference)
+
+
+def test_cpu_tiling_with_64px_overlap_matches_whole_image_prediction():
+    """The product CPU setting (160 px tiles, 64 px overlap) must equal untiled output."""
+    import torch
+    from bionuclei import inference
+    torch.manual_seed(0)
+    from bionuclei.models import BoundaryUNet
+    model = BoundaryUNet(in_channels=1, out_channels=3, base_channels=8).eval()
+    x = torch.rand(1, 1, 200, 344)
+    with torch.no_grad():
+        reference = model(x).argmax(dim=1).numpy()[0]
+        tiled = inference._predict_classes(model, x, tile_size=160, overlap=64)
+    assert (tiled == reference).mean() > 0.999

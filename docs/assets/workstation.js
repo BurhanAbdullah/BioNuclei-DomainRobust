@@ -197,7 +197,7 @@
         checking = false;
         return;
       } catch (_) {
-        if (attempt === 1 || Date.now() - started > 6000) setServer('waking', 'Waking server', 'The server was asleep. Waking it now; this usually takes under a minute. You can sign in meanwhile.');
+        if (attempt === 1 || Date.now() - started > 6000) setServer('waking', 'Waking server', 'The server was asleep and is waking up. This usually takes under a minute, and you can sign in meanwhile.');
         await new Promise(r => setTimeout(r, Math.min(2000 * attempt, 8000)));
       }
     }

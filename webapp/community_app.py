@@ -41,7 +41,7 @@ app.add_middleware(CORSMiddleware,allow_origins=allowed_origins or ["*"],allow_c
 
 @app.get("/")
 def root():
-    return {"service":"bionuclei-community-analyzer","version":"0.3.3","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional; guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing; results are disposable and expire after one hour"}
+    return {"service":"bionuclei-community-analyzer","version":"0.3.3","status":"online","health":"/health","algorithms":"/algorithms","authentication":"account optional. Guest sessions use an ephemeral job token","retention":"original uploads are deleted after processing. Results are disposable and expire after one hour"}
 
 @app.get("/health")
 def health():
@@ -62,7 +62,7 @@ async def analyze(request:Request,image:Annotated[UploadFile,File(...)],research
     if research_consent:
         raise HTTPException(
             status_code=400,
-            detail="Research retention is not implemented; uploads are processed transiently and are not used for training.",
+            detail="Research retention is not implemented. Uploads are processed transiently and are not used for training.",
         )
     user=authenticate_optional(request);data=await image.read(MAX_UPLOAD_BYTES+1)
     if not data: raise HTTPException(status_code=400,detail="Uploaded image is empty")
@@ -126,7 +126,7 @@ def progress(request:Request,job_id:str):
         if error.endswith(community_service._FAILED_JOB_CLEANUP_SUFFIX):
             cleanup_status = "incomplete"
             message = (
-                "Analysis failed. Cleanup is incomplete; transient artifacts may remain. "
+                "Analysis failed. Cleanup is incomplete. Transient artifacts may remain. "
                 "Automatic cleanup retries will continue. Please retry later."
             )
         elif error in {
@@ -147,7 +147,7 @@ def progress(request:Request,job_id:str):
             # Legacy or unrecognized error records do not prove that cleanup succeeded.
             cleanup_status = "unknown"
             message = (
-                "Analysis failed. Cleanup status is unknown; do not assume transient "
+                "Analysis failed. Cleanup status is unknown. Do not assume transient "
                 "input/result artifacts were removed."
             )
     report_ready = (
